@@ -152,16 +152,22 @@ async def cmd_makeup(message: types.Message):
         return
 
     from services.integrity_service import run_all_checks
+    import logging
+    logger = logging.getLogger(__name__)
 
-    async with async_session() as session:
-        async with session.begin():
-            msgs = await run_all_checks(session)
+    try:
+        async with async_session() as session:
+            async with session.begin():
+                msgs = await run_all_checks(session)
 
-    if msgs:
-        lines = ["🔧 数据清理报告:", "─" * 24] + msgs
-        await message.answer("\n".join(lines))
-    else:
-        await message.answer("✅ 所有数据正常，无需清理")
+        if msgs:
+            lines = ["🔧 数据清理报告:", "─" * 24] + msgs
+            await message.answer("\n".join(lines))
+        else:
+            await message.answer("✅ 所有数据正常，无需清理")
+    except Exception as e:
+        logger.exception("makeup command error")
+        await message.answer(f"❌ 数据清理出错: {e}")
 
 
 class CreateCompanyState(StatesGroup):

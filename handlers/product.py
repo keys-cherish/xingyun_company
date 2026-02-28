@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+
 from aiogram import F, Router, types
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -20,6 +23,7 @@ from utils.formatters import fmt_traffic
 from db.models import Product as ProductModel
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 # /new_product 参数：投入资金 -> 基础日收入的转化率
 INVEST_TO_INCOME_RATE = 0.03  # 每投入100金币 = 3金币/日
@@ -286,7 +290,13 @@ async def cb_product_list(callback: types.CallbackQuery):
     all_buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")])
     kb = InlineKeyboardMarkup(inline_keyboard=all_buttons)
 
-    await callback.message.edit_text(text, reply_markup=kb)
+    try:
+        await callback.message.edit_text(text, reply_markup=kb)
+    except TelegramBadRequest as e:
+        if "message is not modified" not in str(e).lower():
+            await callback.message.answer(text, reply_markup=kb)
+    except Exception:
+        await callback.message.answer(text, reply_markup=kb)
     await callback.answer()
 
 

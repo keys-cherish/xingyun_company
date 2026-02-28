@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from aiogram import Router
 from aiogram.filters import Command
 
@@ -11,6 +13,7 @@ from db.engine import async_session
 from services.battle_service import battle
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 
 @router.message(Command("battle"))
@@ -31,8 +34,12 @@ async def cmd_battle(message: types.Message):
     attacker_tg_id = message.from_user.id
     defender_tg_id = target.id
 
-    async with async_session() as session:
-        async with session.begin():
-            ok, msg = await battle(session, attacker_tg_id, defender_tg_id)
+    try:
+        async with async_session() as session:
+            async with session.begin():
+                ok, msg = await battle(session, attacker_tg_id, defender_tg_id)
 
-    await message.answer(msg)
+        await message.answer(msg)
+    except Exception as e:
+        logger.exception("battle command error")
+        await message.answer(f"❌ 商战出错: {e}")

@@ -136,7 +136,7 @@ async def cleanup_orphaned_realestate(session: AsyncSession) -> list[str]:
 
 async def cleanup_expired_cooperations(session: AsyncSession) -> list[str]:
     """Remove cooperations that reference non-existent companies."""
-    from services.cooperation_service import Cooperation
+    from db.models import Cooperation
     msgs = []
 
     orphaned = (await session.execute(
@@ -181,10 +181,19 @@ async def cleanup_negative_funds(session: AsyncSession) -> list[str]:
 async def run_all_checks(session: AsyncSession) -> list[str]:
     """Run all data integrity checks."""
     msgs = []
-    msgs.extend(await cleanup_illegal_products(session))
-    msgs.extend(await cleanup_illegal_shareholders(session))
-    msgs.extend(await cleanup_orphaned_research(session))
-    msgs.extend(await cleanup_orphaned_realestate(session))
-    msgs.extend(await cleanup_expired_cooperations(session))
-    msgs.extend(await cleanup_negative_funds(session))
+    checks = [
+        ("产品员工", cleanup_illegal_products),
+        ("股东股份", cleanup_illegal_shareholders),
+        ("孤立研发", cleanup_orphaned_research),
+        ("孤立地产", cleanup_orphaned_realestate),
+        ("孤立合作", cleanup_expired_cooperations),
+        ("负数资金", cleanup_negative_funds),
+    ]
+    for name, check_fn in checks:
+        try:
+            msgs.extend(await check_fn(session))
+        except Exception as e:
+            msg = f"❌ {name}检查失败: {e}"
+            msgs.append(msg)
+            logger.exception(msg)
     return msgs

@@ -14,7 +14,12 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from db.engine import async_session
-from handlers.common import admin_only, authenticate_admin, is_admin_authenticated
+from handlers.common import (
+    authenticate_admin,
+    is_admin_authenticated,
+    is_super_admin,
+    super_admin_only,
+)
 from keyboards.menus import main_menu_kb
 from services.ad_service import get_active_ad_info
 from services.company_service import get_company_by_id, get_company_type_info
@@ -118,6 +123,9 @@ async def cb_buff_list(callback: types.CallbackQuery):
 async def cmd_admin(message: types.Message):
     """管理员认证: /admin <密钥>"""
     tg_id = message.from_user.id
+    if not is_super_admin(tg_id):
+        await message.answer("❌ 无权使用此命令")
+        return
 
     # 解析密钥参数
     parts = message.text.strip().split(maxsplit=1)
@@ -179,7 +187,7 @@ def _admin_menu_kb() -> InlineKeyboardMarkup:
     ])
 
 
-@router.callback_query(F.data.startswith("admin:cfg:"), admin_only)
+@router.callback_query(F.data.startswith("admin:cfg:"), super_admin_only)
 async def cb_admin_cfg(callback: types.CallbackQuery, state: FSMContext):
     param = callback.data.split(":")[2]
     from config import settings
@@ -192,7 +200,7 @@ async def cb_admin_cfg(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.message(AdminConfigState.waiting_param_value, admin_only)
+@router.message(AdminConfigState.waiting_param_value, super_admin_only)
 async def on_admin_param_value(message: types.Message, state: FSMContext):
     data = await state.get_data()
     param = data["param"]
@@ -224,7 +232,7 @@ async def on_admin_param_value(message: types.Message, state: FSMContext):
     await state.clear()
 
 
-@router.callback_query(F.data == "admin:settle", admin_only)
+@router.callback_query(F.data == "admin:settle", super_admin_only)
 async def cb_admin_settle(callback: types.CallbackQuery):
     """手动触发结算（仅私聊发送结果，不在群组暴露）。"""
     await callback.answer("正在执行结算...", show_alert=True)
@@ -257,7 +265,7 @@ async def cb_admin_settle(callback: types.CallbackQuery):
         await callback.message.edit_text(text, reply_markup=_admin_menu_kb())
 
 
-@router.callback_query(F.data == "admin:logout", admin_only)
+@router.callback_query(F.data == "admin:logout", super_admin_only)
 async def cb_admin_logout(callback: types.CallbackQuery):
     """退出管理员模式。"""
     from handlers.common import revoke_admin
@@ -266,7 +274,7 @@ async def cb_admin_logout(callback: types.CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data == "admin:close")
+@router.callback_query(F.data == "admin:close", super_admin_only)
 async def cb_admin_close(callback: types.CallbackQuery):
     await callback.message.delete()
     await callback.answer()

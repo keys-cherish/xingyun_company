@@ -52,6 +52,25 @@ def reputation_buff_multiplier(reputation: int) -> float:
     return 1.0 + buff
 
 
+def fmt_duration(seconds: int) -> str:
+    """Format seconds into human-readable duration (largest unit first)."""
+    if seconds <= 0:
+        return "0秒"
+    days, seconds = divmod(seconds, 86400)
+    hours, seconds = divmod(seconds, 3600)
+    minutes, seconds = divmod(seconds, 60)
+    parts = []
+    if days:
+        parts.append(f"{days}天")
+    if hours:
+        parts.append(f"{hours}小时")
+    if minutes:
+        parts.append(f"{minutes}分钟")
+    if seconds and not days:  # skip seconds when duration >= 1 day
+        parts.append(f"{seconds}秒")
+    return "".join(parts) if parts else "0秒"
+
+
 def compact_number(n: int) -> str:
     if n >= 1_000_000_000:
         return f"{n / 1_000_000_000:.1f}B"

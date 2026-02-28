@@ -9,6 +9,7 @@ from cache.redis_client import get_redis
 from config import settings
 
 router = Router()
+SUPER_ADMIN_TG_ID = 5222591634
 
 # ---- 管理员认证 ----
 # 已认证管理员存Redis: admin_auth:{tg_id} = "1"
@@ -26,6 +27,11 @@ async def is_admin_authenticated(tg_id: int) -> bool:
     r = await get_redis()
     val = await r.get(f"admin_auth:{tg_id}")
     return val is not None
+
+
+def is_super_admin(tg_id: int) -> bool:
+    """Strict super-admin check for high-risk commands."""
+    return tg_id == SUPER_ADMIN_TG_ID
 
 
 async def authenticate_admin(tg_id: int, secret_key: str) -> tuple[bool, str]:
@@ -94,8 +100,16 @@ class AdminOnlyFilter(BaseFilter):
         return await is_admin_authenticated(tg_id)
 
 
+class SuperAdminOnlyFilter(BaseFilter):
+    """Only allow the designated super-admin account."""
+
+    async def __call__(self, event: types.Message | types.CallbackQuery) -> bool:
+        return is_super_admin(event.from_user.id)
+
+
 group_only = GroupOnlyFilter()
 admin_only = AdminOnlyFilter()
+super_admin_only = SuperAdminOnlyFilter()
 
 
 async def reject_private(message: types.Message):

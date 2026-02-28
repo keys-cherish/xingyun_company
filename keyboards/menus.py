@@ -118,9 +118,10 @@ def invest_kb(company_id: int) -> InlineKeyboardMarkup:
 # ---- Research ----
 
 def tech_list_kb(techs: list[dict], company_id: int) -> InlineKeyboardMarkup:
+    from utils.formatters import fmt_duration
     buttons = [
         [InlineKeyboardButton(
-            text=f"{t['name']} ({t['cost']:,}💰)",
+            text=f"{t['name']} ({t['cost']:,}💰 {fmt_duration(t.get('duration_seconds', 3600))})",
             callback_data=f"research:start:{company_id}:{t['tech_id']}",
         )]
         for t in techs

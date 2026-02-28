@@ -2,13 +2,14 @@
 
 Covers: products (employee over-allocation), shareholders (share overflow),
 research (orphaned), real estate (orphaned), cooperations (expired/orphaned).
+Each check runs in its own transaction so one failure won't block others.
 """
 
 from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select, func as sqlfunc, delete
+from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Company, Product
@@ -77,7 +78,6 @@ async def cleanup_illegal_shareholders(session: AsyncSession) -> list[str]:
         if total_shares <= 100.0:
             continue
 
-        # Normalize shares proportionally
         for sh in shareholders:
             sh.shares = round(sh.shares / total_shares * 100.0, 2)
 
@@ -95,11 +95,15 @@ async def cleanup_orphaned_research(session: AsyncSession) -> list[str]:
     from db.models import ResearchProgress
     msgs = []
 
-    orphaned = (await session.execute(
+    company_ids = [cid for (cid,) in (await session.execute(select(Company.id))).all()]
+    if not company_ids:
+        return msgs
+
+    orphaned = list((await session.execute(
         select(ResearchProgress).where(
-            ~ResearchProgress.company_id.in_(select(Company.id))
+            ~ResearchProgress.company_id.in_(company_ids)
         )
-    )).scalars().all()
+    )).scalars().all())
 
     if orphaned:
         for r in orphaned:
@@ -117,11 +121,15 @@ async def cleanup_orphaned_realestate(session: AsyncSession) -> list[str]:
     from db.models import RealEstate
     msgs = []
 
-    orphaned = (await session.execute(
+    company_ids = [cid for (cid,) in (await session.execute(select(Company.id))).all()]
+    if not company_ids:
+        return msgs
+
+    orphaned = list((await session.execute(
         select(RealEstate).where(
-            ~RealEstate.company_id.in_(select(Company.id))
+            ~RealEstate.company_id.in_(company_ids)
         )
-    )).scalars().all()
+    )).scalars().all())
 
     if orphaned:
         for r in orphaned:
@@ -139,12 +147,16 @@ async def cleanup_expired_cooperations(session: AsyncSession) -> list[str]:
     from db.models import Cooperation
     msgs = []
 
-    orphaned = (await session.execute(
+    company_ids = [cid for (cid,) in (await session.execute(select(Company.id))).all()]
+    if not company_ids:
+        return msgs
+
+    orphaned = list((await session.execute(
         select(Cooperation).where(
-            (~Cooperation.company_a_id.in_(select(Company.id)))
-            | (~Cooperation.company_b_id.in_(select(Company.id)))
+            (~Cooperation.company_a_id.in_(company_ids))
+            | (~Cooperation.company_b_id.in_(company_ids))
         )
-    )).scalars().all()
+    )).scalars().all())
 
     if orphaned:
         for c in orphaned:
@@ -159,7 +171,6 @@ async def cleanup_expired_cooperations(session: AsyncSession) -> list[str]:
 
 async def cleanup_negative_funds(session: AsyncSession) -> list[str]:
     """Fix companies with negative funds."""
-    from sqlalchemy import update
     msgs = []
 
     result = await session.execute(
@@ -178,9 +189,10 @@ async def cleanup_negative_funds(session: AsyncSession) -> list[str]:
     return msgs
 
 
-async def run_all_checks(session: AsyncSession) -> list[str]:
-    """Run all data integrity checks."""
-    msgs = []
+async def run_all_checks(session: AsyncSession | None = None) -> list[str]:
+    """Run all data integrity checks. Each check uses its own transaction."""
+    from db.engine import async_session
+
     checks = [
         ("产品员工", cleanup_illegal_products),
         ("股东股份", cleanup_illegal_shareholders),
@@ -189,9 +201,13 @@ async def run_all_checks(session: AsyncSession) -> list[str]:
         ("孤立合作", cleanup_expired_cooperations),
         ("负数资金", cleanup_negative_funds),
     ]
+    msgs = []
     for name, check_fn in checks:
         try:
-            msgs.extend(await check_fn(session))
+            async with async_session() as s:
+                async with s.begin():
+                    result = await check_fn(s)
+                    msgs.extend(result)
         except Exception as e:
             msg = f"❌ {name}检查失败: {e}"
             msgs.append(msg)

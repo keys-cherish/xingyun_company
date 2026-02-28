@@ -11,6 +11,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from config import settings as cfg
 from db.engine import async_session
+from handlers.common import is_super_admin
 from keyboards.menus import company_detail_kb, company_list_kb
 from services.company_service import (
     add_funds,
@@ -141,13 +142,11 @@ async def cmd_rank_company(message: types.Message):
 
 # ---- /makeup 数据清理命令 ----
 
-MAKEUP_ADMIN_ID = 5222591634
-
 
 @router.message(Command("makeup"))
 async def cmd_makeup(message: types.Message):
     """管理员命令：清理所有公司的异常数据。"""
-    if message.from_user.id != MAKEUP_ADMIN_ID:
+    if not is_super_admin(message.from_user.id):
         await message.answer("❌ 无权使用此命令")
         return
 
@@ -156,9 +155,7 @@ async def cmd_makeup(message: types.Message):
     logger = logging.getLogger(__name__)
 
     try:
-        async with async_session() as session:
-            async with session.begin():
-                msgs = await run_all_checks(session)
+        msgs = await run_all_checks()
 
         if msgs:
             lines = ["🔧 数据清理报告:", "─" * 24] + msgs

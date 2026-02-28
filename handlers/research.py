@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
 from aiogram import F, Router, types
 
 from db.engine import async_session
@@ -15,6 +17,7 @@ from services.research_service import (
     start_research,
 )
 from services.user_service import get_user_by_tg_id
+from utils.formatters import fmt_duration
 
 router = Router()
 
@@ -79,9 +82,18 @@ async def cb_research_list(callback: types.CallbackQuery):
     if in_progress:
         lines.append("\n⏳ 研究中:")
         tree = {t["tech_id"]: t for t in get_tech_tree_display()}
+        now = dt.datetime.utcnow()
         for rp in in_progress:
-            name = tree.get(rp.tech_id, {}).get("name", rp.tech_id)
-            lines.append(f"  • {name} (开始于 {rp.started_at.strftime('%m-%d %H:%M')})")
+            tech_info = tree.get(rp.tech_id, {})
+            name = tech_info.get("name", rp.tech_id)
+            duration_sec = tech_info.get("duration_seconds", 3600)
+            started = rp.started_at.replace(tzinfo=None) if rp.started_at.tzinfo else rp.started_at
+            elapsed = (now - started).total_seconds()
+            remaining = max(0, int(duration_sec - elapsed))
+            if remaining > 0:
+                lines.append(f"  • {name} — 剩余 {fmt_duration(remaining)}")
+            else:
+                lines.append(f"  • {name} — 即将完成（等待结算）")
 
     if available:
         lines.append("\n📋 可研究:")

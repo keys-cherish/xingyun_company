@@ -112,7 +112,9 @@ async def start_research(
     # Grant points for starting research
     await add_points(owner_user_id, 5, session=session)
 
-    return True, f"开始研究「{tech['name']}」，需要{tech.get('duration_seconds', 3600)}秒完成"
+    from utils.formatters import fmt_duration
+    duration_str = fmt_duration(tech.get("duration_seconds", 3600))
+    return True, f"开始研究「{tech['name']}」，预计{duration_str}完成"
 
 
 async def check_and_complete_research(session: AsyncSession, company_id: int) -> list[str]:

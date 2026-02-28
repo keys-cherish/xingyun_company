@@ -10,6 +10,7 @@ from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from db.engine import async_session
+from handlers.common import is_super_admin
 from keyboards.menus import product_detail_kb, product_template_kb
 from services.company_service import get_company_by_id, get_companies_by_owner, update_daily_revenue, add_funds
 from services.product_service import (
@@ -404,13 +405,11 @@ async def cb_delete_product(callback: types.CallbackQuery):
 
 # ---- /clear_product 管理员命令（限定 tg_id） ----
 
-CLEAR_PRODUCT_ADMIN_ID = 5222591634
-
 
 @router.message(Command("clear_product"))
 async def cmd_clear_product(message: types.Message):
     """管理员命令：回复某人消息，清除该用户所有产品。"""
-    if message.from_user.id != CLEAR_PRODUCT_ADMIN_ID:
+    if not is_super_admin(message.from_user.id):
         await message.answer("❌ 无权使用此命令")
         return
 

@@ -1,0 +1,62 @@
+{
+  "simple_website": {
+    "name": "简易网站",
+    "base_daily_income": 100,
+    "base_quality": 10,
+    "tech_id": "basic_internet"
+  },
+  "social_app": {
+    "name": "社交应用",
+    "base_daily_income": 300,
+    "base_quality": 20,
+    "tech_id": "social_platform"
+  },
+  "online_shop": {
+    "name": "网上商城",
+    "base_daily_income": 400,
+    "base_quality": 25,
+    "tech_id": "ecommerce"
+  },
+  "cloud_service": {
+    "name": "云服务",
+    "base_daily_income": 500,
+    "base_quality": 30,
+    "tech_id": "cloud_computing"
+  },
+  "data_platform": {
+    "name": "数据平台",
+    "base_daily_income": 700,
+    "base_quality": 40,
+    "tech_id": "big_data"
+  },
+  "ai_engine": {
+    "name": "AI推荐引擎",
+    "base_daily_income": 1000,
+    "base_quality": 55,
+    "tech_id": "ai_recommend"
+  },
+  "defi_platform": {
+    "name": "DeFi平台",
+    "base_daily_income": 800,
+    "base_quality": 45,
+    "tech_id": "blockchain"
+  },
+  "metaverse_world": {
+    "name": "元宇宙世界",
+    "base_daily_income": 2000,
+    "base_quality": 75,
+    "tech_id": "metaverse"
+  },
+  "quantum_service": {
+    "name": "量子计算服务",
+    "base_daily_income": 2500,
+    "base_quality": 85,
+    "tech_id": "quantum_computing"
+  },
+  "agi_platform": {
+    "name": "AGI平台",
+    "base_daily_income": 5000,
+    "base_quality": 100,
+    "tech_id": "agi"
+  }
+}

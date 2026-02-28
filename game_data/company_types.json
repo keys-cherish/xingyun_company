@@ -1,0 +1,74 @@
+{
+  "tech": {
+    "name": "科技公司",
+    "emoji": "💻",
+    "description": "专注于技术研发，科研速度+20%，产品收入+10%",
+    "research_speed_bonus": 0.20,
+    "income_bonus": 0.10,
+    "cost_bonus": 0.0
+  },
+  "finance": {
+    "name": "金融公司",
+    "emoji": "🏦",
+    "description": "擅长资本运作，投资回报+15%，分红+10%",
+    "research_speed_bonus": 0.0,
+    "income_bonus": 0.0,
+    "cost_bonus": -0.10,
+    "dividend_bonus": 0.10,
+    "investment_bonus": 0.15
+  },
+  "media": {
+    "name": "传媒公司",
+    "emoji": "📺",
+    "description": "善于营销推广，广告效果+25%，路演奖励+15%",
+    "research_speed_bonus": 0.0,
+    "income_bonus": 0.0,
+    "cost_bonus": 0.0,
+    "ad_bonus": 0.25,
+    "roadshow_bonus": 0.15
+  },
+  "manufacturing": {
+    "name": "制造业",
+    "emoji": "🏭",
+    "description": "规模化生产，运营成本-15%，员工上限+5",
+    "research_speed_bonus": -0.10,
+    "income_bonus": 0.0,
+    "cost_bonus": -0.15,
+    "extra_employee_limit": 5
+  },
+  "realestate": {
+    "name": "地产公司",
+    "emoji": "🏢",
+    "description": "地产投资专家，地产收益+20%，地产购买折扣10%",
+    "research_speed_bonus": 0.0,
+    "income_bonus": 0.0,
+    "cost_bonus": 0.0,
+    "estate_income_bonus": 0.20,
+    "estate_cost_discount": 0.10
+  },
+  "biotech": {
+    "name": "生物科技",
+    "emoji": "🧬",
+    "description": "高风险高回报，科研成功率+30%，但成本+20%",
+    "research_speed_bonus": 0.30,
+    "income_bonus": 0.15,
+    "cost_bonus": 0.20
+  },
+  "gaming": {
+    "name": "游戏公司",
+    "emoji": "🎮",
+    "description": "创意驱动，产品品质上限更高，收入波动大",
+    "research_speed_bonus": 0.05,
+    "income_bonus": 0.20,
+    "cost_bonus": 0.05
+  },
+  "consulting": {
+    "name": "咨询公司",
+    "emoji": "📋",
+    "description": "知识密集型，低成本运营，合作加成+20%",
+    "research_speed_bonus": 0.0,
+    "income_bonus": 0.0,
+    "cost_bonus": -0.20,
+    "cooperation_bonus": 0.20
+  }
+}

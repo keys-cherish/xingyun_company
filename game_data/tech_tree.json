@@ -1,0 +1,94 @@
+{
+  "nodes": {
+    "basic_internet": {
+      "name": "基础互联网",
+      "description": "互联网基础设施研究",
+      "cost": 1000,
+      "duration_seconds": 3600,
+      "prerequisites": [],
+      "reputation_reward": 5,
+      "unlocks_products": ["simple_website"]
+    },
+    "social_platform": {
+      "name": "社交平台",
+      "description": "社交网络技术研究",
+      "cost": 3000,
+      "duration_seconds": 7200,
+      "prerequisites": ["basic_internet"],
+      "reputation_reward": 10,
+      "unlocks_products": ["social_app"]
+    },
+    "ecommerce": {
+      "name": "电子商务",
+      "description": "在线交易与支付系统",
+      "cost": 4000,
+      "duration_seconds": 10800,
+      "prerequisites": ["basic_internet"],
+      "reputation_reward": 10,
+      "unlocks_products": ["online_shop"]
+    },
+    "cloud_computing": {
+      "name": "云计算",
+      "description": "云端基础设施与服务",
+      "cost": 5000,
+      "duration_seconds": 14400,
+      "prerequisites": ["basic_internet"],
+      "reputation_reward": 15,
+      "unlocks_products": ["cloud_service"]
+    },
+    "big_data": {
+      "name": "大数据",
+      "description": "数据采集与分析平台",
+      "cost": 6000,
+      "duration_seconds": 18000,
+      "prerequisites": ["social_platform", "ecommerce"],
+      "reputation_reward": 15,
+      "unlocks_products": ["data_platform"]
+    },
+    "ai_recommend": {
+      "name": "AI推荐系统",
+      "description": "智能推荐与个性化引擎",
+      "cost": 8000,
+      "duration_seconds": 21600,
+      "prerequisites": ["big_data"],
+      "reputation_reward": 20,
+      "unlocks_products": ["ai_engine"]
+    },
+    "blockchain": {
+      "name": "区块链",
+      "description": "去中心化账本与智能合约",
+      "cost": 7000,
+      "duration_seconds": 18000,
+      "prerequisites": ["cloud_computing"],
+      "reputation_reward": 15,
+      "unlocks_products": ["defi_platform"]
+    },
+    "metaverse": {
+      "name": "元宇宙",
+      "description": "虚拟现实与沉浸式世界",
+      "cost": 15000,
+      "duration_seconds": 36000,
+      "prerequisites": ["ai_recommend", "blockchain"],
+      "reputation_reward": 50,
+      "unlocks_products": ["metaverse_world"]
+    },
+    "quantum_computing": {
+      "name": "量子计算",
+      "description": "下一代算力突破",
+      "cost": 20000,
+      "duration_seconds": 43200,
+      "prerequisites": ["cloud_computing", "ai_recommend"],
+      "reputation_reward": 60,
+      "unlocks_products": ["quantum_service"]
+    },
+    "agi": {
+      "name": "通用人工智能",
+      "description": "终极智能科技",
+      "cost": 50000,
+      "duration_seconds": 86400,
+      "prerequisites": ["quantum_computing", "metaverse"],
+      "reputation_reward": 100,
+      "unlocks_products": ["agi_platform"]
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "office_building": {
+    "name": "写字楼",
+    "purchase_price": 10000,
+    "daily_dividend": 200,
+    "description": "标准商业写字楼，稳定收入"
+  },
+  "shopping_mall": {
+    "name": "购物中心",
+    "purchase_price": 25000,
+    "daily_dividend": 600,
+    "description": "大型商业综合体"
+  },
+  "tech_park": {
+    "name": "科技园区",
+    "purchase_price": 50000,
+    "daily_dividend": 1500,
+    "description": "高新技术产业园"
+  },
+  "data_center": {
+    "name": "数据中心",
+    "purchase_price": 80000,
+    "daily_dividend": 2800,
+    "description": "大规模数据中心"
+  },
+  "landmark_tower": {
+    "name": "地标大厦",
+    "purchase_price": 200000,
+    "daily_dividend": 8000,
+    "description": "城市地标建筑，顶级收益"
+  }
+}

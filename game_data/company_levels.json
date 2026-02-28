@@ -3,6 +3,10 @@
     "1": {
       "name": "初创企业",
       "upgrade_cost": 0,
+      "min_employees": 0,
+      "min_products": 0,
+      "min_techs": 0,
+      "min_daily_revenue": 0,
       "daily_revenue_bonus": 0,
       "employee_limit_bonus": 0,
       "description": "起步阶段"
@@ -10,65 +14,101 @@
     "2": {
       "name": "小型企业",
       "upgrade_cost": 20000,
-      "daily_revenue_bonus": 500,
+      "min_employees": 2,
+      "min_products": 1,
+      "min_techs": 1,
+      "min_daily_revenue": 0,
+      "daily_revenue_bonus": 200,
       "employee_limit_bonus": 2,
-      "description": "站稳脚跟，日营收+500"
+      "description": "需要: 2万资金 + 2员工 + 1产品 + 1科技"
     },
     "3": {
       "name": "成长企业",
       "upgrade_cost": 50000,
-      "daily_revenue_bonus": 1500,
+      "min_employees": 5,
+      "min_products": 2,
+      "min_techs": 2,
+      "min_daily_revenue": 500,
+      "daily_revenue_bonus": 600,
       "employee_limit_bonus": 3,
-      "description": "开始扩张，日营收+1500"
+      "description": "需要: 5万资金 + 5员工 + 2产品 + 2科技 + 日营收≥500"
     },
     "4": {
       "name": "中型企业",
       "upgrade_cost": 120000,
-      "daily_revenue_bonus": 4000,
-      "employee_limit_bonus": 5,
-      "description": "行业新星，日营收+4000"
+      "min_employees": 10,
+      "min_products": 3,
+      "min_techs": 3,
+      "min_daily_revenue": 1500,
+      "daily_revenue_bonus": 1500,
+      "employee_limit_bonus": 4,
+      "description": "需要: 12万资金 + 10员工 + 3产品 + 3科技 + 日营收≥1500"
     },
     "5": {
       "name": "大型企业",
       "upgrade_cost": 300000,
-      "daily_revenue_bonus": 10000,
-      "employee_limit_bonus": 8,
-      "description": "行业领军，日营收+10000"
+      "min_employees": 18,
+      "min_products": 5,
+      "min_techs": 4,
+      "min_daily_revenue": 5000,
+      "daily_revenue_bonus": 4000,
+      "employee_limit_bonus": 6,
+      "description": "需要: 30万资金 + 18员工 + 5产品 + 4科技 + 日营收≥5000"
     },
     "6": {
       "name": "集团企业",
       "upgrade_cost": 800000,
-      "daily_revenue_bonus": 25000,
-      "employee_limit_bonus": 12,
-      "description": "商业帝国初现，日营收+25000"
+      "min_employees": 28,
+      "min_products": 7,
+      "min_techs": 5,
+      "min_daily_revenue": 15000,
+      "daily_revenue_bonus": 10000,
+      "employee_limit_bonus": 8,
+      "description": "需要: 80万资金 + 28员工 + 7产品 + 5科技 + 日营收≥1.5万"
     },
     "7": {
       "name": "跨国集团",
       "upgrade_cost": 2000000,
-      "daily_revenue_bonus": 60000,
-      "employee_limit_bonus": 18,
-      "description": "全球布局，日营收+60000"
+      "min_employees": 40,
+      "min_products": 10,
+      "min_techs": 6,
+      "min_daily_revenue": 40000,
+      "daily_revenue_bonus": 25000,
+      "employee_limit_bonus": 12,
+      "description": "需要: 200万资金 + 40员工 + 10产品 + 6科技 + 日营收≥4万"
     },
     "8": {
       "name": "商业帝国",
       "upgrade_cost": 5000000,
-      "daily_revenue_bonus": 150000,
-      "employee_limit_bonus": 25,
-      "description": "商界传奇，日营收+150000"
+      "min_employees": 55,
+      "min_products": 13,
+      "min_techs": 7,
+      "min_daily_revenue": 100000,
+      "daily_revenue_bonus": 60000,
+      "employee_limit_bonus": 18,
+      "description": "需要: 500万资金 + 55员工 + 13产品 + 7科技 + 日营收≥10万"
     },
     "9": {
       "name": "世界500强",
       "upgrade_cost": 15000000,
-      "daily_revenue_bonus": 400000,
-      "employee_limit_bonus": 35,
-      "description": "登顶世界，日营收+400000"
+      "min_employees": 75,
+      "min_products": 16,
+      "min_techs": 8,
+      "min_daily_revenue": 250000,
+      "daily_revenue_bonus": 150000,
+      "employee_limit_bonus": 25,
+      "description": "需要: 1500万资金 + 75员工 + 16产品 + 8科技 + 日营收≥25万"
     },
     "10": {
       "name": "商业神话",
       "upgrade_cost": 50000000,
-      "daily_revenue_bonus": 1000000,
-      "employee_limit_bonus": 50,
-      "description": "传说中的存在，日营收+1000000"
+      "min_employees": 100,
+      "min_products": 20,
+      "min_techs": 9,
+      "min_daily_revenue": 600000,
+      "daily_revenue_bonus": 400000,
+      "employee_limit_bonus": 35,
+      "description": "需要: 5000万资金 + 100员工 + 20产品 + 9科技 + 日营收≥60万"
     }
   },
   "max_level": 10

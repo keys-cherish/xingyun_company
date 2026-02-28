@@ -184,7 +184,7 @@ async def cmd_member(message: types.Message):
 
 async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
     """加载公司数据并返回 (text, keyboard)，供多个handler复用。"""
-    from db.models import Shareholder, Product
+    from db.models import Shareholder, Product, ResearchProgress
     from sqlalchemy import select, func as sqlfunc
     from services.realestate_service import get_total_estate_income
 
@@ -202,6 +202,12 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
         prod_count = (await session.execute(
             select(sqlfunc.count()).where(Product.company_id == company_id)
         )).scalar()
+        tech_count = (await session.execute(
+            select(sqlfunc.count()).where(
+                ResearchProgress.company_id == company_id,
+                ResearchProgress.status == "completed",
+            )
+        )).scalar()
         estate_income = await get_total_estate_income(session, company_id)
 
     type_info = get_company_type_info(company.company_type)
@@ -218,14 +224,33 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
 
     total_daily = company.daily_revenue + estate_income + level_rev_bonus
 
-    # Upgrade info
+    # Upgrade requirements
     next_level = company.level + 1
     next_info = get_level_info(next_level)
-    upgrade_line = ""
     if next_info:
-        upgrade_line = f"📤 下一级: Lv.{next_level}「{next_info['name']}」({fmt_traffic(next_info['upgrade_cost'])})\n"
+        def _icon(current, required):
+            return "✅" if current >= required else "❌"
+
+        req_lines = [f"📤 升级 Lv.{next_level}「{next_info['name']}」条件:"]
+        req_cost = next_info["upgrade_cost"]
+        req_emp = next_info.get("min_employees", 0)
+        req_prod = next_info.get("min_products", 0)
+        req_tech = next_info.get("min_techs", 0)
+        req_rev = next_info.get("min_daily_revenue", 0)
+
+        req_lines.append(f"  {_icon(company.total_funds, req_cost)} 资金 {fmt_traffic(req_cost)}")
+        if req_emp:
+            req_lines.append(f"  {_icon(company.employee_count, req_emp)} 员工 ≥{req_emp}")
+        if req_prod:
+            req_lines.append(f"  {_icon(prod_count, req_prod)} 产品 ≥{req_prod}")
+        if req_tech:
+            req_lines.append(f"  {_icon(tech_count, req_tech)} 科技 ≥{req_tech}")
+        if req_rev:
+            req_lines.append(f"  {_icon(company.daily_revenue, req_rev)} 日营收 ≥{fmt_traffic(req_rev)}")
+
+        upgrade_block = "\n".join(req_lines) + "\n"
     else:
-        upgrade_line = "🏆 已达最高等级!\n"
+        upgrade_block = "🏆 已达最高等级!\n"
 
     text = (
         f"🏢 {company.name} (ID: {company.id})\n"
@@ -238,8 +263,9 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
         f"📊 日总收入: {fmt_traffic(total_daily)}\n"
         f"🏷 估值: {fmt_traffic(valuation)}\n"
         f"⭐ Lv.{company.level}「{level_name}」\n"
-        f"{upgrade_line}"
-        f"👥 股东: {sh_count} | 👷 员工: {company.employee_count}/{max_employees} | 📦 产品: {prod_count}\n"
+        f"👥 股东:{sh_count} | 👷 员工:{company.employee_count}/{max_employees} | 📦 产品:{prod_count} | 🔬 科技:{tech_count}\n"
+        f"{'─' * 24}\n"
+        f"{upgrade_block}"
     )
     return text, company_detail_kb(company_id, is_owner)
 

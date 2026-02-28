@@ -174,8 +174,10 @@ async def upgrade_company(
     session: AsyncSession,
     company_id: int,
 ) -> tuple[bool, str]:
-    """Upgrade company to next level. Costs company funds."""
+    """Upgrade company to next level. Requires funds + employees + products + techs + revenue."""
     from utils.formatters import fmt_traffic
+    from sqlalchemy import select, func as sqlfunc
+    from db.models import Product, ResearchProgress
 
     company = await session.get(Company, company_id)
     if company is None:
@@ -190,18 +192,58 @@ async def upgrade_company(
     if not next_info:
         return False, "等级数据异常"
 
+    # Check all requirements
+    fails = []
+
     cost = next_info["upgrade_cost"]
+    if company.total_funds < cost:
+        fails.append(f"资金: {fmt_traffic(company.total_funds)}/{fmt_traffic(cost)}")
+
+    min_emp = next_info.get("min_employees", 0)
+    if min_emp and company.employee_count < min_emp:
+        fails.append(f"员工: {company.employee_count}/{min_emp}")
+
+    min_products = next_info.get("min_products", 0)
+    if min_products:
+        prod_count = (await session.execute(
+            select(sqlfunc.count()).where(Product.company_id == company_id)
+        )).scalar() or 0
+        if prod_count < min_products:
+            fails.append(f"产品: {prod_count}/{min_products}")
+
+    min_techs = next_info.get("min_techs", 0)
+    if min_techs:
+        tech_count = (await session.execute(
+            select(sqlfunc.count()).where(
+                ResearchProgress.company_id == company_id,
+                ResearchProgress.status == "completed",
+            )
+        )).scalar() or 0
+        if tech_count < min_techs:
+            fails.append(f"科技: {tech_count}/{min_techs}")
+
+    min_revenue = next_info.get("min_daily_revenue", 0)
+    if min_revenue and company.daily_revenue < min_revenue:
+        fails.append(f"日营收: {fmt_traffic(company.daily_revenue)}/{fmt_traffic(min_revenue)}")
+
+    if fails:
+        return False, (
+            f"升级到 Lv.{next_level}「{next_info['name']}」条件不足:\n"
+            + "\n".join(f"  ❌ {f}" for f in fails)
+        )
+
+    # Deduct funds
     ok = await add_funds(session, company_id, -cost)
     if not ok:
-        return False, f"公司资金不足，升级到 Lv.{next_level} 需要 {fmt_traffic(cost)}"
+        return False, f"资金扣除失败"
 
     company.level = next_level
     await session.flush()
     await session.refresh(company)
 
     return True, (
-        f"升级成功! {company.name} → Lv.{next_level} 「{next_info['name']}」\n"
-        f"{next_info['description']}\n"
+        f"🎉 升级成功! {company.name} → Lv.{next_level}「{next_info['name']}」\n"
+        f"{'─' * 24}\n"
         f"永久日营收加成: +{fmt_traffic(next_info['daily_revenue_bonus'])}\n"
         f"员工上限: +{next_info['employee_limit_bonus']}"
     )

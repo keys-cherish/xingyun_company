@@ -31,6 +31,37 @@ from utils.formatters import fmt_traffic
 router = Router()
 
 
+# ---- /list_company 列出所有公司 ----
+
+@router.message(Command("list_company"))
+async def cmd_list_company(message: types.Message):
+    """列出服务器上所有公司。"""
+    from sqlalchemy import select
+    from db.models import Company, User
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(Company).order_by(Company.total_funds.desc())
+        )
+        companies = list(result.scalars().all())
+
+    if not companies:
+        await message.answer("目前还没有任何公司")
+        return
+
+    lines = [f"🏢 全服公司列表 (共 {len(companies)} 家)", f"{'─' * 28}"]
+    for i, c in enumerate(companies, 1):
+        type_info = get_company_type_info(c.company_type)
+        emoji = type_info["emoji"] if type_info else "🏢"
+        lines.append(
+            f"{i}. {emoji} {c.name} (ID:{c.id})\n"
+            f"   Lv.{c.level} | 资金:{fmt_traffic(c.total_funds)} | "
+            f"日营收:{fmt_traffic(c.daily_revenue)} | 👷{c.employee_count}人"
+        )
+
+    await message.answer("\n".join(lines))
+
+
 class CreateCompanyState(StatesGroup):
     waiting_type = State()
     waiting_name = State()
@@ -38,6 +69,115 @@ class CreateCompanyState(StatesGroup):
 
 class RenameCompanyState(StatesGroup):
     waiting_new_name = State()
+
+
+# ---- /member 命令：招聘/裁员 ----
+
+@router.message(Command("member"))
+async def cmd_member(message: types.Message):
+    """Handle /member add|minus <count>."""
+    tg_id = message.from_user.id
+    args = (message.text or "").split()
+
+    if len(args) < 3:
+        await message.answer(
+            "👷 员工管理:\n"
+            "  /member add <数量> — 招聘员工\n"
+            "  /member add max — 招满\n"
+            "  /member minus <数量> — 裁员\n"
+            "例: /member add 5"
+        )
+        return
+
+    action = args[1].lower()
+    count_str = args[2].strip()
+
+    if action not in ("add", "minus"):
+        await message.answer("❌ 操作只能是 add 或 minus")
+        return
+
+    async with async_session() as session:
+        async with session.begin():
+            user = await get_user_by_tg_id(session, tg_id)
+            if not user:
+                await message.answer("请先 /start 注册")
+                return
+            companies = await get_companies_by_owner(session, user.id)
+            if not companies:
+                await message.answer("你还没有公司")
+                return
+            company = companies[0]
+
+            type_info = get_company_type_info(company.company_type)
+            max_emp = cfg.base_employee_limit + cfg.employee_limit_per_level * (company.level - 1) + get_level_employee_bonus(company.level)
+            if type_info and type_info.get("extra_employee_limit"):
+                max_emp += type_info["extra_employee_limit"]
+
+            if action == "add":
+                available_slots = max_emp - company.employee_count
+                if available_slots <= 0:
+                    await message.answer(f"❌ 已达员工上限 ({max_emp}人)，升级公司可提升上限")
+                    return
+
+                if count_str == "max":
+                    hire_count = available_slots
+                else:
+                    try:
+                        hire_count = int(count_str)
+                    except ValueError:
+                        await message.answer("❌ 数量必须是数字或 max")
+                        return
+
+                hire_count = min(hire_count, available_slots)
+                if hire_count <= 0:
+                    await message.answer("❌ 无可用名额")
+                    return
+
+                hire_cost_per = cfg.employee_salary_base * 10
+                total_cost = hire_count * hire_cost_per
+
+                ok = await add_funds(session, company.id, -total_cost)
+                if not ok:
+                    affordable = company.total_funds // hire_cost_per
+                    if affordable <= 0:
+                        await message.answer(f"❌ 公司资金不足，每人招聘需要 {fmt_traffic(hire_cost_per)}")
+                        return
+                    hire_count = min(hire_count, affordable)
+                    total_cost = hire_count * hire_cost_per
+                    ok = await add_funds(session, company.id, -total_cost)
+                    if not ok:
+                        await message.answer("❌ 公司资金不足")
+                        return
+
+                company.employee_count += hire_count
+                await message.answer(
+                    f"✅ 招聘成功! 招了 {hire_count} 人\n"
+                    f"花费: {fmt_traffic(total_cost)}\n"
+                    f"当前员工: {company.employee_count}/{max_emp}"
+                )
+
+            else:  # minus
+                try:
+                    fire_count = int(count_str)
+                except ValueError:
+                    await message.answer("❌ 数量必须是数字")
+                    return
+
+                if company.employee_count <= 1:
+                    await message.answer("❌ 至少需要保留1名员工")
+                    return
+
+                max_fireable = company.employee_count - 1
+                fire_count = min(fire_count, max_fireable)
+                if fire_count <= 0:
+                    await message.answer("❌ 至少需要保留1名员工")
+                    return
+
+                company.employee_count -= fire_count
+                await message.answer(
+                    f"✅ 裁员完成! 裁了 {fire_count} 人\n"
+                    f"当前员工: {company.employee_count}/{max_emp}"
+                )
 
 
 # ---- 公共：渲染公司面板（供多处复用） ----

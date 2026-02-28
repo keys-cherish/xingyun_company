@@ -92,15 +92,6 @@ def company_detail_kb(company_id: int, is_owner: bool) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="🧪 AI研发", callback_data=f"aird:start:{company_id}"),
         ])
         buttons.append([
-            InlineKeyboardButton(text="➕ 招1人", callback_data=f"company:hire:{company_id}:1"),
-            InlineKeyboardButton(text="➕➕ 招5人", callback_data=f"company:hire:{company_id}:5"),
-            InlineKeyboardButton(text="➕ 招满", callback_data=f"company:hire:{company_id}:max"),
-        ])
-        buttons.append([
-            InlineKeyboardButton(text="➖ 裁1人", callback_data=f"company:fire:{company_id}:1"),
-            InlineKeyboardButton(text="➖➖ 裁5人", callback_data=f"company:fire:{company_id}:5"),
-        ])
-        buttons.append([
             InlineKeyboardButton(text="✏️ 改名", callback_data=f"company:rename:{company_id}"),
             InlineKeyboardButton(text="📋 Buff一览", callback_data=f"buff:list:{company_id}"),
         ])

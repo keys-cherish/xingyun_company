@@ -64,6 +64,10 @@ def _register_routers(dp: Dispatcher):
             return
         if message.text and message.text.startswith("/company"):
             return
+        if message.text and message.text.startswith("/list_company"):
+            return
+        if message.text and message.text.startswith("/member"):
+            return
         if message.text and message.text.startswith("/start"):
             return
         if message.text and message.text.startswith("/admin"):

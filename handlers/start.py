@@ -18,10 +18,12 @@ router = Router()
 
 BOT_COMMANDS = [
     BotCommand(command="start", description="开始游戏 / 个人面板"),
-    BotCommand(command="company", description="公司管理"),
+    BotCommand(command="company", description="我的公司"),
+    BotCommand(command="list_company", description="查看全服公司"),
     BotCommand(command="battle", description="商战（回复某人消息）"),
     BotCommand(command="cooperate", description="合作（all/公司ID）"),
     BotCommand(command="new_product", description="研发产品（名字 资金 人员）"),
+    BotCommand(command="member", description="员工管理（add/minus 数量）"),
     BotCommand(command="help", description="帮助信息"),
 ]
 
@@ -34,6 +36,8 @@ HELP_TEXT = (
     "  注册账号 / 查看个人面板\n\n"
     "/company\n"
     "  查看和管理你的公司\n\n"
+    "/list_company\n"
+    "  查看全服所有公司（按资金排序）\n\n"
     "⚔️ /battle\n"
     "  回复某人的消息发起商战\n"
     "  根据公司实力自动PK，胜者掠夺败者资金\n"
@@ -47,6 +51,10 @@ HELP_TEXT = (
     "  例: /new_product 智能助手 10000 3\n"
     "  投入资金决定基础日收入，人员提供加成\n"
     "  资金范围: 1,000 ~ 500,000\n\n"
+    "👷 /member <操作> <数量>\n"
+    "  /member add 5 — 招聘5人\n"
+    "  /member add max — 招满\n"
+    "  /member minus 3 — 裁员3人\n\n"
     "/admin <密钥>\n"
     "  管理员认证（需配置ID+密钥）\n\n"
     "/help\n"

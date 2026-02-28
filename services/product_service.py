@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cache.redis_client import get_redis
 from config import settings
-from db.models import Product
+from db.models import Company, Product, User
 from services.research_service import get_completed_techs
 from services.user_service import add_points
 from utils.formatters import fmt_traffic
@@ -29,6 +29,13 @@ _products_data: dict | None = None
 MAX_PRODUCT_DAILY_INCOME = 500_000
 MAX_PRODUCT_VERSION = 50
 MAX_DAILY_PRODUCT_CREATE = 3
+
+# Progressive gate: higher stage requires stronger company capability.
+PRODUCT_CREATE_COST_GROWTH = 0.30
+PRODUCT_CREATE_REPUTATION_STEP = 6
+PRODUCT_CREATE_EMPLOYEE_STEP = 1
+PRODUCT_UPGRADE_REPUTATION_STEP = 12
+PRODUCT_UPGRADE_EMPLOYEE_STEP = 2
 
 
 def _load_products() -> dict:
@@ -70,7 +77,16 @@ async def create_product(
     if product_key not in templates:
         return None, "无效的产品模板"
 
+    company = await session.get(Company, company_id)
+    if company is None:
+        return None, "公司不存在"
+    if company.owner_id != owner_user_id:
+        return None, "只有公司老板才能创建产品"
+
     tmpl = templates[product_key]
+    owner = await session.get(User, owner_user_id)
+    if owner is None:
+        return None, "用户不存在"
 
     # 检查前置科研
     completed = set(await get_completed_techs(session, company_id))
@@ -100,11 +116,35 @@ async def create_product(
     if today_count >= MAX_DAILY_PRODUCT_CREATE:
         return None, f"每日最多创建{MAX_DAILY_PRODUCT_CREATE}个产品"
 
+    # Progressive requirements based on how many products company already owns.
+    existing_count = (await session.execute(
+        select(sqlfunc.count()).select_from(Product).where(Product.company_id == company_id)
+    )).scalar() or 0
+
+    required_employees = max(1, 1 + existing_count * PRODUCT_CREATE_EMPLOYEE_STEP)
+    if company.employee_count < required_employees:
+        return None, (
+            f"员工不足，创建该产品需要至少 {required_employees} 人，"
+            f"当前仅 {company.employee_count} 人"
+        )
+
+    required_reputation = max(0, existing_count * PRODUCT_CREATE_REPUTATION_STEP)
+    if owner.reputation < required_reputation:
+        return None, (
+            f"声望不足，创建该产品需要声望 {required_reputation}，"
+            f"当前仅 {owner.reputation}"
+        )
+
+    dynamic_create_cost = max(
+        settings.product_create_cost,
+        int(settings.product_create_cost * (1 + existing_count * PRODUCT_CREATE_COST_GROWTH)),
+    )
+
     # 扣除费用（从公司资金）
     from services.company_service import add_funds
-    ok = await add_funds(session, company_id, -settings.product_create_cost)
+    ok = await add_funds(session, company_id, -dynamic_create_cost)
     if not ok:
-        return None, f"公司资金不足，需要 {fmt_traffic(settings.product_create_cost)}"
+        return None, f"公司资金不足，需要 {fmt_traffic(dynamic_create_cost)}"
 
     product = Product(
         company_id=company_id,
@@ -118,7 +158,14 @@ async def create_product(
 
     await add_points(owner_user_id, 10, session=session)
 
-    return product, f"产品「{name}」打造成功! 日收入: {fmt_traffic(tmpl['base_daily_income'])}"
+    # Quest progress
+    from services.quest_service import update_quest_progress
+    await update_quest_progress(session, owner_user_id, "product_count", increment=1)
+
+    return product, (
+        f"产品「{name}」打造成功! 日收入: {fmt_traffic(tmpl['base_daily_income'])} "
+        f"(研发投入: {fmt_traffic(dynamic_create_cost)})"
+    )
 
 
 async def upgrade_product(
@@ -130,6 +177,15 @@ async def upgrade_product(
     product = await session.get(Product, product_id)
     if product is None:
         return False, "产品不存在"
+
+    company = await session.get(Company, product.company_id)
+    if company is None:
+        return False, "公司不存在"
+    if company.owner_id != owner_user_id:
+        return False, "只有公司老板才能升级产品"
+    owner = await session.get(User, owner_user_id)
+    if owner is None:
+        return False, "用户不存在"
 
     # 版本上限
     if product.version >= MAX_PRODUCT_VERSION:
@@ -147,6 +203,21 @@ async def upgrade_product(
         hours = cd_ttl // 3600
         minutes = (cd_ttl % 3600) // 60
         return False, f"产品迭代冷却中，剩余{hours}时{minutes}分"
+
+    target_version = product.version + 1
+    required_employees = max(1, target_version * PRODUCT_UPGRADE_EMPLOYEE_STEP)
+    if company.employee_count < required_employees:
+        return False, (
+            f"员工不足，升级到 v{target_version} 需要至少 {required_employees} 人，"
+            f"当前仅 {company.employee_count} 人"
+        )
+
+    required_reputation = max(0, (target_version - 1) * PRODUCT_UPGRADE_REPUTATION_STEP)
+    if owner.reputation < required_reputation:
+        return False, (
+            f"声望不足，升级到 v{target_version} 需要声望 {required_reputation}，"
+            f"当前仅 {owner.reputation}"
+        )
 
     cost = int(settings.product_upgrade_cost_base * (1.3 ** (product.version - 1)))
     from services.company_service import add_funds

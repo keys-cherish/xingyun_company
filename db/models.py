@@ -177,3 +177,20 @@ class DailyReport(Base):
     dividend_paid: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
 
     company: Mapped[Company] = relationship("Company", back_populates="daily_reports")
+
+
+# ---------- Weekly Quests ----------
+
+class WeeklyTask(Base):
+    __tablename__ = "weekly_tasks"
+    __table_args__ = (UniqueConstraint("user_id", "quest_id", "week_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    quest_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    week_key: Mapped[str] = mapped_column(String(10), nullable=False)  # "2026-W09"
+    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    target: Mapped[int] = mapped_column(Integer, nullable=False)
+    completed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0/1
+    rewarded: Mapped[int] = mapped_column(Integer, nullable=False, default=0)   # 0/1
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())

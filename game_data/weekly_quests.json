@@ -1,0 +1,74 @@
+{
+  "quests": [
+    {
+      "quest_id": "reach_lv3",
+      "name": "成长之路",
+      "description": "公司升级到 Lv.3",
+      "target_type": "company_level",
+      "target_value": 3,
+      "reward_points": 50,
+      "reward_currency": 5000,
+      "reward_title": "成长新星"
+    },
+    {
+      "quest_id": "cooperate_3",
+      "name": "社交达人",
+      "description": "完成 3 次合作",
+      "target_type": "cooperation_count",
+      "target_value": 3,
+      "reward_points": 30,
+      "reward_currency": 3000,
+      "reward_title": null
+    },
+    {
+      "quest_id": "battle_win_2",
+      "name": "商战新秀",
+      "description": "赢得 2 场商战",
+      "target_type": "battle_win_count",
+      "target_value": 2,
+      "reward_points": 40,
+      "reward_currency": 4000,
+      "reward_title": "商战新秀"
+    },
+    {
+      "quest_id": "product_3",
+      "name": "产品经理",
+      "description": "创建 3 个产品",
+      "target_type": "product_count",
+      "target_value": 3,
+      "reward_points": 35,
+      "reward_currency": 3500,
+      "reward_title": null
+    },
+    {
+      "quest_id": "research_3",
+      "name": "科技先锋",
+      "description": "完成 3 项科技研发",
+      "target_type": "tech_count",
+      "target_value": 3,
+      "reward_points": 35,
+      "reward_currency": 3500,
+      "reward_title": "科技先锋"
+    },
+    {
+      "quest_id": "earn_50k",
+      "name": "日进斗金",
+      "description": "单日结算收入达到 50,000",
+      "target_type": "daily_revenue",
+      "target_value": 50000,
+      "reward_points": 60,
+      "reward_currency": 8000,
+      "reward_title": "日进斗金"
+    },
+    {
+      "quest_id": "employee_10",
+      "name": "人才储备",
+      "description": "公司员工达到 10 人",
+      "target_type": "employee_count",
+      "target_value": 10,
+      "reward_points": 25,
+      "reward_currency": 2000,
+      "reward_title": null
+    }
+  ]
+}

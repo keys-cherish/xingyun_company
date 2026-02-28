@@ -175,6 +175,10 @@ async def cmd_new_product(message: types.Message):
             await update_daily_revenue(session, company.id)
             await add_points(user.id, 10, session=session)
 
+            # Quest progress
+            from services.quest_service import update_quest_progress
+            await update_quest_progress(session, user.id, "product_count", increment=1)
+
     await message.answer(
         f"📦 产品「{product_name}」研发成功!\n"
         f"{'─' * 24}\n"

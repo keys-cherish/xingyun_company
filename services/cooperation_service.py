@@ -106,6 +106,11 @@ async def create_cooperation(
     await add_points(ca.owner_id, 8, session=session)
     await add_points(cb.owner_id, 8, session=session)
 
+    # Quest progress
+    from services.quest_service import update_quest_progress
+    await update_quest_progress(session, ca.owner_id, "cooperation_count", increment=1)
+    await update_quest_progress(session, cb.owner_id, "cooperation_count", increment=1)
+
     return True, f"「{ca.name}」与「{cb.name}」建立合作! 营收+{DEFAULT_BONUS_MULTIPLIER*100:.0f}%（今日有效）"
 
 
@@ -159,6 +164,11 @@ async def cooperate_all(
         await add_reputation(session, target.owner_id, rep)
         await add_points(my_company.owner_id, 8, session=session)
         await add_points(target.owner_id, 8, session=session)
+
+        # Quest progress
+        from services.quest_service import update_quest_progress
+        await update_quest_progress(session, my_company.owner_id, "cooperation_count", increment=1)
+        await update_quest_progress(session, target.owner_id, "cooperation_count", increment=1)
 
     await session.flush()
     return success, skip, msgs

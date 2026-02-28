@@ -34,6 +34,7 @@ def _register_routers(dp: Dispatcher):
     from handlers.admin import router as admin_router
     from handlers.exchange import router as exchange_router
     from handlers.battle import router as battle_router
+    from handlers.quest import router as quest_router
 
     dp.include_router(start_router)
     dp.include_router(company_router)
@@ -49,6 +50,7 @@ def _register_routers(dp: Dispatcher):
     dp.include_router(admin_router)
     dp.include_router(exchange_router)
     dp.include_router(battle_router)
+    dp.include_router(quest_router)
 
     # 私聊兜底：非管理员只允许/start和/company，管理员放行所有
     from handlers.common import reject_private, is_admin_authenticated
@@ -87,6 +89,10 @@ def _register_routers(dp: Dispatcher):
         if message.text and message.text.startswith("/rank_company"):
             return
         if message.text and message.text.startswith("/makeup"):
+            return
+        if message.text and message.text.startswith("/give_money"):
+            return
+        if message.text and message.text.startswith("/quest"):
             return
         # 已认证管理员放行
         if await is_admin_authenticated(message.from_user.id):

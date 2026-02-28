@@ -241,6 +241,10 @@ async def upgrade_company(
     await session.flush()
     await session.refresh(company)
 
+    # Quest progress
+    from services.quest_service import update_quest_progress
+    await update_quest_progress(session, company.owner_id, "company_level", current_value=next_level)
+
     return True, (
         f"🎉 升级成功! {company.name} → Lv.{next_level}「{next_info['name']}」\n"
         f"{'─' * 24}\n"

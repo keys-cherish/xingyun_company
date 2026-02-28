@@ -53,6 +53,9 @@ def main_menu_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="📈 排行榜", callback_data="menu:leaderboard"),
             InlineKeyboardButton(text="🏦 交易所", callback_data="menu:exchange"),
         ],
+        [
+            InlineKeyboardButton(text="🎯 周任务", callback_data="menu:quest"),
+        ],
     ])
 
 
@@ -99,7 +102,10 @@ def company_detail_kb(company_id: int, is_owner: bool) -> InlineKeyboardMarkup:
         buttons.append([
             InlineKeyboardButton(text="💵 投资", callback_data=f"shareholder:invest:{company_id}"),
         ])
-    buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:company")])
+    buttons.append([
+        InlineKeyboardButton(text="📋 公司列表", callback_data="menu:company_list"),
+        InlineKeyboardButton(text="🔙 主菜单", callback_data="menu:main"),
+    ])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -111,6 +117,7 @@ def invest_kb(company_id: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=f"投资 {a:,} 金币", callback_data=f"shareholder:doinvest:{company_id}:{a}")]
         for a in amounts
     ]
+    buttons.append([InlineKeyboardButton(text="✍️ 自定义金额（文本）", callback_data=f"shareholder:input:{company_id}")])
     buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 

@@ -10,10 +10,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
-from db.models import ResearchProgress
+from db.models import Company, ResearchProgress, User
 from services.user_service import add_reputation, add_traffic, add_points
 
 _tech_tree: dict | None = None
+
+# Progressive cost/requirement tuning for research.
+RESEARCH_COST_GROWTH_PER_COMPLETED = 0.20
+RESEARCH_REPUTATION_STEP = 8
+RESEARCH_EMPLOYEE_STEP = 1
 
 
 def _load_tech_tree() -> dict:
@@ -77,6 +82,16 @@ async def start_research(
 
     tech = tree[tech_id]
 
+    company = await session.get(Company, company_id)
+    if company is None:
+        return False, "公司不存在"
+    if company.owner_id != owner_user_id:
+        return False, "只有公司老板才能进行科研"
+
+    owner = await session.get(User, owner_user_id)
+    if owner is None:
+        return False, "用户不存在"
+
     # Check prerequisites
     completed = set(await get_completed_techs(session, company_id))
     for prereq in tech.get("prerequisites", []):
@@ -94,8 +109,30 @@ async def start_research(
     if existing.scalar_one_or_none():
         return False, "该科研已开始或已完成"
 
-    # Deduct cost
-    cost = tech.get("cost", settings.base_research_cost)
+    completed_count = len(completed)
+    base_cost = int(tech.get("cost", settings.base_research_cost))
+    scaled_cost = int(base_cost * (1 + completed_count * RESEARCH_COST_GROWTH_PER_COMPLETED))
+    cost = max(base_cost, scaled_cost)
+
+    required_employees = int(
+        tech.get("required_employees", max(1, 1 + completed_count * RESEARCH_EMPLOYEE_STEP))
+    )
+    if company.employee_count < required_employees:
+        return False, (
+            f"员工不足，科研「{tech['name']}」需要至少 {required_employees} 人，"
+            f"当前仅 {company.employee_count} 人"
+        )
+
+    required_reputation = int(
+        tech.get("required_reputation", completed_count * RESEARCH_REPUTATION_STEP)
+    )
+    if owner.reputation < required_reputation:
+        return False, (
+            f"声望不足，科研「{tech['name']}」需要声望 {required_reputation}，"
+            f"当前仅 {owner.reputation}"
+        )
+
+    # Deduct cost from owner wallet
     ok = await add_traffic(session, owner_user_id, -cost)
     if not ok:
         from utils.formatters import fmt_traffic
@@ -114,7 +151,10 @@ async def start_research(
 
     from utils.formatters import fmt_duration
     duration_str = fmt_duration(tech.get("duration_seconds", 3600))
-    return True, f"开始研究「{tech['name']}」，预计{duration_str}完成"
+    return True, (
+        f"开始研究「{tech['name']}」，预计{duration_str}完成 "
+        f"(本次投入: {cost:,} 金币)"
+    )
 
 
 async def check_and_complete_research(session: AsyncSession, company_id: int) -> list[str]:
@@ -143,6 +183,15 @@ async def check_and_complete_research(session: AsyncSession, company_id: int) ->
                 rep = tech.get("reputation_reward", settings.reputation_per_research)
                 await add_reputation(session, company.owner_id, rep)
                 await add_points(company.owner_id, rep, session=session)
+
+                # Quest progress
+                from services.quest_service import update_quest_progress
+                total_completed = len(completed_names) + len(
+                    await get_completed_techs(session, company_id)
+                )
+                await update_quest_progress(
+                    session, company.owner_id, "tech_count", current_value=total_completed
+                )
 
     await session.flush()
     return completed_names

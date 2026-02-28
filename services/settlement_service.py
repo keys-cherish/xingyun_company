@@ -85,6 +85,11 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
     # Total gross
     total_income = product_income + level_revenue_bonus + cooperation_bonus + realestate_income + reputation_buff_income + ad_boost_income + shop_buff_income + type_income
 
+    # Quest progress for daily_revenue and employee_count
+    from services.quest_service import update_quest_progress
+    await update_quest_progress(session, company.owner_id, "daily_revenue", current_value=total_income)
+    await update_quest_progress(session, company.owner_id, "employee_count", current_value=company.employee_count)
+
     # Tax (on gross income)
     tax = int(total_income * settings.tax_rate)
 

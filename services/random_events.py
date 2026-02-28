@@ -63,19 +63,53 @@ EVENTS: list[GameEvent] = [
 # Chance that any event fires during settlement (per company)
 EVENT_CHANCE = 0.35  # 35% chance per company per day
 
+# Positive events pool (for newbie highlight)
+POSITIVE_EVENTS: list[GameEvent] = [e for e in EVENTS if e.effect_value > 0]
+
+# Newbie highlight: max company age for guaranteed first positive event
+_NEWBIE_HIGHLIGHT_MAX_DAYS = 7
+
+
+async def _is_newbie_highlight(company: Company) -> bool:
+    """First settlement for a young company? Guarantee a positive event."""
+    from cache.redis_client import get_redis
+    r = await get_redis()
+    key = f"newbie_highlight:{company.id}"
+    if await r.exists(key):
+        return False
+    age = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) - company.created_at
+    return age.days <= _NEWBIE_HIGHLIGHT_MAX_DAYS
+
+
+async def _mark_newbie_highlight_done(company_id: int):
+    from cache.redis_client import get_redis
+    r = await get_redis()
+    await r.set(f"newbie_highlight:{company_id}", "1")
+
 
 async def roll_daily_events(session: AsyncSession, company: Company) -> list[str]:
     """Roll for random events during daily settlement. Returns event descriptions."""
     from config import settings
     messages = []
 
-    if random.random() > settings.event_chance:
+    is_newbie = await _is_newbie_highlight(company)
+
+    if not is_newbie and random.random() > settings.event_chance:
         return messages  # No event today
 
-    # Roll 1-2 events
-    num_events = random.choices([1, 2], weights=[75, 25], k=1)[0]
-    weights = [e.weight for e in EVENTS]
-    selected = random.choices(EVENTS, weights=weights, k=num_events)
+    if is_newbie:
+        # Force 1 positive event, maybe 1 extra normal event
+        pos_weights = [e.weight for e in POSITIVE_EVENTS]
+        selected = list(random.choices(POSITIVE_EVENTS, weights=pos_weights, k=1))
+        if random.random() < 0.4:
+            all_weights = [e.weight for e in EVENTS]
+            selected += random.choices(EVENTS, weights=all_weights, k=1)
+        await _mark_newbie_highlight_done(company.id)
+    else:
+        num_events = random.choices([1, 2], weights=[75, 25], k=1)[0]
+        weights = [e.weight for e in EVENTS]
+        selected = list(random.choices(EVENTS, weights=weights, k=num_events))
+
     # Deduplicate by name
     seen = set()
     unique = []
@@ -90,12 +124,13 @@ async def roll_daily_events(session: AsyncSession, company: Company) -> list[str
 
     for event in unique:
         if has_hedge and event.effect_value < 0:
-            # Buff consumed on first negative event blocked
             await consume_buff(company.id, "risk_hedge")
             messages.append(f"🛡 【风险对冲】成功抵御了「{event.name}」!")
-            has_hedge = False  # Only blocks one event
+            has_hedge = False
             continue
         msg = await _apply_event(session, company, event)
+        if is_newbie and event.effect_value > 0 and not any("新手高光" in m for m in messages):
+            messages.append(f"🌟 【新手高光】好运降临新公司！")
         messages.append(msg)
 
     return messages
@@ -106,7 +141,6 @@ async def _apply_event(session: AsyncSession, company: Company, event: GameEvent
     effect_desc = ""
 
     if event.effect_type == "income_pct":
-        # Adjust daily_revenue temporarily (applied as bonus/penalty in settlement)
         change = int(company.daily_revenue * event.effect_value)
         await add_funds(session, company.id, change)
         sign = "+" if change >= 0 else ""
@@ -114,12 +148,8 @@ async def _apply_event(session: AsyncSession, company: Company, event: GameEvent
 
     elif event.effect_type == "flat_traffic":
         amount = int(event.effect_value)
-        if amount > 0:
-            await add_funds(session, company.id, amount)
-            effect_desc = f"资金+{amount}"
-        else:
-            await add_funds(session, company.id, amount)
-            effect_desc = f"资金{amount}"
+        await add_funds(session, company.id, amount)
+        effect_desc = f"资金{'+' if amount > 0 else ''}{amount}"
 
     elif event.effect_type == "reputation":
         rep = int(event.effect_value)
@@ -139,7 +169,6 @@ async def _apply_event(session: AsyncSession, company: Company, event: GameEvent
         effect_desc = f"员工变动: {sign}{change} (当前: {new_count}人)"
 
     elif event.effect_type == "product_quality":
-        # Adjust quality of a random product
         result = await session.execute(
             select(Product).where(Product.company_id == company.id)
         )
@@ -152,7 +181,6 @@ async def _apply_event(session: AsyncSession, company: Company, event: GameEvent
         else:
             effect_desc = "无产品受影响"
 
-    # Award points for experiencing events (even bad ones are "content")
     await add_points(company.owner_id, 1, session=session)
 
     category_emoji = {"employee": "👤", "market": "📊", "pr": "📰", "lucky": "🎲"}

@@ -21,12 +21,14 @@ BOT_COMMANDS = [
     BotCommand(command="company", description="我的公司"),
     BotCommand(command="list_company", description="查看全服公司"),
     BotCommand(command="rank_company", description="综合实力排行榜"),
-    BotCommand(command="battle", description="商战（回复某人消息）"),
+    BotCommand(command="battle", description="商战（回复+可选战术）"),
     BotCommand(command="cooperate", description="合作（回复/all/公司ID）"),
     BotCommand(command="new_product", description="研发产品（名字 资金 人员）"),
     BotCommand(command="member", description="员工管理（add/minus 数量）"),
     BotCommand(command="dissolve", description="注销公司"),
+    BotCommand(command="quest", description="周任务清单"),
     BotCommand(command="help", description="帮助信息"),
+    BotCommand(command="give_money", description="超管发放金币（回复+金额）"),
 ]
 
 HELP_TEXT = (
@@ -38,7 +40,8 @@ HELP_TEXT = (
     "/company — 查看和管理公司\n"
     "/list_company — 全服公司列表\n"
     "/rank_company — 综合实力排行\n\n"
-    "⚔️ /battle — 回复某人发起商战\n"
+    "⚔️ /battle [战术] — 回复某人发起商战\n"
+    "  战术: 稳扎稳打 / 激进营销 / 奇袭渗透\n"
     "🤝 /cooperate — 回复某人/all/公司ID 合作\n"
     "  每次+5%，次日清空，上限50%(满级100%)\n\n"
     "📦 /new_product <名字> <资金> <人员>\n"
@@ -110,6 +113,10 @@ async def cb_menu_profile(callback: types.CallbackQuery):
 
     company_names = ", ".join(c.name for c in companies) if companies else "无"
 
+    from services.quest_service import get_user_titles
+    titles = await get_user_titles(user.id)
+    title_str = ", ".join(titles) if titles else "无"
+
     text = (
         f"📊 个人面板 — {callback.from_user.full_name}\n"
         f"{'─' * 24}\n"
@@ -117,6 +124,7 @@ async def cb_menu_profile(callback: types.CallbackQuery):
         f"⭐ 声望: {reputation}\n"
         f"🎁 积分: {points:,}\n"
         f"📦 额度: {fmt_quota(quota)}\n"
+        f"🏅 称号: {title_str}\n"
         f"🏢 公司: {company_names}\n"
     )
 

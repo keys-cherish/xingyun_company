@@ -1,13 +1,27 @@
-"""Number and currency formatting helpers."""
+"""Number, currency, and quota formatting helpers."""
+
+from __future__ import annotations
+
+CURRENCY_NAME = "金币"
+
+
+def fmt_currency(amount: int) -> str:
+    """Format in-game currency amount."""
+    return f"{amount:,} {CURRENCY_NAME}"
+
+
+def fmt_quota(amount_mb: int) -> str:
+    """Format quota amount with MB/GB/TB units (1024 based)."""
+    if amount_mb >= 1024 * 1024:  # >= 1TB
+        return f"{amount_mb / (1024 * 1024):.2f}TB ({amount_mb:,}MB)"
+    if amount_mb >= 1024:  # >= 1GB
+        return f"{amount_mb / 1024:.2f}GB ({amount_mb:,}MB)"
+    return f"{amount_mb:,}MB"
 
 
 def fmt_traffic(amount: int) -> str:
-    """Format traffic amount with MB/GB/TB unit (1024 based)."""
-    if amount >= 1024 * 1024:  # >= 1TB
-        return f"{amount / (1024 * 1024):.2f}TB ({amount:,}MB)"
-    if amount >= 1024:  # >= 1GB
-        return f"{amount / 1024:.2f}GB ({amount:,}MB)"
-    return f"{amount:,}MB"
+    """Backward-compatible alias: legacy 'traffic' now represents currency."""
+    return fmt_currency(amount)
 
 
 def fmt_pct(value: float) -> str:
@@ -20,11 +34,12 @@ def fmt_shares(shares: float) -> str:
 
 
 def fmt_reputation_buff(reputation: int) -> str:
-    """Calculate and display the revenue buff from reputation.
+    """Calculate and display revenue buff from reputation.
 
-    Buff = min(reputation * 0.1%, max_buff).  Non-stackable (single highest buff applies).
+    Buff = min(reputation * 0.1%, max_buff). Non-stackable.
     """
     from config import settings
+
     buff = min(reputation * 0.001, settings.max_reputation_buff_pct)
     return f"+{buff * 100:.1f}%营收"
 
@@ -32,6 +47,7 @@ def fmt_reputation_buff(reputation: int) -> str:
 def reputation_buff_multiplier(reputation: int) -> float:
     """Return the multiplier (e.g. 1.15 for +15%)."""
     from config import settings
+
     buff = min(reputation * 0.001, settings.max_reputation_buff_pct)
     return 1.0 + buff
 

@@ -20,6 +20,7 @@ from config import settings
 from db.models import Product
 from services.research_service import get_completed_techs
 from services.user_service import add_traffic, add_points
+from utils.formatters import fmt_traffic
 
 _products_data: dict | None = None
 
@@ -89,7 +90,7 @@ async def create_product(
     # 扣除费用
     ok = await add_traffic(session, owner_user_id, -settings.product_create_cost)
     if not ok:
-        return None, f"流量不足，需要{settings.product_create_cost}MB"
+        return None, f"金币不足，需要 {fmt_traffic(settings.product_create_cost)}"
 
     product = Product(
         company_id=company_id,
@@ -103,7 +104,7 @@ async def create_product(
 
     await add_points(owner_user_id, 10, session=session)
 
-    return product, f"产品「{name}」打造成功! 日收入: {tmpl['base_daily_income']}MB"
+    return product, f"产品「{name}」打造成功! 日收入: {fmt_traffic(tmpl['base_daily_income'])}"
 
 
 async def upgrade_product(
@@ -136,7 +137,7 @@ async def upgrade_product(
     cost = int(settings.product_upgrade_cost_base * (1.3 ** (product.version - 1)))
     ok = await add_traffic(session, owner_user_id, -cost)
     if not ok:
-        return False, f"流量不足，升级需要{cost}MB"
+        return False, f"金币不足，升级需要 {fmt_traffic(cost)}"
 
     # 迭代收入增幅随版本递减（防止无限刷）
     diminish = max(0.05, settings.product_upgrade_income_pct - (product.version - 1) * 0.01)
@@ -156,5 +157,5 @@ async def upgrade_product(
 
     return True, (
         f"产品「{product.name}」升级到v{product.version}! "
-        f"日收入+{actual_boost} → {product.daily_income}MB"
+        f"日收入+{actual_boost} → {fmt_traffic(product.daily_income)}"
     )

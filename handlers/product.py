@@ -7,7 +7,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from db.engine import async_session
 from keyboards.menus import product_detail_kb, product_template_kb
-from services.company_service import get_company_by_id
+from services.company_service import get_company_by_id, update_daily_revenue
 from services.product_service import (
     create_product,
     get_available_product_templates,
@@ -65,7 +65,34 @@ async def _refresh_product_list(callback: types.CallbackQuery, company_id: int):
 
 @router.callback_query(F.data == "menu:product")
 async def cb_product_menu(callback: types.CallbackQuery):
-    await callback.message.edit_text("📦 产品管理\n请先从公司面板进入产品列表。")
+    """Auto-select company for products if only one, otherwise show selector."""
+    tg_id = callback.from_user.id
+    async with async_session() as session:
+        user = await get_user_by_tg_id(session, tg_id)
+        if not user:
+            await callback.answer("请先 /start 注册", show_alert=True)
+            return
+        from services.company_service import get_companies_by_owner
+        companies = await get_companies_by_owner(session, user.id)
+
+    if not companies:
+        await callback.answer("你还没有公司", show_alert=True)
+        return
+
+    if len(companies) == 1:
+        callback.data = f"product:list:{companies[0].id}"
+        await cb_product_list(callback)
+        return
+
+    buttons = [
+        [InlineKeyboardButton(text=c.name, callback_data=f"product:list:{c.id}")]
+        for c in companies
+    ]
+    buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:main")])
+    await callback.message.edit_text(
+        "📦 选择公司查看产品:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+    )
     await callback.answer()
 
 
@@ -132,6 +159,8 @@ async def cb_create_product(callback: types.CallbackQuery):
                 await callback.answer("只有公司老板才能创建产品", show_alert=True)
                 return
             product, msg = await create_product(session, company_id, user.id, product_key)
+            if product:
+                await update_daily_revenue(session, company_id)
 
     await callback.answer(msg, show_alert=True)
     if product:
@@ -170,6 +199,7 @@ async def cb_upgrade_product(callback: types.CallbackQuery):
             # Get final product state for the summary
             from db.models import Product as ProductModel
             product = await session.get(ProductModel, product_id)
+            await update_daily_revenue(session, product.company_id)
 
     if upgraded == 1:
         await callback.answer(last_msg, show_alert=True)
@@ -207,6 +237,7 @@ async def cb_delete_product(callback: types.CallbackQuery):
                 return
             name = product.name
             await session.delete(product)
+            await update_daily_revenue(session, company_id)
 
     await callback.answer(f"产品「{name}」已下架", show_alert=True)
     await _refresh_product_list(callback, company_id)

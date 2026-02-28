@@ -85,7 +85,7 @@ async def cb_buff_list(callback: types.CallbackQuery):
         "",
         "【路演Buff】(通过路演随机获得)",
         "  声望提升 → 影响声望Buff",
-        "  直接流量/积分奖励",
+        "  直接金币/积分奖励",
         "",
         f"【公司类型Buff】({type_info['name'] if type_info else '未知'})",
         f"  收入加成: {'+' if type_income_buff >= 0 else ''}{type_income_buff:.0f}%",
@@ -163,7 +163,7 @@ class AdminConfigState(StatesGroup):
 
 def _admin_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="初始流量", callback_data="admin:cfg:initial_traffic")],
+        [InlineKeyboardButton(text="初始金币", callback_data="admin:cfg:initial_traffic")],
         [InlineKeyboardButton(text="创建公司费用", callback_data="admin:cfg:company_creation_cost")],
         [InlineKeyboardButton(text="最低老板持股%", callback_data="admin:cfg:min_owner_share_pct")],
         [InlineKeyboardButton(text="税率", callback_data="admin:cfg:tax_rate")],

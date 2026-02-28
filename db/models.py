@@ -1,4 +1,4 @@
-"""All ORM models for the Xingyun Company game."""
+"""All ORM models for the Business Empire game."""
 
 from __future__ import annotations
 

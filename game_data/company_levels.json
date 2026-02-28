@@ -1,0 +1,75 @@
+{
+  "levels": {
+    "1": {
+      "name": "初创企业",
+      "upgrade_cost": 0,
+      "daily_revenue_bonus": 0,
+      "employee_limit_bonus": 0,
+      "description": "起步阶段"
+    },
+    "2": {
+      "name": "小型企业",
+      "upgrade_cost": 20000,
+      "daily_revenue_bonus": 500,
+      "employee_limit_bonus": 2,
+      "description": "站稳脚跟，日营收+500"
+    },
+    "3": {
+      "name": "成长企业",
+      "upgrade_cost": 50000,
+      "daily_revenue_bonus": 1500,
+      "employee_limit_bonus": 3,
+      "description": "开始扩张，日营收+1500"
+    },
+    "4": {
+      "name": "中型企业",
+      "upgrade_cost": 120000,
+      "daily_revenue_bonus": 4000,
+      "employee_limit_bonus": 5,
+      "description": "行业新星，日营收+4000"
+    },
+    "5": {
+      "name": "大型企业",
+      "upgrade_cost": 300000,
+      "daily_revenue_bonus": 10000,
+      "employee_limit_bonus": 8,
+      "description": "行业领军，日营收+10000"
+    },
+    "6": {
+      "name": "集团企业",
+      "upgrade_cost": 800000,
+      "daily_revenue_bonus": 25000,
+      "employee_limit_bonus": 12,
+      "description": "商业帝国初现，日营收+25000"
+    },
+    "7": {
+      "name": "跨国集团",
+      "upgrade_cost": 2000000,
+      "daily_revenue_bonus": 60000,
+      "employee_limit_bonus": 18,
+      "description": "全球布局，日营收+60000"
+    },
+    "8": {
+      "name": "商业帝国",
+      "upgrade_cost": 5000000,
+      "daily_revenue_bonus": 150000,
+      "employee_limit_bonus": 25,
+      "description": "商界传奇，日营收+150000"
+    },
+    "9": {
+      "name": "世界500强",
+      "upgrade_cost": 15000000,
+      "daily_revenue_bonus": 400000,
+      "employee_limit_bonus": 35,
+      "description": "登顶世界，日营收+400000"
+    },
+    "10": {
+      "name": "商业神话",
+      "upgrade_cost": 50000000,
+      "daily_revenue_bonus": 1000000,
+      "employee_limit_bonus": 50,
+      "description": "传说中的存在，日营收+1000000"
+    }
+  },
+  "max_level": 10
+}

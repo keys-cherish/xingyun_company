@@ -38,6 +38,10 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
     # 1. Product income
     product_income = company.daily_revenue
 
+    # 1b. Company level revenue bonus (permanent)
+    from services.company_service import get_level_revenue_bonus
+    level_revenue_bonus = get_level_revenue_bonus(company.level)
+
     # 2. Cooperation bonus (non-stackable, highest single bonus)
     coop_bonus_rate = await get_cooperation_bonus(session, company.id)
     cooperation_bonus = int(product_income * coop_bonus_rate)
@@ -57,13 +61,18 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
     ad_boost_rate = await get_ad_boost(company.id)
     ad_boost_income = int(product_income * ad_boost_rate)
 
+    # 5b. Shop buff (market_analysis): product income boost
+    from services.shop_service import get_income_buff_multiplier
+    shop_buff_mult = await get_income_buff_multiplier(company.id)
+    shop_buff_income = int(product_income * (shop_buff_mult - 1.0))
+
     # 6. Company type buff (收入加成)
     type_info = get_company_type_info(company.company_type)
     type_income_bonus = type_info.get("income_bonus", 0.0) if type_info else 0.0
     type_income = int(product_income * type_income_bonus)
 
     # Total gross
-    total_income = product_income + cooperation_bonus + realestate_income + reputation_buff_income + ad_boost_income + type_income
+    total_income = product_income + level_revenue_bonus + cooperation_bonus + realestate_income + reputation_buff_income + ad_boost_income + shop_buff_income + type_income
 
     # Tax (on gross income)
     tax = int(total_income * settings.tax_rate)
@@ -81,8 +90,9 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
     operating_cost = base_operating + tax
     profit = total_income - operating_cost
 
-    # Add profit to company funds
-    if profit > 0:
+    # Apply net profit/loss to company funds.
+    # Negative profit should also reduce funds (until add_funds validation boundary).
+    if profit != 0:
         await add_funds(session, company.id, profit)
 
     # Distribute dividends
@@ -107,8 +117,14 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
     session.add(report)
     await session.flush()
 
-    # 更新排行榜
+    # 更新排行榜（多维度）
     await update_leaderboard("revenue", company.name, total_income)
+    await update_leaderboard("funds", company.name, company.total_funds)
+    valuation = int(
+        company.total_funds * settings.valuation_fund_coeff
+        + company.daily_revenue * settings.valuation_income_days
+    )
+    await update_leaderboard("valuation", company.name, valuation)
 
     return report, event_messages
 

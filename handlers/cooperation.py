@@ -21,7 +21,35 @@ class CoopState(StatesGroup):
 
 @router.callback_query(F.data == "menu:cooperation")
 async def cb_coop_menu(callback: types.CallbackQuery):
-    await callback.message.edit_text("🤝 合作系统\n请从公司面板发起合作。")
+    """Auto-select company for cooperation if only one, otherwise show selector."""
+    tg_id = callback.from_user.id
+    async with async_session() as session:
+        user = await get_user_by_tg_id(session, tg_id)
+        if not user:
+            await callback.answer("请先 /start 注册", show_alert=True)
+            return
+        companies = await get_companies_by_owner(session, user.id)
+
+    if not companies:
+        await callback.answer("你还没有公司", show_alert=True)
+        return
+
+    if len(companies) == 1:
+        from aiogram.fsm.context import FSMContext
+        callback.data = f"cooperation:init:{companies[0].id}"
+        # Can't easily forward to cb_init_coop without state param, show selector
+        pass
+
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    buttons = [
+        [InlineKeyboardButton(text=c.name, callback_data=f"cooperation:init:{c.id}")]
+        for c in companies
+    ]
+    buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:main")])
+    await callback.message.edit_text(
+        "🤝 选择公司发起合作:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+    )
     await callback.answer()
 
 

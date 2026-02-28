@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     allowed_chat_ids: str = ""
 
     # Database
-    database_url: str = "postgresql+asyncpg://xingyun:xingyun@localhost:5432/xingyun"
+    database_url: str = "postgresql+asyncpg://mycompany:mycompany@localhost:5432/mycompany"
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"

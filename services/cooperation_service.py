@@ -15,8 +15,13 @@ DEFAULT_COOP_DAYS = 7
 DEFAULT_BONUS_MULTIPLIER = 0.10  # +10% revenue
 
 
+def _utc_now_naive() -> dt.datetime:
+    """Return current UTC time as naive datetime for TIMESTAMP WITHOUT TIME ZONE."""
+    return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+
+
 async def get_active_cooperations(session: AsyncSession, company_id: int) -> list[Cooperation]:
-    now = dt.datetime.now(dt.timezone.utc)
+    now = _utc_now_naive()
     result = await session.execute(
         select(Cooperation).where(
             or_(
@@ -61,7 +66,7 @@ async def create_cooperation(
         if partner == company_b_id:
             return False, "已有合作关系"
 
-    now = dt.datetime.now(dt.timezone.utc)
+    now = _utc_now_naive()
     coop = Cooperation(
         company_a_id=company_a_id,
         company_b_id=company_b_id,

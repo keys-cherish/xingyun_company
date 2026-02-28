@@ -1,7 +1,7 @@
 [project]
-name = "xingyun-company"
-version = "0.1.0"
-description = "星云公司 - Telegram 公司经营游戏机器人"
+name = "my-company"
+version = "0.2.0"
+description = "商业帝国 - Telegram 公司经营游戏机器人"
 requires-python = ">=3.11"
 dependencies = [
     "aiogram>=3.4,<4",
@@ -17,4 +17,4 @@ dependencies = [
 ]
 
 [project.scripts]
-xingyun = "bot:main"
+mycompany = "bot:main"

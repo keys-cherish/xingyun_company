@@ -32,6 +32,7 @@ def _register_routers(dp: Dispatcher):
     from handlers.ad import router as ad_router
     from handlers.ai_rd import router as ai_rd_router
     from handlers.admin import router as admin_router
+    from handlers.exchange import router as exchange_router
 
     dp.include_router(start_router)
     dp.include_router(company_router)
@@ -45,19 +46,27 @@ def _register_routers(dp: Dispatcher):
     dp.include_router(ad_router)
     dp.include_router(ai_rd_router)
     dp.include_router(admin_router)
+    dp.include_router(exchange_router)
 
     # 私聊兜底：非管理员只允许/start和/company，管理员放行所有
     from handlers.common import reject_private, is_admin_authenticated
     from aiogram import F, Router
+    from aiogram.fsm.context import FSMContext
     fallback = Router()
 
     @fallback.message(F.chat.type == "private")
-    async def _private_fallback(message):
+    async def _private_fallback(message, state: FSMContext):
+        # 如果用户在FSM状态中（如合作输入公司ID），放行
+        current_state = await state.get_state()
+        if current_state is not None:
+            return
         if message.text and message.text.startswith("/company"):
             return
         if message.text and message.text.startswith("/start"):
             return
         if message.text and message.text.startswith("/admin"):
+            return
+        if message.text and message.text.startswith("/help"):
             return
         # 已认证管理员放行
         if await is_admin_authenticated(message.from_user.id):
@@ -90,6 +99,10 @@ async def main():
     from utils.throttle import ThrottleMiddleware
     dp.message.middleware(ThrottleMiddleware())
     dp.callback_query.middleware(ThrottleMiddleware())
+
+    # 注册Bot命令列表（Telegram输入框命令提示）
+    from handlers.start import BOT_COMMANDS
+    await bot.set_my_commands(BOT_COMMANDS)
 
     # 启动定时任务
     set_bot(bot)

@@ -21,8 +21,35 @@ router = Router()
 
 @router.callback_query(F.data == "menu:research")
 async def cb_research_menu(callback: types.CallbackQuery):
+    """Auto-select company for research if only one, otherwise show selector."""
+    tg_id = callback.from_user.id
+    async with async_session() as session:
+        user = await get_user_by_tg_id(session, tg_id)
+        if not user:
+            await callback.answer("请先 /start 注册", show_alert=True)
+            return
+        from services.company_service import get_companies_by_owner
+        companies = await get_companies_by_owner(session, user.id)
+
+    if not companies:
+        await callback.answer("你还没有公司", show_alert=True)
+        return
+
+    if len(companies) == 1:
+        # Auto-redirect to the single company's research
+        callback.data = f"research:list:{companies[0].id}"
+        await cb_research_list(callback)
+        return
+
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    buttons = [
+        [InlineKeyboardButton(text=c.name, callback_data=f"research:list:{c.id}")]
+        for c in companies
+    ]
+    buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:main")])
     await callback.message.edit_text(
-        "🔬 科研中心\n请先选择一个公司查看科研。"
+        "🔬 选择公司查看科研:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
     )
     await callback.answer()
 

@@ -57,7 +57,7 @@ async def purchase_building(
 
     ok = await add_funds(session, company_id, -price)
     if not ok:
-        return False, f"公司资金不足，需要{price}MB"
+        return False, f"公司资金不足，需要 {price:,} 金币"
 
     estate = RealEstate(
         company_id=company_id,
@@ -70,4 +70,4 @@ async def purchase_building(
 
     await add_points(owner_tg_id, 15)
 
-    return True, f"成功购买「{bld['name']}」! 每日收益: {bld['daily_dividend']}MB"
+    return True, f"成功购买「{bld['name']}」! 每日收益: {bld['daily_dividend']:,} 金币"

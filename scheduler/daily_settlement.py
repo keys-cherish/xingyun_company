@@ -28,6 +28,14 @@ async def _daily_job():
             reports = await settle_all(session)
     logger.info("Daily settlement completed: %d companies processed", len(reports))
 
+    # Refresh black market deals for the new day
+    try:
+        from services.shop_service import generate_black_market
+        await generate_black_market()
+        logger.info("Black market refreshed")
+    except Exception:
+        logger.exception("Failed to refresh black market")
+
     # Notify owners
     if _bot_ref:
         for company, report, events in reports:

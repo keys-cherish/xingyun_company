@@ -84,7 +84,17 @@ async def roll_daily_events(session: AsyncSession, company: Company) -> list[str
             seen.add(e.name)
             unique.append(e)
 
+    # Check risk_hedge buff (skip negative events)
+    from services.shop_service import should_skip_negative_event, consume_buff
+    has_hedge = await should_skip_negative_event(company.id)
+
     for event in unique:
+        if has_hedge and event.effect_value < 0:
+            # Buff consumed on first negative event blocked
+            await consume_buff(company.id, "risk_hedge")
+            messages.append(f"🛡 【风险对冲】成功抵御了「{event.name}」!")
+            has_hedge = False  # Only blocks one event
+            continue
         msg = await _apply_event(session, company, event)
         messages.append(msg)
 

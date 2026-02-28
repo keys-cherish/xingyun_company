@@ -51,7 +51,8 @@ async def create_company(
     # Deduct traffic
     ok = await add_traffic(session, owner_id, -settings.company_creation_cost)
     if not ok:
-        return None, f"流量不足，创建公司需要{settings.company_creation_cost}MB"
+        from utils.formatters import fmt_traffic
+        return None, f"金币不足，创建公司需要 {fmt_traffic(settings.company_creation_cost)}"
 
     type_info = types[company_type]
     company = Company(
@@ -121,3 +122,86 @@ async def add_funds(session: AsyncSession, company_id: int, amount: int) -> bool
     # 立即刷新对象，避免惰性加载导致MissingGreenlet
     await session.refresh(company)
     return True
+
+
+# ---------- Company levels ----------
+
+_company_levels: dict | None = None
+
+
+def load_company_levels() -> dict:
+    global _company_levels
+    if _company_levels is None:
+        path = Path(__file__).resolve().parent.parent / "game_data" / "company_levels.json"
+        with open(path, encoding="utf-8") as f:
+            _company_levels = json.load(f)
+    return _company_levels
+
+
+def get_level_info(level: int) -> dict | None:
+    data = load_company_levels()
+    return data["levels"].get(str(level))
+
+
+def get_max_level() -> int:
+    data = load_company_levels()
+    return data.get("max_level", 10)
+
+
+def get_level_revenue_bonus(level: int) -> int:
+    """Get cumulative daily revenue bonus from all levels up to and including current level."""
+    data = load_company_levels()
+    total = 0
+    for lv in range(1, level + 1):
+        info = data["levels"].get(str(lv))
+        if info:
+            total += info.get("daily_revenue_bonus", 0)
+    return total
+
+
+def get_level_employee_bonus(level: int) -> int:
+    """Get cumulative employee limit bonus from all levels."""
+    data = load_company_levels()
+    total = 0
+    for lv in range(1, level + 1):
+        info = data["levels"].get(str(lv))
+        if info:
+            total += info.get("employee_limit_bonus", 0)
+    return total
+
+
+async def upgrade_company(
+    session: AsyncSession,
+    company_id: int,
+) -> tuple[bool, str]:
+    """Upgrade company to next level. Costs company funds."""
+    from utils.formatters import fmt_traffic
+
+    company = await session.get(Company, company_id)
+    if company is None:
+        return False, "公司不存在"
+
+    max_level = get_max_level()
+    if company.level >= max_level:
+        return False, f"已达最高等级 Lv.{max_level}"
+
+    next_level = company.level + 1
+    next_info = get_level_info(next_level)
+    if not next_info:
+        return False, "等级数据异常"
+
+    cost = next_info["upgrade_cost"]
+    ok = await add_funds(session, company_id, -cost)
+    if not ok:
+        return False, f"公司资金不足，升级到 Lv.{next_level} 需要 {fmt_traffic(cost)}"
+
+    company.level = next_level
+    await session.flush()
+    await session.refresh(company)
+
+    return True, (
+        f"升级成功! {company.name} → Lv.{next_level} 「{next_info['name']}」\n"
+        f"{next_info['description']}\n"
+        f"永久日营收加成: +{fmt_traffic(next_info['daily_revenue_bonus'])}\n"
+        f"员工上限: +{next_info['employee_limit_bonus']}"
+    )

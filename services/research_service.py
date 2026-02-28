@@ -98,7 +98,8 @@ async def start_research(
     cost = tech.get("cost", settings.base_research_cost)
     ok = await add_traffic(session, owner_user_id, -cost)
     if not ok:
-        return False, f"流量不足，需要{cost}MB"
+        from utils.formatters import fmt_traffic
+        return False, f"金币不足，需要 {fmt_traffic(cost)}"
 
     rp = ResearchProgress(
         company_id=company_id,
@@ -118,7 +119,7 @@ async def check_and_complete_research(session: AsyncSession, company_id: int) ->
     """Check all in-progress research; complete those past duration. Returns list of completed tech names."""
     tree = _load_tech_tree()
     in_progress = await get_in_progress_research(session, company_id)
-    now = dt.datetime.now(dt.timezone.utc)
+    now = dt.datetime.utcnow()
     completed_names = []
 
     for rp in in_progress:
@@ -126,7 +127,9 @@ async def check_and_complete_research(session: AsyncSession, company_id: int) ->
         if tech is None:
             continue
         duration = dt.timedelta(seconds=tech.get("duration_seconds", settings.base_research_seconds))
-        if now - rp.started_at >= duration:
+        # Ensure both datetimes are comparable (both naive UTC)
+        started = rp.started_at.replace(tzinfo=None) if rp.started_at.tzinfo else rp.started_at
+        if now - started >= duration:
             rp.status = "completed"
             rp.completed_at = now
             completed_names.append(tech["name"])

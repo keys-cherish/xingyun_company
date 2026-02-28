@@ -5,6 +5,30 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
+# ---- Start panel ----
+
+def start_existing_user_kb() -> InlineKeyboardMarkup:
+    """Compact /start panel for users who already own at least one company."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🏢 我的公司", callback_data="menu:company"),
+            InlineKeyboardButton(text="📊 个人面板", callback_data="menu:profile"),
+        ],
+    ])
+
+
+def start_company_type_kb(company_types: dict[str, dict]) -> InlineKeyboardMarkup:
+    """Company type selector shown on /start when user has no company yet."""
+    buttons = [
+        [InlineKeyboardButton(
+            text=f"{info['emoji']} {info['name']}",
+            callback_data=f"company:type:{key}",
+        )]
+        for key, info in company_types.items()
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 # ---- Main menu ----
 
 def main_menu_kb() -> InlineKeyboardMarkup:
@@ -27,7 +51,7 @@ def main_menu_kb() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(text="📈 排行榜", callback_data="menu:leaderboard"),
-            InlineKeyboardButton(text="🔄 兑换积分", callback_data="menu:exchange"),
+            InlineKeyboardButton(text="🏦 交易所", callback_data="menu:exchange"),
         ],
     ])
 
@@ -56,6 +80,9 @@ def company_detail_kb(company_id: int, is_owner: bool) -> InlineKeyboardMarkup:
         ],
     ]
     if is_owner:
+        buttons.append([
+            InlineKeyboardButton(text="⬆️ 升级公司", callback_data=f"company:upgrade:{company_id}"),
+        ])
         buttons.append([
             InlineKeyboardButton(text="🎤 路演", callback_data=f"roadshow:do:{company_id}"),
             InlineKeyboardButton(text="🤝 发起合作", callback_data=f"cooperation:init:{company_id}"),
@@ -90,7 +117,7 @@ def company_detail_kb(company_id: int, is_owner: bool) -> InlineKeyboardMarkup:
 def invest_kb(company_id: int) -> InlineKeyboardMarkup:
     amounts = [500, 1000, 2000, 5000]
     buttons = [
-        [InlineKeyboardButton(text=f"投资 {a} MB", callback_data=f"shareholder:doinvest:{company_id}:{a}")]
+        [InlineKeyboardButton(text=f"投资 {a:,} 金币", callback_data=f"shareholder:doinvest:{company_id}:{a}")]
         for a in amounts
     ]
     buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")])
@@ -102,7 +129,7 @@ def invest_kb(company_id: int) -> InlineKeyboardMarkup:
 def tech_list_kb(techs: list[dict], company_id: int) -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton(
-            text=f"{t['name']} ({t['cost']}💰)",
+            text=f"{t['name']} ({t['cost']:,}💰)",
             callback_data=f"research:start:{company_id}:{t['tech_id']}",
         )]
         for t in techs
@@ -116,7 +143,7 @@ def tech_list_kb(techs: list[dict], company_id: int) -> InlineKeyboardMarkup:
 def product_template_kb(templates: list[dict], company_id: int) -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton(
-            text=f"{t['name']} (💰{t['base_daily_income']}/日)",
+            text=f"{t['name']} (💰{t['base_daily_income']:,}/日)",
             callback_data=f"product:create:{company_id}:{t['product_key']}",
         )]
         for t in templates
@@ -140,7 +167,7 @@ def product_detail_kb(product_id: int, company_id: int) -> InlineKeyboardMarkup:
 def building_list_kb(buildings: list[dict], company_id: int) -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton(
-            text=f"{b['name']} (💰{b['purchase_price']} → {b['daily_dividend']}/日)",
+            text=f"{b['name']} (💰{b['purchase_price']:,} → {b['daily_dividend']:,}/日)",
             callback_data=f"realestate:buy:{company_id}:{b['key']}",
         )]
         for b in buildings
@@ -151,11 +178,15 @@ def building_list_kb(buildings: list[dict], company_id: int) -> InlineKeyboardMa
 
 # ---- Exchange ----
 
-def exchange_kb() -> InlineKeyboardMarkup:
-    amounts = [100, 500, 1000]
+def exchange_kb(rate_per_mb: int | None = None) -> InlineKeyboardMarkup:
+    spend_amounts = [1_000, 3_000, 8_000, 15_000]
+    safe_rate = max(1, rate_per_mb or 120)
     buttons = [
-        [InlineKeyboardButton(text=f"兑换 {a} 积分", callback_data=f"exchange:{a}")]
-        for a in amounts
+        [InlineKeyboardButton(
+            text=f"花费 {amount:,} 金币 (~{max(1, amount // safe_rate)}MB)",
+            callback_data=f"exchange:{amount}",
+        )]
+        for amount in spend_amounts
     ]
     buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:main")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)

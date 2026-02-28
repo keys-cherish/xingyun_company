@@ -33,7 +33,7 @@ async def invest(
     # 扣除流量
     ok = await add_traffic(session, user_id, -amount)
     if not ok:
-        return False, "流量不足"
+        return False, "金币不足"
 
     # 计算新股份
     valuation = await get_company_valuation(session, company)

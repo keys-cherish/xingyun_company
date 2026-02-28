@@ -1,0 +1,36 @@
+{
+  "market_analysis": {
+    "name": "📊 市场分析报告",
+    "price": 5000,
+    "effect": "product_income_boost",
+    "effect_value": 0.20,
+    "duration_hours": 24,
+    "description": "产品日收入 +20%，持续24小时"
+  },
+  "precision_marketing": {
+    "name": "🎯 精准营销",
+    "price": 3000,
+    "effect": "roadshow_double",
+    "effect_value": 2.0,
+    "duration_hours": 0,
+    "one_time": true,
+    "description": "下次路演奖励翻倍（一次性）"
+  },
+  "risk_hedge": {
+    "name": "🛡 风险对冲",
+    "price": 8000,
+    "effect": "event_immunity",
+    "effect_value": 1.0,
+    "duration_hours": 24,
+    "description": "免疫下次负面随机事件，持续24小时"
+  },
+  "speed_research": {
+    "name": "⚡ 加速研发",
+    "price": 6000,
+    "effect": "research_speed",
+    "effect_value": 0.5,
+    "duration_hours": 0,
+    "one_time": true,
+    "description": "当前科研时间减半（即时生效）"
+  }
+}

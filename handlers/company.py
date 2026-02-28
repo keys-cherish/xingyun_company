@@ -18,7 +18,12 @@ from services.company_service import (
     get_company_by_id,
     get_company_type_info,
     get_company_valuation,
+    get_level_info,
+    get_level_employee_bonus,
+    get_level_revenue_bonus,
+    get_max_level,
     load_company_types,
+    upgrade_company,
 )
 from services.user_service import get_user_by_tg_id
 from utils.formatters import fmt_traffic
@@ -41,6 +46,7 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
     """加载公司数据并返回 (text, keyboard)，供多个handler复用。"""
     from db.models import Shareholder, Product
     from sqlalchemy import select, func as sqlfunc
+    from services.realestate_service import get_total_estate_income
 
     async with async_session() as session:
         company = await get_company_by_id(session, company_id)
@@ -56,29 +62,44 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
         prod_count = (await session.execute(
             select(sqlfunc.count()).where(Product.company_id == company_id)
         )).scalar()
+        estate_income = await get_total_estate_income(session, company_id)
 
     type_info = get_company_type_info(company.company_type)
     type_display = f"{type_info['emoji']} {type_info['name']}" if type_info else company.company_type
 
-    daily_tax = int(company.daily_revenue * cfg.tax_rate)
-    salary_cost = company.employee_count * cfg.employee_salary_base
-    max_employees = cfg.base_employee_limit + cfg.employee_limit_per_level * (company.level - 1)
+    level_info = get_level_info(company.level)
+    level_name = level_info["name"] if level_info else f"Lv.{company.level}"
+    level_rev_bonus = get_level_revenue_bonus(company.level)
+    level_emp_bonus = get_level_employee_bonus(company.level)
+
+    max_employees = cfg.base_employee_limit + cfg.employee_limit_per_level * (company.level - 1) + level_emp_bonus
     if type_info and type_info.get("extra_employee_limit"):
         max_employees += type_info["extra_employee_limit"]
+
+    total_daily = company.daily_revenue + estate_income + level_rev_bonus
+
+    # Upgrade info
+    next_level = company.level + 1
+    next_info = get_level_info(next_level)
+    upgrade_line = ""
+    if next_info:
+        upgrade_line = f"📤 下一级: Lv.{next_level}「{next_info['name']}」({fmt_traffic(next_info['upgrade_cost'])})\n"
+    else:
+        upgrade_line = "🏆 已达最高等级!\n"
 
     text = (
         f"🏢 {company.name} (ID: {company.id})\n"
         f"类型: {type_display}\n"
         f"{'─' * 24}\n"
-        f"💰 总资金: {fmt_traffic(company.total_funds)}\n"
+        f"💰 资金: {fmt_traffic(company.total_funds)}\n"
         f"📈 日营收: {fmt_traffic(company.daily_revenue)}\n"
+        f"🏗 地产收入: {fmt_traffic(estate_income)}\n"
+        f"🎖 等级加成: +{fmt_traffic(level_rev_bonus)}\n"
+        f"📊 日总收入: {fmt_traffic(total_daily)}\n"
         f"🏷 估值: {fmt_traffic(valuation)}\n"
-        f"📊 等级: Lv.{company.level}\n"
-        f"👥 股东数: {sh_count}\n"
-        f"👷 员工: {company.employee_count}/{max_employees}\n"
-        f"📦 产品数: {prod_count}\n"
-        f"🏛 日纳税: {fmt_traffic(daily_tax)}\n"
-        f"💼 日薪资: {fmt_traffic(salary_cost)}\n"
+        f"⭐ Lv.{company.level}「{level_name}」\n"
+        f"{upgrade_line}"
+        f"👥 股东: {sh_count} | 👷 员工: {company.employee_count}/{max_employees} | 📦 产品: {prod_count}\n"
     )
     return text, company_detail_kb(company_id, is_owner)
 
@@ -110,6 +131,12 @@ async def cmd_company(message: types.Message):
         )
         return
 
+    # 只有一家公司时直接打开详情
+    if len(companies) == 1:
+        text, kb = await render_company_detail(companies[0].id, tg_id)
+        await message.answer(text, reply_markup=kb)
+        return
+
     items = [(c.id, c.name) for c in companies]
     await message.answer("🏢 你的公司列表:", reply_markup=company_list_kb(items))
 
@@ -123,6 +150,13 @@ async def cb_menu_company(callback: types.CallbackQuery):
             await callback.answer("请先 /start 注册", show_alert=True)
             return
         companies = await get_companies_by_owner(session, user.id)
+
+    # 只有一家公司时直接打开详情
+    if len(companies) == 1:
+        text, kb = await render_company_detail(companies[0].id, tg_id)
+        await callback.message.edit_text(text, reply_markup=kb)
+        await callback.answer()
+        return
 
     items = [(c.id, c.name) for c in companies]
     await callback.message.edit_text("🏢 你的公司列表:", reply_markup=company_list_kb(items))
@@ -195,8 +229,8 @@ async def on_company_name(message: types.Message, state: FSMContext):
     await state.clear()
 
     if company:
-        from keyboards.menus import main_menu_kb
-        await message.answer("返回主菜单:", reply_markup=main_menu_kb())
+        from keyboards.menus import start_existing_user_kb
+        await message.answer("返回主菜单:", reply_markup=start_existing_user_kb())
 
 
 # ---- 招聘/裁员 ----
@@ -216,7 +250,7 @@ async def cb_hire(callback: types.CallbackQuery):
                 await callback.answer("无权操作", show_alert=True)
                 return
             type_info = get_company_type_info(company.company_type)
-            max_emp = cfg.base_employee_limit + cfg.employee_limit_per_level * (company.level - 1)
+            max_emp = cfg.base_employee_limit + cfg.employee_limit_per_level * (company.level - 1) + get_level_employee_bonus(company.level)
             if type_info and type_info.get("extra_employee_limit"):
                 max_emp += type_info["extra_employee_limit"]
             if company.employee_count >= max_emp:
@@ -241,7 +275,7 @@ async def cb_hire(callback: types.CallbackQuery):
                 if hire_count > 1:
                     affordable = company.total_funds // hire_cost_per
                     if affordable <= 0:
-                        await callback.answer(f"公司资金不足，每人招聘需要{hire_cost_per}MB", show_alert=True)
+                        await callback.answer(f"公司资金不足，每人招聘需要 {fmt_traffic(hire_cost_per)}", show_alert=True)
                         return
                     hire_count = min(hire_count, affordable)
                     total_cost = hire_count * hire_cost_per
@@ -250,12 +284,12 @@ async def cb_hire(callback: types.CallbackQuery):
                         await callback.answer(f"公司资金不足", show_alert=True)
                         return
                 else:
-                    await callback.answer(f"公司资金不足，招聘需要{hire_cost_per}MB", show_alert=True)
+                    await callback.answer(f"公司资金不足，招聘需要 {fmt_traffic(hire_cost_per)}", show_alert=True)
                     return
             company.employee_count += hire_count
 
     await callback.answer(
-        f"招聘成功! 招了{hire_count}人，花费{total_cost}MB",
+        f"招聘成功! 招了{hire_count}人，花费 {fmt_traffic(total_cost)}",
         show_alert=True,
     )
     await _refresh_company_view(callback, company_id)
@@ -292,6 +326,27 @@ async def cb_fire(callback: types.CallbackQuery):
         show_alert=True,
     )
     await _refresh_company_view(callback, company_id)
+
+
+# ---- 公司升级 ----
+
+@router.callback_query(F.data.startswith("company:upgrade:"))
+async def cb_upgrade(callback: types.CallbackQuery):
+    company_id = int(callback.data.split(":")[2])
+    tg_id = callback.from_user.id
+
+    async with async_session() as session:
+        async with session.begin():
+            user = await get_user_by_tg_id(session, tg_id)
+            company = await get_company_by_id(session, company_id)
+            if not company or not user or company.owner_id != user.id:
+                await callback.answer("无权操作", show_alert=True)
+                return
+            ok, msg = await upgrade_company(session, company_id)
+
+    await callback.answer(msg, show_alert=True)
+    if ok:
+        await _refresh_company_view(callback, company_id)
 
 
 # ---- 公司改名 ----

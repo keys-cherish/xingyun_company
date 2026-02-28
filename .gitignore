@@ -36,5 +36,9 @@ Thumbs.db
 *.log
 logs/
 
+# Local test artifacts
+tests/
+
 # Claude Code
 .claude/
+CLAUDE.md

@@ -1,13 +1,13 @@
-# 星云公司 - Telegram 公司经营游戏机器人
+# 商业帝国 - Telegram 公司经营游戏机器人
 
-基于 Telegram 的多人公司经营模拟游戏。玩家通过 **科研 → 研发树 → 产品 → 利润** 的路径经营虚拟公司，包含股东系统、每日结算、地产投资、分红、AI研发评审等玩法。
+基于 Telegram 的多人公司经营模拟游戏。玩家通过 **科研 → 研发树 → 产品 → 利润** 的路径经营虚拟公司，包含股东系统、每日结算、地产投资、分红、AI研发评审、交易所等玩法。
 
 ## 技术栈
 
 - **语言**: Python 3.11+
 - **Bot框架**: aiogram 3.x（异步Telegram框架）
 - **数据库**: PostgreSQL + asyncpg（通过SQLAlchemy 2.0 async ORM，支持高并发）
-- **缓存**: Redis（热数据/分布式锁/排行榜/冷却计时/管理员认证）
+- **缓存**: Redis（热数据/分布式锁/排行榜/冷却计时/管理员认证/道具Buff）
 - **定时任务**: APScheduler（每日结算）
 - **配置**: pydantic-settings（类型安全）
 - **包管理**: uv
@@ -16,8 +16,8 @@
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/keys-cherish/xingyun_company.git
-cd xingyun_company
+git clone https://github.com/keys-cherish/my_company.git
+cd my_company
 
 # 2. 安装依赖（需要先安装 uv）
 uv sync
@@ -43,14 +43,15 @@ uv run python bot.py
 | 科研系统 | 10级研发树，前置解锁，完成后解锁新产品 |
 | 产品系统 | 创建/升级/下架产品，每日产生收入 |
 | AI研发 | 提交产品方案 → AI评分 → 永久提升产品收入(1-100%) |
-| 路演系统 | 消耗流量路演，随机获得资源/声望/积分 |
+| 路演系统 | 消耗金币路演，随机获得资源/声望/积分 |
 | 合作系统 | 公司间合作提供营收加成 |
 | 地产系统 | 购买地产获取稳定被动收入 |
 | 广告系统 | 4档广告方案，临时提升营收 |
+| 交易所 | 金币/额度/积分互换，道具商城，黑市特惠 |
 | 员工系统 | 招聘/裁员，薪资/社保成本 |
 | 税务系统 | 每日营收纳税 |
 | 随机事件 | 员工离职/退休/市场波动/PR危机等20+事件 |
-| 积分系统 | 多途径获取积分，可兑换流量 |
+| 积分系统 | 多途径获取积分，可兑换金币 |
 | 每日结算 | 自动计算收入/分红/生成日报 |
 
 ## 命令
@@ -69,14 +70,14 @@ uv run python bot.py
 ## 项目结构
 
 ```
-xingyun_company/
+my_company/
 ├── bot.py              # 入口
 ├── config.py           # 配置
 ├── pyproject.toml      # uv项目配置
 ├── db/                 # 数据库模型
 ├── cache/              # Redis缓存
-├── services/           # 业务逻辑（14个服务）
-├── handlers/           # Telegram交互处理（12个）
+├── services/           # 业务逻辑（15个服务）
+├── handlers/           # Telegram交互处理（13个）
 ├── keyboards/          # Inline键盘布局
 ├── scheduler/          # 定时任务
 ├── game_data/          # 游戏静态数据(JSON)

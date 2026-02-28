@@ -15,7 +15,34 @@ router = Router()
 
 @router.callback_query(F.data == "menu:roadshow")
 async def cb_roadshow_menu(callback: types.CallbackQuery):
-    await callback.message.edit_text("🎤 路演\n请从公司面板发起路演。")
+    """Auto-select company for roadshow if only one, otherwise show selector."""
+    tg_id = callback.from_user.id
+    async with async_session() as session:
+        user = await get_user_by_tg_id(session, tg_id)
+        if not user:
+            await callback.answer("请先 /start 注册", show_alert=True)
+            return
+        companies = await get_companies_by_owner(session, user.id)
+
+    if not companies:
+        await callback.answer("你还没有公司", show_alert=True)
+        return
+
+    if len(companies) == 1:
+        callback.data = f"roadshow:do:{companies[0].id}"
+        await cb_do_roadshow(callback)
+        return
+
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    buttons = [
+        [InlineKeyboardButton(text=c.name, callback_data=f"roadshow:do:{c.id}")]
+        for c in companies
+    ]
+    buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:main")])
+    await callback.message.edit_text(
+        "🎤 选择公司发起路演:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+    )
     await callback.answer()
 
 

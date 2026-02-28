@@ -9,7 +9,6 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from db.engine import async_session
-from handlers.common import group_only
 from keyboards.menus import company_detail_kb, company_list_kb
 from services.company_service import (
     create_company,
@@ -135,7 +134,7 @@ async def cb_company_view(callback: types.CallbackQuery):
 
 # ---- 创建公司（仅群组）：先选类型再输入名称 ----
 
-@router.callback_query(F.data == "company:create", group_only)
+@router.callback_query(F.data == "company:create")
 async def cb_company_create(callback: types.CallbackQuery, state: FSMContext):
     types_data = load_company_types()
     buttons = [
@@ -197,7 +196,7 @@ async def on_company_name(message: types.Message, state: FSMContext):
 
 # ---- 招聘/裁员（仅群组）----
 
-@router.callback_query(F.data.startswith("company:hire:"), group_only)
+@router.callback_query(F.data.startswith("company:hire:"))
 async def cb_hire(callback: types.CallbackQuery):
     company_id = int(callback.data.split(":")[2])
     tg_id = callback.from_user.id
@@ -228,7 +227,7 @@ async def cb_hire(callback: types.CallbackQuery):
     await callback.answer(f"招聘成功! 当前员工: {company.employee_count}人", show_alert=True)
 
 
-@router.callback_query(F.data.startswith("company:fire:"), group_only)
+@router.callback_query(F.data.startswith("company:fire:"))
 async def cb_fire(callback: types.CallbackQuery):
     company_id = int(callback.data.split(":")[2])
     tg_id = callback.from_user.id
@@ -250,7 +249,7 @@ async def cb_fire(callback: types.CallbackQuery):
 
 # ---- 公司改名（仅群组，通过公司ID关联不受影响）----
 
-@router.callback_query(F.data.startswith("company:rename:"), group_only)
+@router.callback_query(F.data.startswith("company:rename:"))
 async def cb_rename(callback: types.CallbackQuery, state: FSMContext):
     company_id = int(callback.data.split(":")[2])
     tg_id = callback.from_user.id
@@ -271,7 +270,7 @@ async def cb_rename(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.message(RenameCompanyState.waiting_new_name, group_only)
+@router.message(RenameCompanyState.waiting_new_name)
 async def on_new_name(message: types.Message, state: FSMContext):
     new_name = message.text.strip()
     if not (2 <= len(new_name) <= 16):

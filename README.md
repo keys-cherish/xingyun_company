@@ -6,8 +6,8 @@
 
 - **语言**: Python 3.11+
 - **Bot框架**: aiogram 3.x（异步Telegram框架）
-- **数据库**: SQLite + aiosqlite（通过SQLAlchemy 2.0 async ORM）
-- **缓存**: Redis（热数据/分布式锁/排行榜/冷却计时）
+- **数据库**: PostgreSQL + asyncpg（通过SQLAlchemy 2.0 async ORM，支持高并发）
+- **缓存**: Redis（热数据/分布式锁/排行榜/冷却计时/管理员认证）
 - **定时任务**: APScheduler（每日结算）
 - **配置**: pydantic-settings（类型安全）
 - **包管理**: uv
@@ -24,12 +24,13 @@ uv sync
 
 # 3. 配置环境变量
 cp .env.example .env
-# 编辑 .env 填入 BOT_TOKEN 等配置
+# 编辑 .env 填入 BOT_TOKEN、数据库连接、管理员ID等配置
 
-# 4. 确保 Redis 已启动
-redis-server &
+# 4. 确保 PostgreSQL 和 Redis 已启动
+# PostgreSQL: 创建数据库和用户
+# Redis: redis-server &
 
-# 5. 启动机器人
+# 5. 启动机器人（自动建表）
 uv run python bot.py
 ```
 
@@ -57,9 +58,9 @@ uv run python bot.py
 | 命令 | 范围 | 说明 |
 |------|------|------|
 | `/start` | 私聊+群组 | 注册/查看个人面板 |
-| `/company` | 私聊+群组 | 查看我的公司 |
-| `/admin` | 仅群组 | 管理员配置面板 |
-| 其他操作 | 仅群组 | 通过Inline键盘菜单操作 |
+| `/company` | 私聊+群组 | 查看/管理公司 |
+| `/admin <密钥>` | 私聊 | 管理员认证（需配置ID+密钥） |
+| 其他操作 | 私聊+群组 | 通过Inline键盘菜单操作 |
 
 ## 配置
 

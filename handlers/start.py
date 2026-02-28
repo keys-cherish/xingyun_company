@@ -68,17 +68,7 @@ async def cmd_start(message: types.Message):
             f"{type_desc}"
         )
 
-        if message.chat.type == "private":
-            from handlers.common import is_admin_authenticated
-            if await is_admin_authenticated(tg_id):
-                # 管理员私聊引导创建
-                from aiogram.fsm.context import FSMContext
-                await message.answer(text, reply_markup=_company_type_kb())
-            else:
-                text += "\n\n请在群组中进行创建公司操作。\n管理员请使用 /admin <密钥> 认证。"
-                await message.answer(text)
-        else:
-            await message.answer(text, reply_markup=_company_type_kb())
+        await message.answer(text, reply_markup=_company_type_kb())
         return
 
     # 已有公司：显示主菜单
@@ -86,12 +76,7 @@ async def cmd_start(message: types.Message):
         from handlers.common import is_admin_authenticated
         if await is_admin_authenticated(tg_id):
             text += "\n管理员模式已激活。"
-            await message.answer(text, reply_markup=main_menu_kb())
-        else:
-            text += "\n私聊仅支持 /company 查看信息，其他操作请在群组中进行。"
-            await message.answer(text)
-    else:
-        await message.answer(text, reply_markup=main_menu_kb())
+    await message.answer(text, reply_markup=main_menu_kb())
 
 
 @router.callback_query(F.data == "menu:main")

@@ -5,7 +5,6 @@ from __future__ import annotations
 from aiogram import F, Router, types
 
 from db.engine import async_session
-from handlers.common import group_only
 from keyboards.menus import main_menu_kb
 from services.company_service import get_companies_by_owner, get_company_by_id
 from services.roadshow_service import do_roadshow
@@ -14,13 +13,13 @@ from services.user_service import get_user_by_tg_id
 router = Router()
 
 
-@router.callback_query(F.data == "menu:roadshow", group_only)
+@router.callback_query(F.data == "menu:roadshow")
 async def cb_roadshow_menu(callback: types.CallbackQuery):
     await callback.message.edit_text("🎤 路演\n请从公司面板发起路演。")
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("roadshow:do:"), group_only)
+@router.callback_query(F.data.startswith("roadshow:do:"))
 async def cb_do_roadshow(callback: types.CallbackQuery):
     company_id = int(callback.data.split(":")[2])
     tg_id = callback.from_user.id
@@ -39,6 +38,6 @@ async def cb_do_roadshow(callback: types.CallbackQuery):
 
     if ok:
         await callback.message.edit_text(f"🎤 路演结果\n\n{msg}", reply_markup=main_menu_kb())
+        await callback.answer()
     else:
         await callback.answer(msg, show_alert=True)
-    await callback.answer()

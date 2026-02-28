@@ -116,7 +116,7 @@ async def cb_profile(callback: types.CallbackQuery):
 
     text = (
         f"个人面板 — {user.tg_name}\n"
-        "─" * 24 + "\n"
+        f"{'─' * 24}\n"
         f"流量: {fmt_traffic(user.traffic)}\n"
         f"声望: {user.reputation} ({fmt_reputation_buff(user.reputation)})\n"
         f"积分: {points}\n"

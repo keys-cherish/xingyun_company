@@ -7,7 +7,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from db.engine import async_session
-from handlers.common import group_only
 from keyboards.menus import main_menu_kb
 from services.company_service import get_companies_by_owner, get_company_by_id
 from services.cooperation_service import create_cooperation, get_active_cooperations
@@ -20,13 +19,13 @@ class CoopState(StatesGroup):
     waiting_partner_company_id = State()
 
 
-@router.callback_query(F.data == "menu:cooperation", group_only)
+@router.callback_query(F.data == "menu:cooperation")
 async def cb_coop_menu(callback: types.CallbackQuery):
     await callback.message.edit_text("🤝 合作系统\n请从公司面板发起合作。")
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("cooperation:init:"), group_only)
+@router.callback_query(F.data.startswith("cooperation:init:"))
 async def cb_init_coop(callback: types.CallbackQuery, state: FSMContext):
     company_id = int(callback.data.split(":")[2])
     tg_id = callback.from_user.id
@@ -60,7 +59,7 @@ async def cb_init_coop(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.message(CoopState.waiting_partner_company_id, group_only)
+@router.message(CoopState.waiting_partner_company_id)
 async def on_partner_id(message: types.Message, state: FSMContext):
     data = await state.get_data()
     company_id = data["company_id"]

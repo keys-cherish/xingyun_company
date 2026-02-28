@@ -5,7 +5,6 @@ from __future__ import annotations
 from aiogram import F, Router, types
 
 from db.engine import async_session
-from handlers.common import group_only
 from keyboards.menus import invest_kb
 from services.shareholder_service import get_shareholders, invest
 from services.user_service import get_user_by_tg_id
@@ -14,7 +13,28 @@ from utils.formatters import fmt_shares, fmt_traffic
 router = Router()
 
 
-@router.callback_query(F.data.startswith("shareholder:list:"), group_only)
+async def _refresh_shareholder_list(callback: types.CallbackQuery, company_id: int):
+    """操作后刷新股东列表消息。"""
+    try:
+        async with async_session() as session:
+            shareholders = await get_shareholders(session, company_id)
+            lines = ["👥 股东列表", "─" * 24]
+            for sh in shareholders:
+                from db.models import User
+                user = await session.get(User, sh.user_id)
+                name = user.tg_name if user else "未知"
+                lines.append(f"• {name}: {fmt_shares(sh.shares)} (投资: {fmt_traffic(sh.invested_amount)})")
+
+        from keyboards.menus import company_detail_kb
+        await callback.message.edit_text(
+            "\n".join(lines),
+            reply_markup=company_detail_kb(company_id, False),
+        )
+    except Exception:
+        pass  # 消息未变化时edit会抛异常，忽略
+
+
+@router.callback_query(F.data.startswith("shareholder:list:"))
 async def cb_shareholders(callback: types.CallbackQuery):
     company_id = int(callback.data.split(":")[2])
     async with async_session() as session:
@@ -35,14 +55,14 @@ async def cb_shareholders(callback: types.CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("shareholder:invest:"), group_only)
+@router.callback_query(F.data.startswith("shareholder:invest:"))
 async def cb_invest_menu(callback: types.CallbackQuery):
     company_id = int(callback.data.split(":")[2])
     await callback.message.edit_text("选择投资金额:", reply_markup=invest_kb(company_id))
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("shareholder:doinvest:"), group_only)
+@router.callback_query(F.data.startswith("shareholder:doinvest:"))
 async def cb_do_invest(callback: types.CallbackQuery):
     parts = callback.data.split(":")
     company_id = int(parts[2])
@@ -58,3 +78,5 @@ async def cb_do_invest(callback: types.CallbackQuery):
             ok, msg = await invest(session, user.id, company_id, amount)
 
     await callback.answer(msg, show_alert=True)
+    if ok:
+        await _refresh_shareholder_list(callback, company_id)

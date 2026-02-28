@@ -118,7 +118,7 @@ async def check_and_complete_research(session: AsyncSession, company_id: int) ->
     """Check all in-progress research; complete those past duration. Returns list of completed tech names."""
     tree = _load_tech_tree()
     in_progress = await get_in_progress_research(session, company_id)
-    now = dt.datetime.utcnow()
+    now = dt.datetime.now(dt.timezone.utc)
     completed_names = []
 
     for rp in in_progress:

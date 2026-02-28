@@ -45,8 +45,11 @@ async def create_company(
     if exists.scalar_one_or_none():
         return None, "公司名称已存在"
 
+    # 先保存owner_id，因为add_traffic会expire owner对象
+    owner_id = owner.id
+
     # Deduct traffic
-    ok = await add_traffic(session, owner.id, -settings.company_creation_cost)
+    ok = await add_traffic(session, owner_id, -settings.company_creation_cost)
     if not ok:
         return None, f"流量不足，创建公司需要{settings.company_creation_cost}MB"
 
@@ -54,7 +57,7 @@ async def create_company(
     company = Company(
         name=name,
         company_type=company_type,
-        owner_id=owner.id,
+        owner_id=owner_id,
         total_funds=settings.company_creation_cost,
     )
     session.add(company)
@@ -63,7 +66,7 @@ async def create_company(
     # Owner gets 100% shares
     shareholder = Shareholder(
         company_id=company.id,
-        user_id=owner.id,
+        user_id=owner_id,
         shares=100.0,
         invested_amount=settings.company_creation_cost,
     )
@@ -115,6 +118,6 @@ async def add_funds(session: AsyncSession, company_id: int, amount: int) -> bool
     )
     if result.rowcount == 0:
         return False
-    # 使对象过期，下次访问时从DB重新加载，避免重复计数
-    session.expire(company)
+    # 立即刷新对象，避免惰性加载导致MissingGreenlet
+    await session.refresh(company)
     return True

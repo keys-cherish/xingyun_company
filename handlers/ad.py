@@ -5,11 +5,11 @@ from __future__ import annotations
 from aiogram import F, Router, types
 
 from db.engine import async_session
-from handlers.common import group_only
 from keyboards.menus import main_menu_kb
 from services.ad_service import get_active_ad_info, get_ad_tiers, buy_ad, cancel_ad
 from services.company_service import add_funds, get_company_by_id
 from services.user_service import get_user_by_tg_id
+from handlers.company import _refresh_company_view
 
 router = Router()
 
@@ -28,7 +28,7 @@ def _ad_menu_kb(company_id: int):
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-@router.callback_query(F.data.startswith("ad:menu:"), group_only)
+@router.callback_query(F.data.startswith("ad:menu:"))
 async def cb_ad_menu(callback: types.CallbackQuery):
     company_id = int(callback.data.split(":")[2])
 
@@ -51,7 +51,7 @@ async def cb_ad_menu(callback: types.CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("ad:buy:"), group_only)
+@router.callback_query(F.data.startswith("ad:buy:"))
 async def cb_buy_ad(callback: types.CallbackQuery):
     parts = callback.data.split(":")
     company_id = int(parts[2])
@@ -88,3 +88,4 @@ async def cb_buy_ad(callback: types.CallbackQuery):
                 return
 
     await callback.answer(msg, show_alert=True)
+    await _refresh_company_view(callback, company_id)

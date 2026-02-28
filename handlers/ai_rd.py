@@ -10,7 +10,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from db.engine import async_session
-from handlers.common import group_only
 from keyboards.menus import main_menu_kb
 from services.ai_rd_service import (
     R_AND_D_COST_PER_STAFF,
@@ -30,7 +29,7 @@ class AIRDState(StatesGroup):
     waiting_staff = State()
 
 
-@router.callback_query(F.data.startswith("aird:start:"), group_only)
+@router.callback_query(F.data.startswith("aird:start:"))
 async def cb_aird_start(callback: types.CallbackQuery, state: FSMContext):
     """开始AI研发流程：先选择要研发的产品。"""
     company_id = int(callback.data.split(":")[2])
@@ -67,7 +66,7 @@ async def cb_aird_start(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.callback_query(AIRDState.select_product, F.data.startswith("aird:select:"), group_only)
+@router.callback_query(AIRDState.select_product, F.data.startswith("aird:select:"))
 async def cb_aird_select(callback: types.CallbackQuery, state: FSMContext):
     product_id = int(callback.data.split(":")[2])
     await state.update_data(product_id=product_id)
@@ -85,7 +84,7 @@ async def cb_aird_select(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.message(AIRDState.waiting_proposal, group_only)
+@router.message(AIRDState.waiting_proposal)
 async def on_proposal(message: types.Message, state: FSMContext):
     proposal = message.text.strip()
     if len(proposal) < 10:
@@ -107,7 +106,7 @@ async def on_proposal(message: types.Message, state: FSMContext):
 
     await message.answer(
         f"🧪 AI评估结果\n"
-        f"─" * 24 + "\n"
+        f"{'─' * 24}\n"
         f"评分: {score}/100\n"
         f"评价: {feedback}\n\n"
         f"预计收入提升: ~{score}%\n\n"
@@ -117,7 +116,7 @@ async def on_proposal(message: types.Message, state: FSMContext):
     )
 
 
-@router.callback_query(AIRDState.waiting_staff, F.data.startswith("aird:staff:"), group_only)
+@router.callback_query(AIRDState.waiting_staff, F.data.startswith("aird:staff:"))
 async def cb_aird_staff(callback: types.CallbackQuery, state: FSMContext):
     extra_staff = int(callback.data.split(":")[2])
     data = await state.get_data()
@@ -153,6 +152,6 @@ async def cb_aird_staff(callback: types.CallbackQuery, state: FSMContext):
             f"🧪 研发完成!\n─" + "─" * 23 + f"\n{msg}",
             reply_markup=main_menu_kb(),
         )
+        await callback.answer()
     else:
         await callback.answer(msg, show_alert=True)
-    await callback.answer()

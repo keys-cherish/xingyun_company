@@ -16,7 +16,7 @@ DEFAULT_BONUS_MULTIPLIER = 0.10  # +10% revenue
 
 
 async def get_active_cooperations(session: AsyncSession, company_id: int) -> list[Cooperation]:
-    now = dt.datetime.utcnow()
+    now = dt.datetime.now(dt.timezone.utc)
     result = await session.execute(
         select(Cooperation).where(
             or_(
@@ -61,7 +61,7 @@ async def create_cooperation(
         if partner == company_b_id:
             return False, "已有合作关系"
 
-    now = dt.datetime.utcnow()
+    now = dt.datetime.now(dt.timezone.utc)
     coop = Cooperation(
         company_a_id=company_a_id,
         company_b_id=company_b_id,

@@ -5,7 +5,6 @@ from __future__ import annotations
 from aiogram import F, Router, types
 
 from db.engine import async_session
-from handlers.common import group_only
 from keyboards.menus import tech_list_kb
 from services.company_service import get_company_by_id
 from services.research_service import (
@@ -20,7 +19,7 @@ from services.user_service import get_user_by_tg_id
 router = Router()
 
 
-@router.callback_query(F.data == "menu:research", group_only)
+@router.callback_query(F.data == "menu:research")
 async def cb_research_menu(callback: types.CallbackQuery):
     await callback.message.edit_text(
         "🔬 科研中心\n请先选择一个公司查看科研。"
@@ -28,7 +27,7 @@ async def cb_research_menu(callback: types.CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("research:list:"), group_only)
+@router.callback_query(F.data.startswith("research:list:"))
 async def cb_research_list(callback: types.CallbackQuery):
     company_id = int(callback.data.split(":")[2])
 
@@ -67,7 +66,7 @@ async def cb_research_list(callback: types.CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("research:start:"), group_only)
+@router.callback_query(F.data.startswith("research:start:"))
 async def cb_start_research(callback: types.CallbackQuery):
     parts = callback.data.split(":")
     company_id = int(parts[2])

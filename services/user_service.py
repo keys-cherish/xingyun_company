@@ -46,8 +46,8 @@ async def add_traffic(session: AsyncSession, user_id: int, amount: int) -> bool:
             .values(traffic=User.traffic + amount, version=User.version + 1)
         )
         if result.rowcount > 0:
-            # 使对象过期，下次访问时从DB重新加载，避免重复计数
-            session.expire(user)
+            # 立即刷新对象，避免惰性加载导致MissingGreenlet
+            await session.refresh(user)
             return True
         # 并发冲突，刷新后重试
         await session.refresh(user)
@@ -95,29 +95,42 @@ async def add_points(tg_id_or_user_id: int, amount: int, *, session: AsyncSessio
 
 POINTS_TO_TRAFFIC_RATE = 10  # 10 points = 1 traffic
 
+# Lua script for atomic points deduction
+_DEDUCT_POINTS_LUA = """
+local key = KEYS[1]
+local amount = tonumber(ARGV[1])
+local current = tonumber(redis.call('GET', key) or '0')
+if current < amount then
+    return -1
+end
+return redis.call('DECRBY', key, amount)
+"""
+
 
 async def exchange_points_for_traffic(session: AsyncSession, tg_id: int, points_amount: int) -> tuple[bool, str]:
-    """Exchange points for traffic. Returns (success, message)."""
+    """Exchange points for traffic. Atomic check-and-deduct to prevent double-spend."""
     if points_amount <= 0:
         return False, "兑换积分数必须大于0"
-    current = await get_points(tg_id)
-    if current < points_amount:
-        return False, f"积分不足，当前积分: {current}"
 
     traffic_gained = points_amount // POINTS_TO_TRAFFIC_RATE
     if traffic_gained <= 0:
         return False, f"至少需要{POINTS_TO_TRAFFIC_RATE}积分才能兑换1MB"
 
     actual_points_used = traffic_gained * POINTS_TO_TRAFFIC_RATE
+
     user = await get_user_by_tg_id(session, tg_id)
     if user is None:
         return False, "用户不存在"
 
     r = await get_redis()
-    await r.decrby(f"points:{tg_id}", actual_points_used)
+    # Atomic check-and-deduct using Lua script
+    result = await r.eval(_DEDUCT_POINTS_LUA, 1, f"points:{tg_id}", actual_points_used)
+    if result == -1:
+        return False, f"积分不足"
+
     ok = await add_traffic(session, user.id, traffic_gained)
     if not ok:
-        # rollback points
+        # Rollback: add points back
         await r.incrby(f"points:{tg_id}", actual_points_used)
         return False, "流量添加失败，请重试"
     return True, f"成功兑换! 消耗{actual_points_used}积分，获得{traffic_gained}MB"

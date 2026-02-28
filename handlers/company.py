@@ -8,9 +8,11 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from config import settings as cfg
 from db.engine import async_session
 from keyboards.menus import company_detail_kb, company_list_kb
 from services.company_service import (
+    add_funds,
     create_company,
     get_companies_by_owner,
     get_company_by_id,
@@ -31,6 +33,63 @@ class CreateCompanyState(StatesGroup):
 
 class RenameCompanyState(StatesGroup):
     waiting_new_name = State()
+
+
+# ---- 公共：渲染公司面板（供多处复用） ----
+
+async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
+    """加载公司数据并返回 (text, keyboard)，供多个handler复用。"""
+    from db.models import Shareholder, Product
+    from sqlalchemy import select, func as sqlfunc
+
+    async with async_session() as session:
+        company = await get_company_by_id(session, company_id)
+        if not company:
+            return "公司不存在", InlineKeyboardMarkup(inline_keyboard=[])
+        user = await get_user_by_tg_id(session, tg_id)
+        valuation = await get_company_valuation(session, company)
+        is_owner = user and company.owner_id == user.id
+
+        sh_count = (await session.execute(
+            select(sqlfunc.count()).where(Shareholder.company_id == company_id)
+        )).scalar()
+        prod_count = (await session.execute(
+            select(sqlfunc.count()).where(Product.company_id == company_id)
+        )).scalar()
+
+    type_info = get_company_type_info(company.company_type)
+    type_display = f"{type_info['emoji']} {type_info['name']}" if type_info else company.company_type
+
+    daily_tax = int(company.daily_revenue * cfg.tax_rate)
+    salary_cost = company.employee_count * cfg.employee_salary_base
+    max_employees = cfg.base_employee_limit + cfg.employee_limit_per_level * (company.level - 1)
+    if type_info and type_info.get("extra_employee_limit"):
+        max_employees += type_info["extra_employee_limit"]
+
+    text = (
+        f"🏢 {company.name} (ID: {company.id})\n"
+        f"类型: {type_display}\n"
+        f"{'─' * 24}\n"
+        f"💰 总资金: {fmt_traffic(company.total_funds)}\n"
+        f"📈 日营收: {fmt_traffic(company.daily_revenue)}\n"
+        f"🏷 估值: {fmt_traffic(valuation)}\n"
+        f"📊 等级: Lv.{company.level}\n"
+        f"👥 股东数: {sh_count}\n"
+        f"👷 员工: {company.employee_count}/{max_employees}\n"
+        f"📦 产品数: {prod_count}\n"
+        f"🏛 日纳税: {fmt_traffic(daily_tax)}\n"
+        f"💼 日薪资: {fmt_traffic(salary_cost)}\n"
+    )
+    return text, company_detail_kb(company_id, is_owner)
+
+
+async def _refresh_company_view(callback: types.CallbackQuery, company_id: int):
+    """操作后刷新公司面板消息。"""
+    text, kb = await render_company_detail(company_id, callback.from_user.id)
+    try:
+        await callback.message.edit_text(text, reply_markup=kb)
+    except Exception:
+        pass  # 消息未变化时edit会抛异常，忽略
 
 
 # /company - 私聊和群组均可使用
@@ -73,66 +132,12 @@ async def cb_menu_company(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("company:view:"))
 async def cb_company_view(callback: types.CallbackQuery):
     company_id = int(callback.data.split(":")[2])
-    tg_id = callback.from_user.id
-
-    async with async_session() as session:
-        company = await get_company_by_id(session, company_id)
-        if not company:
-            await callback.answer("公司不存在", show_alert=True)
-            return
-        user = await get_user_by_tg_id(session, tg_id)
-        valuation = await get_company_valuation(session, company)
-        is_owner = user and company.owner_id == user.id
-
-        # 统计股东数
-        from db.models import Shareholder
-        from sqlalchemy import select, func as sqlfunc
-        sh_count_result = await session.execute(
-            select(sqlfunc.count()).where(Shareholder.company_id == company_id)
-        )
-        sh_count = sh_count_result.scalar()
-
-        # 统计产品数
-        from db.models import Product
-        prod_count_result = await session.execute(
-            select(sqlfunc.count()).where(Product.company_id == company_id)
-        )
-        prod_count = prod_count_result.scalar()
-
-    # 公司类型信息
-    type_info = get_company_type_info(company.company_type)
-    type_display = f"{type_info['emoji']} {type_info['name']}" if type_info else company.company_type
-
-    # 税务/薪资计算
-    from config import settings as cfg
-    daily_tax = int(company.daily_revenue * cfg.tax_rate)
-    salary_cost = company.employee_count * cfg.employee_salary_base
-    max_employees = cfg.base_employee_limit + cfg.employee_limit_per_level * (company.level - 1)
-    if type_info and type_info.get("extra_employee_limit"):
-        max_employees += type_info["extra_employee_limit"]
-
-    text = (
-        f"🏢 {company.name} (ID: {company.id})\n"
-        f"类型: {type_display}\n"
-        "─" * 24 + "\n"
-        f"💰 总资金: {fmt_traffic(company.total_funds)}\n"
-        f"📈 日营收: {fmt_traffic(company.daily_revenue)}\n"
-        f"🏷 估值: {fmt_traffic(valuation)}\n"
-        f"📊 等级: Lv.{company.level}\n"
-        f"👥 股东数: {sh_count}\n"
-        f"👷 员工: {company.employee_count}/{max_employees}\n"
-        f"📦 产品数: {prod_count}\n"
-        f"🏛 日纳税: {fmt_traffic(daily_tax)}\n"
-        f"💼 日薪资: {fmt_traffic(salary_cost)}\n"
-    )
-    await callback.message.edit_text(
-        text,
-        reply_markup=company_detail_kb(company_id, is_owner),
-    )
+    text, kb = await render_company_detail(company_id, callback.from_user.id)
+    await callback.message.edit_text(text, reply_markup=kb)
     await callback.answer()
 
 
-# ---- 创建公司（仅群组）：先选类型再输入名称 ----
+# ---- 创建公司：先选类型再输入名称 ----
 
 @router.callback_query(F.data == "company:create")
 async def cb_company_create(callback: types.CallbackQuery, state: FSMContext):
@@ -194,13 +199,14 @@ async def on_company_name(message: types.Message, state: FSMContext):
         await message.answer("返回主菜单:", reply_markup=main_menu_kb())
 
 
-# ---- 招聘/裁员（仅群组）----
+# ---- 招聘/裁员 ----
 
 @router.callback_query(F.data.startswith("company:hire:"))
 async def cb_hire(callback: types.CallbackQuery):
-    company_id = int(callback.data.split(":")[2])
+    parts = callback.data.split(":")
+    company_id = int(parts[2])
+    count_str = parts[3] if len(parts) > 3 else "1"
     tg_id = callback.from_user.id
-    from config import settings as cfg
 
     async with async_session() as session:
         async with session.begin():
@@ -216,20 +222,50 @@ async def cb_hire(callback: types.CallbackQuery):
             if company.employee_count >= max_emp:
                 await callback.answer(f"已达员工上限 ({max_emp}人)，升级公司可提升上限", show_alert=True)
                 return
-            hire_cost = cfg.employee_salary_base * 10
-            from services.company_service import add_funds
-            ok = await add_funds(session, company_id, -hire_cost)
-            if not ok:
-                await callback.answer(f"公司资金不足，招聘需要{hire_cost}MB", show_alert=True)
-                return
-            company.employee_count += 1
 
-    await callback.answer(f"招聘成功! 当前员工: {company.employee_count}人", show_alert=True)
+            available_slots = max_emp - company.employee_count
+            if count_str == "max":
+                desired = available_slots
+            else:
+                desired = int(count_str)
+            hire_count = min(desired, available_slots)
+            if hire_count <= 0:
+                await callback.answer("无可用名额", show_alert=True)
+                return
+
+            hire_cost_per = cfg.employee_salary_base * 10
+            total_cost = hire_count * hire_cost_per
+
+            ok = await add_funds(session, company_id, -total_cost)
+            if not ok:
+                if hire_count > 1:
+                    affordable = company.total_funds // hire_cost_per
+                    if affordable <= 0:
+                        await callback.answer(f"公司资金不足，每人招聘需要{hire_cost_per}MB", show_alert=True)
+                        return
+                    hire_count = min(hire_count, affordable)
+                    total_cost = hire_count * hire_cost_per
+                    ok = await add_funds(session, company_id, -total_cost)
+                    if not ok:
+                        await callback.answer(f"公司资金不足", show_alert=True)
+                        return
+                else:
+                    await callback.answer(f"公司资金不足，招聘需要{hire_cost_per}MB", show_alert=True)
+                    return
+            company.employee_count += hire_count
+
+    await callback.answer(
+        f"招聘成功! 招了{hire_count}人，花费{total_cost}MB",
+        show_alert=True,
+    )
+    await _refresh_company_view(callback, company_id)
 
 
 @router.callback_query(F.data.startswith("company:fire:"))
 async def cb_fire(callback: types.CallbackQuery):
-    company_id = int(callback.data.split(":")[2])
+    parts = callback.data.split(":")
+    company_id = int(parts[2])
+    count_str = parts[3] if len(parts) > 3 else "1"
     tg_id = callback.from_user.id
 
     async with async_session() as session:
@@ -242,12 +278,23 @@ async def cb_fire(callback: types.CallbackQuery):
             if company.employee_count <= 1:
                 await callback.answer("至少需要保留1名员工", show_alert=True)
                 return
-            company.employee_count -= 1
 
-    await callback.answer(f"裁员完成! 当前员工: {company.employee_count}人", show_alert=True)
+            desired = int(count_str)
+            max_fireable = company.employee_count - 1
+            fire_count = min(desired, max_fireable)
+            if fire_count <= 0:
+                await callback.answer("至少需要保留1名员工", show_alert=True)
+                return
+            company.employee_count -= fire_count
+
+    await callback.answer(
+        f"裁员完成! 裁了{fire_count}人",
+        show_alert=True,
+    )
+    await _refresh_company_view(callback, company_id)
 
 
-# ---- 公司改名（仅群组，通过公司ID关联不受影响）----
+# ---- 公司改名 ----
 
 @router.callback_query(F.data.startswith("company:rename:"))
 async def cb_rename(callback: types.CallbackQuery, state: FSMContext):
@@ -284,15 +331,17 @@ async def on_new_name(message: types.Message, state: FSMContext):
     async with async_session() as session:
         async with session.begin():
             from db.models import Company
-            # 检查重名
             exists = await session.execute(select(Company).where(Company.name == new_name))
             if exists.scalar_one_or_none():
                 await message.answer("名称已被使用，请换一个:")
                 return
             company = await session.get(Company, company_id)
-            if company:
-                old_name = company.name
-                company.name = new_name
+            if not company:
+                await message.answer("公司不存在")
+                await state.clear()
+                return
+            old_name = company.name
+            company.name = new_name
 
     await message.answer(f"公司改名成功! {old_name} → {new_name}")
     await state.clear()

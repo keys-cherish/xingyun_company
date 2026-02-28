@@ -65,8 +65,13 @@ def company_detail_kb(company_id: int, is_owner: bool) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="🧪 AI研发", callback_data=f"aird:start:{company_id}"),
         ])
         buttons.append([
-            InlineKeyboardButton(text="➕ 招聘", callback_data=f"company:hire:{company_id}"),
-            InlineKeyboardButton(text="➖ 裁员", callback_data=f"company:fire:{company_id}"),
+            InlineKeyboardButton(text="➕ 招1人", callback_data=f"company:hire:{company_id}:1"),
+            InlineKeyboardButton(text="➕➕ 招5人", callback_data=f"company:hire:{company_id}:5"),
+            InlineKeyboardButton(text="➕ 招满", callback_data=f"company:hire:{company_id}:max"),
+        ])
+        buttons.append([
+            InlineKeyboardButton(text="➖ 裁1人", callback_data=f"company:fire:{company_id}:1"),
+            InlineKeyboardButton(text="➖➖ 裁5人", callback_data=f"company:fire:{company_id}:5"),
         ])
         buttons.append([
             InlineKeyboardButton(text="✏️ 改名", callback_data=f"company:rename:{company_id}"),
@@ -122,7 +127,10 @@ def product_template_kb(templates: list[dict], company_id: int) -> InlineKeyboar
 
 def product_detail_kb(product_id: int, company_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⬆️ 升级产品", callback_data=f"product:upgrade:{product_id}")],
+        [
+            InlineKeyboardButton(text="⬆️ 升级x1", callback_data=f"product:upgrade:{product_id}:1"),
+            InlineKeyboardButton(text="⬆️⬆️ 升级x5", callback_data=f"product:upgrade:{product_id}:5"),
+        ],
         [InlineKeyboardButton(text="🔙 返回", callback_data=f"product:list:{company_id}")],
     ])
 

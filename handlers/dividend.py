@@ -7,7 +7,6 @@ from sqlalchemy import select
 
 from db.engine import async_session
 from db.models import DailyReport
-from handlers.common import group_only
 from keyboards.menus import main_menu_kb
 from services.company_service import get_companies_by_owner, get_company_by_id
 from services.settlement_service import format_daily_report
@@ -16,7 +15,7 @@ from services.user_service import get_user_by_tg_id
 router = Router()
 
 
-@router.callback_query(F.data == "menu:dividend", group_only)
+@router.callback_query(F.data == "menu:dividend")
 async def cb_dividend_menu(callback: types.CallbackQuery):
     tg_id = callback.from_user.id
     async with async_session() as session:

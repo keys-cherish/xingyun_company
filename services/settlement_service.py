@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
@@ -91,9 +91,17 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
     profit = total_income - operating_cost
 
     # Apply net profit/loss to company funds.
-    # Negative profit should also reduce funds (until add_funds validation boundary).
     if profit != 0:
-        await add_funds(session, company.id, profit)
+        success = await add_funds(session, company.id, profit)
+        if not success and profit < 0:
+            # 亏损超过现有资金，将资金清零
+            old_ver = company.version
+            await session.execute(
+                update(Company)
+                .where(Company.id == company.id, Company.version == old_ver)
+                .values(total_funds=0, version=Company.version + 1)
+            )
+            await session.refresh(company)
 
     # Distribute dividends
     distributions = await distribute_dividends(session, company, profit)

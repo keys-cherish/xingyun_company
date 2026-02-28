@@ -6,6 +6,7 @@ from aiogram import F, Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from config import settings as cfg
@@ -32,14 +33,19 @@ router = Router()
 
 
 async def _safe_edit_or_send(callback: types.CallbackQuery, text: str, reply_markup=None):
-    """In group chats, send a new message; in private, edit the existing one."""
-    if callback.message.chat.type in ("group", "supergroup"):
-        await callback.message.answer(text, reply_markup=reply_markup)
-    else:
-        try:
-            await callback.message.edit_text(text, reply_markup=reply_markup)
-        except Exception:
-            pass
+    """Prefer editing current panel; only send new message when edit is impossible."""
+    try:
+        await callback.message.edit_text(text, reply_markup=reply_markup)
+        return
+    except TelegramBadRequest as e:
+        # Avoid duplicate panels when user reopens same page quickly.
+        if "message is not modified" in str(e).lower():
+            return
+    except Exception:
+        # Fall through to send a fresh panel.
+        pass
+
+    await callback.message.answer(text, reply_markup=reply_markup)
 
 
 # ---- /list_company 列出所有公司 ----

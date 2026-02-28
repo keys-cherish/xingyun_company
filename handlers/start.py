@@ -19,6 +19,9 @@ router = Router()
 BOT_COMMANDS = [
     BotCommand(command="start", description="开始游戏 / 个人面板"),
     BotCommand(command="company", description="公司管理"),
+    BotCommand(command="battle", description="商战（回复某人消息）"),
+    BotCommand(command="cooperate", description="合作（all/公司ID）"),
+    BotCommand(command="new_product", description="研发产品（名字 资金 人员）"),
     BotCommand(command="help", description="帮助信息"),
 ]
 
@@ -26,21 +29,28 @@ HELP_TEXT = (
     "🏢 商业帝国 — 公司经营模拟游戏\n"
     f"{'─' * 24}\n"
     "通过 科研→产品→利润 的路径经营虚拟公司\n\n"
-    "核心玩法:\n"
-    "  🔬 科研解锁新产品\n"
-    "  📦 创建产品产生日营收\n"
-    "  💰 每日自动结算分红\n"
-    "  🤝 公司合作获取加成\n"
-    "  🏗 地产投资稳定收益\n"
-    "  🎤 路演获取随机奖励\n"
-    "  📢 广告临时提升收入\n"
-    "  🧪 AI研发永久提升\n"
-    "  🏦 交易所兑换资源/购买道具\n\n"
-    "命令:\n"
-    "  /start — 注册 / 个人面板\n"
-    "  /company — 公司管理\n"
-    "  /help — 显示此帮助\n"
-    "  /admin <密钥> — 管理员认证\n"
+    "📋 命令列表:\n\n"
+    "/start\n"
+    "  注册账号 / 查看个人面板\n\n"
+    "/company\n"
+    "  查看和管理你的公司\n\n"
+    "⚔️ /battle\n"
+    "  回复某人的消息发起商战\n"
+    "  根据公司实力自动PK，胜者掠夺败者资金\n"
+    "  冷却时间: 30分钟\n\n"
+    "🤝 /cooperate <参数>\n"
+    "  /cooperate all — 一键与所有公司合作\n"
+    "  /cooperate 3001 — 与公司ID 3001 合作\n"
+    "  每次合作+10%营收，次日结算后清空\n"
+    "  普通公司上限50%，满级公司上限100%\n\n"
+    "📦 /new_product <名字> <资金> <人员>\n"
+    "  例: /new_product 智能助手 10000 3\n"
+    "  投入资金决定基础日收入，人员提供加成\n"
+    "  资金范围: 1,000 ~ 500,000\n\n"
+    "/admin <密钥>\n"
+    "  管理员认证（需配置ID+密钥）\n\n"
+    "/help\n"
+    "  显示此帮助信息\n"
 )
 
 

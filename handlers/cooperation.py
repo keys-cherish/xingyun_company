@@ -1,16 +1,23 @@
-"""Cooperation handlers (group only)."""
+"""Cooperation handlers – inline menu + /cooperate command."""
 
 from __future__ import annotations
 
 from aiogram import F, Router, types
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from db.engine import async_session
 from keyboards.menus import main_menu_kb
 from services.company_service import get_companies_by_owner, get_company_by_id
-from services.cooperation_service import create_cooperation, get_active_cooperations
+from services.cooperation_service import (
+    cooperate_all,
+    cooperate_with,
+    create_cooperation,
+    get_active_cooperations,
+)
 from services.user_service import get_user_by_tg_id
+from utils.formatters import fmt_traffic
 
 router = Router()
 
@@ -18,6 +25,61 @@ router = Router()
 class CoopState(StatesGroup):
     waiting_partner_company_id = State()
 
+
+# ---- /cooperate command ----
+
+@router.message(Command("cooperate"))
+async def cmd_cooperate(message: types.Message):
+    """Handle /cooperate all | /cooperate <company_id>."""
+    tg_id = message.from_user.id
+    args = (message.text or "").split(maxsplit=1)
+    arg = args[1].strip() if len(args) > 1 else ""
+
+    if not arg:
+        await message.answer(
+            "🤝 合作命令:\n"
+            "  /cooperate all — 一键与所有公司合作\n"
+            "  /cooperate <公司ID> — 与指定公司合作\n"
+            "合作加成每次+10%，次日结算后清空需重新合作\n"
+            "普通公司上限50%，满级公司上限100%"
+        )
+        return
+
+    async with async_session() as session:
+        async with session.begin():
+            user = await get_user_by_tg_id(session, tg_id)
+            if not user:
+                await message.answer("请先 /start 注册")
+                return
+            companies = await get_companies_by_owner(session, user.id)
+            if not companies:
+                await message.answer("你还没有公司")
+                return
+
+            my_company = companies[0]
+
+            if arg.lower() == "all":
+                success, skip, msgs = await cooperate_all(session, my_company.id)
+                lines = [
+                    f"🤝 「{my_company.name}」一键合作完成",
+                    f"新增合作: {success} 家",
+                ]
+                if skip > 0:
+                    lines.append(f"跳过: {skip} 家（已合作或达上限）")
+                if msgs:
+                    lines.extend(msgs)
+                await message.answer("\n".join(lines))
+            else:
+                try:
+                    target_id = int(arg)
+                except ValueError:
+                    await message.answer("请输入有效的公司ID (数字) 或 all")
+                    return
+                ok, msg = await cooperate_with(session, my_company.id, target_id)
+                await message.answer(msg)
+
+
+# ---- Inline menu handlers (legacy) ----
 
 @router.callback_query(F.data == "menu:cooperation")
 async def cb_coop_menu(callback: types.CallbackQuery):
@@ -34,12 +96,6 @@ async def cb_coop_menu(callback: types.CallbackQuery):
         await callback.answer("你还没有公司", show_alert=True)
         return
 
-    if len(companies) == 1:
-        from aiogram.fsm.context import FSMContext
-        callback.data = f"cooperation:init:{companies[0].id}"
-        # Can't easily forward to cb_init_coop without state param, show selector
-        pass
-
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
     buttons = [
         [InlineKeyboardButton(text=c.name, callback_data=f"cooperation:init:{c.id}")]
@@ -47,7 +103,10 @@ async def cb_coop_menu(callback: types.CallbackQuery):
     ]
     buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:main")])
     await callback.message.edit_text(
-        "🤝 选择公司发起合作:",
+        "🤝 选择公司发起合作:\n\n"
+        "💡 也可以使用命令:\n"
+        "  /cooperate all — 一键全部合作\n"
+        "  /cooperate <公司ID> — 指定合作",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
     )
     await callback.answer()
@@ -68,15 +127,15 @@ async def cb_init_coop(callback: types.CallbackQuery, state: FSMContext):
             await callback.answer("只有公司老板才能发起合作", show_alert=True)
             return
 
-        # Show current cooperations
         coops = await get_active_cooperations(session, company_id)
-        lines = [f"🤝 {company.name} 当前合作:", "─" * 24]
+        current_total = sum(c.bonus_multiplier for c in coops)
+        lines = [f"🤝 {company.name} 当前合作 (加成: {current_total*100:.0f}%):", f"{'─' * 24}"]
         if coops:
             for c in coops:
                 partner_id = c.company_b_id if c.company_a_id == company_id else c.company_a_id
                 partner = await get_company_by_id(session, partner_id)
                 pname = partner.name if partner else "未知"
-                lines.append(f"• {pname} (+{c.bonus_multiplier*100:.0f}% 到期:{c.expires_at.strftime('%m-%d')})")
+                lines.append(f"• {pname} (+{c.bonus_multiplier*100:.0f}%)")
         else:
             lines.append("暂无合作")
 

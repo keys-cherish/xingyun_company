@@ -1,23 +1,132 @@
-"""产品处理器（仅群组）。支持创建、升级、下架/删除产品。"""
+"""产品处理器。支持创建、升级、下架/删除产品。"""
 
 from __future__ import annotations
 
 from aiogram import F, Router, types
+from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from db.engine import async_session
 from keyboards.menus import product_detail_kb, product_template_kb
-from services.company_service import get_company_by_id, update_daily_revenue
+from services.company_service import get_company_by_id, get_companies_by_owner, update_daily_revenue, add_funds
 from services.product_service import (
     create_product,
     get_available_product_templates,
     get_company_products,
     upgrade_product,
 )
-from services.user_service import get_user_by_tg_id
+from services.user_service import get_user_by_tg_id, add_points
 from utils.formatters import fmt_traffic
+from db.models import Product as ProductModel
 
 router = Router()
+
+# /new_product 参数：投入资金 -> 基础日收入的转化率
+INVEST_TO_INCOME_RATE = 0.03  # 每投入100金币 = 3金币/日
+EMPLOYEE_INCOME_BONUS = 0.10  # 每分配1名员工 +10% 收入
+
+
+@router.message(Command("new_product"))
+async def cmd_new_product(message: types.Message):
+    """Create a custom product: /new_product <name> <investment> <employees>."""
+    tg_id = message.from_user.id
+    args = (message.text or "").split()
+
+    if len(args) < 4:
+        await message.answer(
+            "📦 用法: /new_product <产品名> <投入资金> <分配人员>\n"
+            "例: /new_product 智能助手 10000 3\n\n"
+            "• 投入资金从公司扣除，决定产品基础日收入\n"
+            "• 分配人员提供额外收入加成（每人+10%）\n"
+            "• 分配的人员不会减少公司员工数"
+        )
+        return
+
+    product_name = args[1]
+    try:
+        investment = int(args[2])
+        employees = int(args[3])
+    except ValueError:
+        await message.answer("❌ 资金和人员必须是数字")
+        return
+
+    if investment < 1000:
+        await message.answer("❌ 最低投入 1,000 金币")
+        return
+    if investment > 500000:
+        await message.answer("❌ 单次最高投入 500,000 金币")
+        return
+    if employees < 0 or employees > 50:
+        await message.answer("❌ 分配人员数量 0-50")
+        return
+    if len(product_name) > 32:
+        await message.answer("❌ 产品名称最长32字符")
+        return
+
+    async with async_session() as session:
+        async with session.begin():
+            user = await get_user_by_tg_id(session, tg_id)
+            if not user:
+                await message.answer("请先 /start 注册")
+                return
+            companies = await get_companies_by_owner(session, user.id)
+            if not companies:
+                await message.answer("你还没有公司")
+                return
+            company = companies[0]
+
+            # Check employee count
+            if employees > company.employee_count:
+                await message.answer(f"❌ 公司只有 {company.employee_count} 名员工")
+                return
+
+            # Deduct investment from company funds
+            ok = await add_funds(session, company.id, -investment)
+            if not ok:
+                await message.answer(f"❌ 公司资金不足，需要 {fmt_traffic(investment)}")
+                return
+
+            # Check duplicate name
+            from sqlalchemy import select
+            existing = await session.execute(
+                select(ProductModel).where(
+                    ProductModel.company_id == company.id,
+                    ProductModel.name == product_name,
+                )
+            )
+            if existing.scalar_one_or_none():
+                # Refund
+                await add_funds(session, company.id, investment)
+                await message.answer(f"❌ 已存在同名产品「{product_name}」")
+                return
+
+            # Calculate daily income
+            base_income = int(investment * INVEST_TO_INCOME_RATE)
+            employee_bonus = int(base_income * EMPLOYEE_INCOME_BONUS * employees)
+            daily_income = base_income + employee_bonus
+            quality = min(10 + employees * 5, 100)
+
+            product = ProductModel(
+                company_id=company.id,
+                name=product_name,
+                tech_id="custom",
+                daily_income=daily_income,
+                quality=quality,
+            )
+            session.add(product)
+            await update_daily_revenue(session, company.id)
+            await add_points(user.id, 10, session=session)
+
+    await message.answer(
+        f"📦 产品「{product_name}」研发成功!\n"
+        f"{'─' * 24}\n"
+        f"投入资金: {fmt_traffic(investment)}\n"
+        f"分配人员: {employees} 人\n"
+        f"基础日收入: {fmt_traffic(base_income)}\n"
+        f"人员加成: +{fmt_traffic(employee_bonus)}\n"
+        f"总日收入: {fmt_traffic(daily_income)}\n"
+        f"产品品质: {quality}"
+    )
 
 
 async def _refresh_product_list(callback: types.CallbackQuery, company_id: int):

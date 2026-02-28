@@ -40,6 +40,13 @@ async def create_company(
     if company_type not in types:
         return None, "无效的公司类型"
 
+    # One company per person
+    existing = await session.execute(
+        select(Company).where(Company.owner_id == owner.id)
+    )
+    if existing.scalar_one_or_none():
+        return None, "每人只能拥有一家公司"
+
     # Check duplicate name
     exists = await session.execute(select(Company).where(Company.name == name))
     if exists.scalar_one_or_none():

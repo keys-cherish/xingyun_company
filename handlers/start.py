@@ -9,26 +9,29 @@ from aiogram.types import BotCommand
 from cache.redis_client import get_leaderboard
 from config import settings
 from db.engine import async_session
-from keyboards.menus import main_menu_kb, start_existing_user_kb
+from keyboards.menus import main_menu_kb
 from services.company_service import get_companies_by_owner
 from services.user_service import get_or_create_user, get_points, get_quota_mb
 from utils.formatters import fmt_traffic, fmt_quota, compact_number
+from utils.panel_owner import mark_panel
 
 router = Router()
 
 BOT_COMMANDS = [
-    BotCommand(command="start", description="开始游戏 / 个人面板"),
+    BotCommand(command="start", description="开始游戏 / 创建公司"),
+    BotCommand(command="create_company", description="创建公司"),
     BotCommand(command="company", description="我的公司"),
     BotCommand(command="list_company", description="查看全服公司"),
     BotCommand(command="rank_company", description="综合实力排行榜"),
     BotCommand(command="battle", description="商战（回复+可选战术）"),
-    BotCommand(command="cooperate", description="合作（回复/all/公司ID）"),
+    BotCommand(command="cooperate", description="合作（回复/all）"),
     BotCommand(command="new_product", description="研发产品（名字 资金 人员）"),
     BotCommand(command="member", description="员工管理（add/minus 数量）"),
     BotCommand(command="dissolve", description="注销公司"),
     BotCommand(command="quest", description="周任务清单"),
     BotCommand(command="help", description="帮助信息"),
     BotCommand(command="give_money", description="超管发放金币（回复+金额）"),
+    BotCommand(command="welfare", description="超管全服福利（每家100万）"),
 ]
 
 HELP_TEXT = (
@@ -36,13 +39,14 @@ HELP_TEXT = (
     f"{'─' * 24}\n"
     "通过 科研→产品→利润 的路径经营虚拟公司\n\n"
     "📋 命令列表:\n\n"
-    "/start — 注册 / 个人面板\n"
+    "/start — 开始游戏（自动注册+创建公司）\n"
+    "/create_company — 创建公司\n"
     "/company — 查看和管理公司\n"
     "/list_company — 全服公司列表\n"
     "/rank_company — 综合实力排行\n\n"
     "⚔️ /battle [战术] — 回复某人发起商战\n"
     "  战术: 稳扎稳打 / 激进营销 / 奇袭渗透\n"
-    "🤝 /cooperate — 回复某人/all/公司ID 合作\n"
+    "🤝 /cooperate — 回复某人/all 合作\n"
     "  每次+5%，次日清空，上限50%(满级100%)\n\n"
     "📦 /new_product <名字> <资金> <人员>\n"
     "  投入+人员决定收入，品质随机\n"
@@ -56,28 +60,14 @@ HELP_TEXT = (
 
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):
-    tg_id = message.from_user.id
-    tg_name = message.from_user.full_name or str(tg_id)
-
-    async with async_session() as session:
-        async with session.begin():
-            user, created = await get_or_create_user(session, tg_id, tg_name)
-            user_id = user.id
-            traffic = user.traffic
-            reputation = user.reputation
-
-    if created:
-        await message.answer(
-            f"欢迎加入 商业帝国!\n"
-            f"已发放初始资金: {fmt_traffic(settings.initial_traffic)}\n\n"
-            f"使用下方菜单开始游戏:",
-            reply_markup=main_menu_kb(),
-        )
-    else:
-        await message.answer(
-            f"🏢 商业帝国 — 主菜单",
-            reply_markup=main_menu_kb(),
-        )
+    """引导入口：仅展示欢迎信息，引导用户使用 /create_company。"""
+    await message.answer(
+        "🏢 商业帝国 — 公司经营模拟游戏\n"
+        f"{'─' * 24}\n\n"
+        "👉 /create_company — 注册并创建你的公司\n"
+        "👉 /company — 查看你的公司\n"
+        "👉 /help — 查看完整帮助\n"
+    )
 
 
 @router.message(Command("help"))
@@ -87,10 +77,25 @@ async def cmd_help(message: types.Message):
 
 @router.callback_query(F.data == "menu:main")
 async def cb_menu_main(callback: types.CallbackQuery):
-    await callback.message.edit_text(
-        "🏢 商业帝国 — 主菜单",
-        reply_markup=main_menu_kb(),
-    )
+    """menu:main now redirects to company view."""
+    tg_id = callback.from_user.id
+    async with async_session() as session:
+        from services.user_service import get_user_by_tg_id
+        user = await get_user_by_tg_id(session, tg_id)
+        if not user:
+            await callback.answer("请先 /create_company 创建公司", show_alert=True)
+            return
+        companies = await get_companies_by_owner(session, user.id)
+
+    if companies:
+        from handlers.company import render_company_detail, _safe_edit_or_send
+        text, kb = await render_company_detail(companies[0].id, tg_id)
+        await _safe_edit_or_send(callback, text, kb)
+    else:
+        await callback.message.edit_text(
+            "你还没有公司，使用 /create_company 创建",
+            reply_markup=main_menu_kb(),
+        )
     await callback.answer()
 
 
@@ -102,7 +107,7 @@ async def cb_menu_profile(callback: types.CallbackQuery):
         from services.user_service import get_user_by_tg_id
         user = await get_user_by_tg_id(session, tg_id)
         if not user:
-            await callback.answer("请先 /start 注册", show_alert=True)
+            await callback.answer("请先 /create_company 创建公司", show_alert=True)
             return
         companies = await get_companies_by_owner(session, user.id)
         traffic = user.traffic
@@ -178,7 +183,7 @@ async def _show_leaderboard(callback: types.CallbackQuery, board_type: str):
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         cat_buttons,
-        [InlineKeyboardButton(text="🔙 返回", callback_data="menu:main")],
+        [InlineKeyboardButton(text="🔙 返回", callback_data="menu:company")],
     ])
     try:
         await callback.message.edit_text("\n".join(lines), reply_markup=kb)

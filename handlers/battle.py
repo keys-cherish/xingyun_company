@@ -19,10 +19,15 @@ logger = logging.getLogger(__name__)
 @router.message(Command("battle"))
 async def cmd_battle(message: types.Message):
     """Initiate a business battle by replying to someone's message."""
+    strategy = None
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) >= 2:
+        strategy = parts[1].strip()
+
     if not message.reply_to_message:
         await message.answer(
-            "⚔️ 使用方法: 回复某人的消息并发送 /battle\n"
-            "将对该玩家发起商战!"
+            "⚔️ 使用方法: 回复某人的消息并发送 /battle [战术]\n"
+            "战术可选: 稳扎稳打 / 激进营销 / 奇袭渗透"
         )
         return
 
@@ -34,10 +39,32 @@ async def cmd_battle(message: types.Message):
     attacker_tg_id = message.from_user.id
     defender_tg_id = target.id
 
+    if attacker_tg_id == defender_tg_id:
+        await message.answer("❌ 不能对自己发起商战")
+        return
+
     try:
+        # 检查攻击方是否有公司
+        from services.user_service import get_user_by_tg_id
+        from services.company_service import get_companies_by_owner
+        async with async_session() as session:
+            user = await get_user_by_tg_id(session, attacker_tg_id)
+            if not user:
+                await message.answer("请先 /create_company 创建公司")
+                return
+            companies = await get_companies_by_owner(session, user.id)
+            if not companies:
+                await message.answer("❌ 你还没有公司，请先 /create_company 创建公司")
+                return
+
         async with async_session() as session:
             async with session.begin():
-                ok, msg = await battle(session, attacker_tg_id, defender_tg_id)
+                ok, msg = await battle(
+                    session,
+                    attacker_tg_id,
+                    defender_tg_id,
+                    attacker_strategy=strategy,
+                )
 
         await message.answer(msg)
     except Exception as e:

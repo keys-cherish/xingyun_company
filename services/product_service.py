@@ -106,7 +106,7 @@ async def create_product(
         return None, f"已存在同名产品「{name}」"
 
     # 每日创建上限
-    today_start = dt.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = dt.datetime.now(dt.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
     today_count = (await session.execute(
         select(sqlfunc.count()).select_from(Product).where(
             Product.company_id == company_id,

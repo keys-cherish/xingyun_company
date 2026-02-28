@@ -6,12 +6,13 @@ import datetime as dt
 import json
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from db.models import Company, ResearchProgress, User
-from services.user_service import add_reputation, add_traffic, add_points
+from services.company_service import add_funds
+from services.user_service import add_reputation, add_points
 
 _tech_tree: dict | None = None
 
@@ -75,7 +76,7 @@ async def start_research(
     owner_user_id: int,
     tech_id: str,
 ) -> tuple[bool, str]:
-    """Start researching a technology. Deducts traffic from the owner."""
+    """Start researching a technology. Deducts company funds."""
     tree = _load_tech_tree()
     if tech_id not in tree:
         return False, "无效的科研项目"
@@ -132,11 +133,11 @@ async def start_research(
             f"当前仅 {owner.reputation}"
         )
 
-    # Deduct cost from owner wallet
-    ok = await add_traffic(session, owner_user_id, -cost)
+    # Deduct cost from company funds
+    ok = await add_funds(session, company_id, -cost)
     if not ok:
         from utils.formatters import fmt_traffic
-        return False, f"金币不足，需要 {fmt_traffic(cost)}"
+        return False, f"公司资金不足，需要 {fmt_traffic(cost)}"
 
     rp = ResearchProgress(
         company_id=company_id,
@@ -161,7 +162,11 @@ async def check_and_complete_research(session: AsyncSession, company_id: int) ->
     """Check all in-progress research; complete those past duration. Returns list of completed tech names."""
     tree = _load_tech_tree()
     in_progress = await get_in_progress_research(session, company_id)
-    now = dt.datetime.utcnow()
+    now = (await session.execute(select(sqlfunc.now()))).scalar()
+    if now is None:
+        now = dt.datetime.utcnow()
+    if getattr(now, "tzinfo", None):
+        now = now.replace(tzinfo=None)
     completed_names = []
 
     for rp in in_progress:
@@ -169,9 +174,12 @@ async def check_and_complete_research(session: AsyncSession, company_id: int) ->
         if tech is None:
             continue
         duration = dt.timedelta(seconds=tech.get("duration_seconds", settings.base_research_seconds))
-        # Ensure both datetimes are comparable (both naive UTC)
+        # Normalize to naive datetimes (DB column is TIMESTAMP WITHOUT TIME ZONE)
         started = rp.started_at.replace(tzinfo=None) if rp.started_at.tzinfo else rp.started_at
-        if now - started >= duration:
+        elapsed = now - started
+        if elapsed.total_seconds() < 0:
+            continue
+        if elapsed >= duration:
             rp.status = "completed"
             rp.completed_at = now
             completed_names.append(tech["name"])

@@ -21,7 +21,7 @@ async def cb_dividend_menu(callback: types.CallbackQuery):
     async with async_session() as session:
         user = await get_user_by_tg_id(session, tg_id)
         if not user:
-            await callback.answer("请先 /start 注册", show_alert=True)
+            await callback.answer("请先 /create_company 创建公司", show_alert=True)
             return
         companies = await get_companies_by_owner(session, user.id)
 

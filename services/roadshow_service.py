@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cache.redis_client import get_redis
 from config import settings
 from db.models import Company, Roadshow
-from services.user_service import add_reputation, add_traffic, add_points
+from services.company_service import add_funds
+from services.user_service import add_reputation, add_points
 from utils.formatters import fmt_traffic
 
 ROADSHOW_TYPES = ["技术展会", "投资峰会", "媒体发布会", "行业论坛"]
@@ -85,10 +86,10 @@ async def do_roadshow(
         minutes = (remaining % 3600) // 60
         return False, f"路演冷却中，还需 {hours}时{minutes}分"
 
-    # Deduct cost
-    ok = await add_traffic(session, owner_user_id, -settings.roadshow_cost)
+    # Deduct cost from company funds
+    ok = await add_funds(session, company_id, -settings.roadshow_cost)
     if not ok:
-        return False, f"金币不足，路演需要 {fmt_traffic(settings.roadshow_cost)}"
+        return False, f"公司资金不足，路演需要 {fmt_traffic(settings.roadshow_cost)}"
 
     # Random type
     rs_type = random.choice(ROADSHOW_TYPES)
@@ -113,7 +114,7 @@ async def do_roadshow(
     reward_line = ""
 
     if reward["type"] == "traffic" or reward["type"] == "jackpot":
-        await add_traffic(session, owner_user_id, amount)
+        await add_funds(session, company_id, amount)
         bonus = amount
         reward_line = f"💰 资金 +{fmt_traffic(amount)}"
     elif reward["type"] == "reputation":

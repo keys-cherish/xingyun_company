@@ -29,6 +29,7 @@ from services.company_service import (
 )
 from services.user_service import get_user_by_tg_id
 from utils.formatters import fmt_traffic
+from utils.panel_owner import mark_panel
 
 router = Router()
 
@@ -46,7 +47,8 @@ async def _safe_edit_or_send(callback: types.CallbackQuery, text: str, reply_mar
         # Fall through to send a fresh panel.
         pass
 
-    await callback.message.answer(text, reply_markup=reply_markup)
+    sent = await callback.message.answer(text, reply_markup=reply_markup)
+    await mark_panel(sent.chat.id, sent.message_id, callback.from_user.id)
 
 
 # ---- /list_company 列出所有公司 ----
@@ -205,7 +207,7 @@ async def cmd_member(message: types.Message):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await message.answer("请先 /start 注册")
+                await message.answer("请先 /create_company 创建公司")
                 return
             companies = await get_companies_by_owner(session, user.id)
             if not companies:
@@ -405,11 +407,13 @@ async def cmd_company(message: types.Message):
     # 只有一家公司时直接打开详情
     if len(companies) == 1:
         text, kb = await render_company_detail(companies[0].id, tg_id)
-        await message.answer(text, reply_markup=kb)
+        sent = await message.answer(text, reply_markup=kb)
+        await mark_panel(message.chat.id, sent.message_id, tg_id)
         return
 
     items = [(c.id, c.name) for c in companies]
-    await message.answer("🏢 你的公司列表:", reply_markup=company_list_kb(items))
+    sent = await message.answer("🏢 你的公司列表:", reply_markup=company_list_kb(items))
+    await mark_panel(message.chat.id, sent.message_id, tg_id)
 
 
 @router.callback_query(F.data == "menu:company")
@@ -418,7 +422,7 @@ async def cb_menu_company(callback: types.CallbackQuery):
     async with async_session() as session:
         user = await get_user_by_tg_id(session, tg_id)
         if not user:
-            await callback.answer("请先 /start 注册", show_alert=True)
+            await callback.answer("请先 /create_company 创建公司", show_alert=True)
             return
         companies = await get_companies_by_owner(session, user.id)
 
@@ -434,6 +438,22 @@ async def cb_menu_company(callback: types.CallbackQuery):
     await callback.answer()
 
 
+@router.callback_query(F.data == "menu:company_list")
+async def cb_menu_company_list(callback: types.CallbackQuery):
+    """Always show company list page, even if user only has one company."""
+    tg_id = callback.from_user.id
+    async with async_session() as session:
+        user = await get_user_by_tg_id(session, tg_id)
+        if not user:
+            await callback.answer("请先 /create_company 创建公司", show_alert=True)
+            return
+        companies = await get_companies_by_owner(session, user.id)
+
+    items = [(c.id, c.name) for c in companies]
+    await _safe_edit_or_send(callback, "🏢 你的公司列表:", company_list_kb(items))
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("company:view:"))
 async def cb_company_view(callback: types.CallbackQuery):
     company_id = int(callback.data.split(":")[2])
@@ -442,7 +462,65 @@ async def cb_company_view(callback: types.CallbackQuery):
     await callback.answer()
 
 
-# ---- 创建公司：先选类型再输入名称 ----
+# ---- 创建公司：/create_company 命令或回调按钮 ----
+
+@router.message(Command("create_company"))
+async def cmd_create_company(message: types.Message, state: FSMContext):
+    """创建公司命令入口。自动注册用户，无需先 /start。"""
+    tg_id = message.from_user.id
+    tg_name = message.from_user.full_name or str(tg_id)
+
+    # 自动注册用户
+    from services.user_service import get_or_create_user, add_traffic
+    from config import settings as _cfg
+    from utils.formatters import fmt_traffic as _fmt
+
+    async with async_session() as session:
+        async with session.begin():
+            user, created = await get_or_create_user(session, tg_id, tg_name)
+        companies = await get_companies_by_owner(session, user.id)
+        if companies:
+            # 已有公司 → 直接展示
+            text, kb = await render_company_detail(companies[0].id, tg_id)
+            sent = await message.answer(
+                "你已经拥有公司，每人只能拥有一家公司\n\n" + text,
+                reply_markup=kb,
+            )
+            await mark_panel(message.chat.id, sent.message_id, tg_id)
+            return
+
+    welcome = ""
+    if created:
+        welcome = f"欢迎加入 商业帝国! 已发放初始资金: {_fmt(_cfg.initial_traffic)}\n\n"
+    else:
+        # 老用户重新创建（注销后），重新发放初始资金
+        async with async_session() as session:
+            async with session.begin():
+                await add_traffic(session, user.id, _cfg.initial_traffic)
+        welcome = f"已重新发放初始资金: {_fmt(_cfg.initial_traffic)}\n\n"
+
+    await _start_company_type_selection(message, state, welcome)
+
+
+async def _start_company_type_selection(message: types.Message, state: FSMContext, prefix: str = ""):
+    """共用的公司类型选择面板。"""
+    types_data = load_company_types()
+    buttons = [
+        [InlineKeyboardButton(
+            text=f"{info['emoji']} {info['name']}",
+            callback_data=f"company:type:{key}",
+        )]
+        for key, info in types_data.items()
+    ]
+    text = (
+        f"{prefix}"
+        "🏢 创建公司\n选择公司类型:\n\n" +
+        "\n".join(f"{info['emoji']} {info['name']} — {info['description']}" for info in types_data.values())
+    )
+    sent = await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    await mark_panel(message.chat.id, sent.message_id, message.from_user.id)
+    await state.set_state(CreateCompanyState.waiting_type)
+
 
 @router.callback_query(F.data == "company:create")
 async def cb_company_create(callback: types.CallbackQuery, state: FSMContext):
@@ -454,7 +532,7 @@ async def cb_company_create(callback: types.CallbackQuery, state: FSMContext):
         )]
         for key, info in types_data.items()
     ]
-    buttons.append([InlineKeyboardButton(text="🔙 取消", callback_data="menu:main")])
+    buttons.append([InlineKeyboardButton(text="🔙 取消", callback_data="menu:company")])
 
     await callback.message.edit_text(
         "选择公司类型:\n\n" +
@@ -491,7 +569,7 @@ async def on_company_name(message: types.Message, state: FSMContext):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await message.answer("请先 /start 注册")
+                await message.answer("请先 /create_company 创建公司")
                 await state.clear()
                 return
             company, msg = await create_company(session, user, name, company_type)
@@ -500,8 +578,9 @@ async def on_company_name(message: types.Message, state: FSMContext):
     await state.clear()
 
     if company:
-        from keyboards.menus import start_existing_user_kb
-        await message.answer("返回主菜单:", reply_markup=start_existing_user_kb())
+        text, kb = await render_company_detail(company.id, message.from_user.id)
+        sent = await message.answer(text, reply_markup=kb)
+        await mark_panel(message.chat.id, sent.message_id, message.from_user.id)
 
 
 # ---- 招聘/裁员 ----
@@ -729,36 +808,24 @@ async def on_new_name(message: types.Message, state: FSMContext):
         f"📉 当日营收将降低 {int(RENAME_REVENUE_PENALTY * 100)}%，次日恢复"
     )
     await state.clear()
-    from keyboards.menus import main_menu_kb
-    await message.answer("返回主菜单:", reply_markup=main_menu_kb())
 
-
-# ---- /dissolve 注销公司 ----
-
-DISSOLVE_COOLDOWN_SECONDS = 86400  # 24小时后才能重新创建
+    # 改名后刷新公司面板
+    text, kb = await render_company_detail(company_id, message.from_user.id)
+    sent = await message.answer(text, reply_markup=kb)
+    await mark_panel(message.chat.id, sent.message_id, message.from_user.id)
 
 
 @router.message(Command("dissolve"))
 async def cmd_dissolve(message: types.Message):
-    """注销公司，24小时后才能重新创建。"""
+    """注销公司，清空所有资金和信息，可立即重新创建。"""
     tg_id = message.from_user.id
-
-    from cache.redis_client import get_redis
-    r = await get_redis()
-    cd_key = f"dissolve_cd:{tg_id}"
-    cd_ttl = await r.ttl(cd_key)
-    if cd_ttl > 0:
-        hours = cd_ttl // 3600
-        mins = (cd_ttl % 3600) // 60
-        await message.answer(f"⏳ 注销冷却中，{hours}小时{mins}分后可重新创建公司")
-        return
 
     args = (message.text or "").split()
     if len(args) < 2 or args[1].lower() != "confirm":
         async with async_session() as session:
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await message.answer("请先 /start 注册")
+                await message.answer("请先 /create_company 创建公司")
                 return
             companies = await get_companies_by_owner(session, user.id)
             if not companies:
@@ -767,7 +834,7 @@ async def cmd_dissolve(message: types.Message):
             names = ", ".join(f"「{c.name}」" for c in companies)
         await message.answer(
             f"⚠️ 确认要注销以下公司吗？\n{names}\n\n"
-            "注销后所有数据将被清除，24小时内不能重新创建。\n"
+            "⚠️ 注销后所有公司数据和个人资金将被清零！\n"
             "确认请发送: /dissolve confirm"
         )
         return
@@ -775,12 +842,13 @@ async def cmd_dissolve(message: types.Message):
     from sqlalchemy import select, delete as sql_delete
     from db.models import Company, Product, Shareholder, ResearchProgress, Roadshow, RealEstate, DailyReport
     from db.models import Cooperation
+    from services.user_service import add_traffic
 
     async with async_session() as session:
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await message.answer("请先 /start 注册")
+                await message.answer("请先 /create_company 创建公司")
                 return
             companies = await get_companies_by_owner(session, user.id)
             if not companies:
@@ -803,10 +871,13 @@ async def cmd_dissolve(message: types.Message):
                 ))
                 await session.delete(company)
 
-    # Set 24h cooldown
-    await r.set(cd_key, "1", ex=DISSOLVE_COOLDOWN_SECONDS)
+            # 清空个人资金
+            user.traffic = 0
+            user.reputation = 0
+            await session.flush()
 
     await message.answer(
         f"🗑 公司已注销: {', '.join(f'「{n}」' for n in names)}\n"
-        f"24小时后可重新创建公司"
+        f"所有资金和声望已清零\n"
+        f"使用 /create_company 重新开始"
     )

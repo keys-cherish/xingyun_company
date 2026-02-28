@@ -46,7 +46,7 @@ class Company(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     company_type: Mapped[str] = mapped_column(String(32), nullable=False, default="tech")
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     total_funds: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     daily_revenue: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
@@ -70,8 +70,8 @@ class Shareholder(Base):
     __table_args__ = (UniqueConstraint("company_id", "user_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     shares: Mapped[float] = mapped_column(Float, nullable=False, default=0)  # percentage 0-100
     invested_amount: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     joined_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
@@ -87,7 +87,7 @@ class ResearchProgress(Base):
     __table_args__ = (UniqueConstraint("company_id", "tech_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
     tech_id: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="researching")  # researching / completed
     started_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
@@ -102,7 +102,7 @@ class Product(Base):
     __tablename__ = "products"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     tech_id: Mapped[str] = mapped_column(String(64), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
@@ -120,7 +120,7 @@ class Roadshow(Base):
     __tablename__ = "roadshows"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
     type: Mapped[str] = mapped_column(String(32), nullable=False)
     result: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     bonus: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
@@ -136,8 +136,8 @@ class Cooperation(Base):
     __tablename__ = "cooperations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    company_a_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
-    company_b_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
+    company_a_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    company_b_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
     type: Mapped[str] = mapped_column(String(32), nullable=False, default="standard")
     bonus_multiplier: Mapped[float] = mapped_column(Float, nullable=False, default=0.10)
     expires_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False)
@@ -150,7 +150,7 @@ class RealEstate(Base):
     __tablename__ = "real_estates"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
     building_type: Mapped[str] = mapped_column(String(64), nullable=False)
     level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     daily_dividend: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
@@ -166,7 +166,7 @@ class DailyReport(Base):
     __tablename__ = "daily_reports"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
     date: Mapped[str] = mapped_column(String(10), nullable=False)  # YYYY-MM-DD
     product_income: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     cooperation_bonus: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)

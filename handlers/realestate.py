@@ -48,7 +48,7 @@ async def cb_realestate_menu(callback: types.CallbackQuery):
     async with async_session() as session:
         user = await get_user_by_tg_id(session, tg_id)
         if not user:
-            await callback.answer("请先 /start 注册", show_alert=True)
+            await callback.answer("请先 /create_company 创建公司", show_alert=True)
             return
         from services.company_service import get_companies_by_owner
         companies = await get_companies_by_owner(session, user.id)
@@ -58,8 +58,7 @@ async def cb_realestate_menu(callback: types.CallbackQuery):
         return
 
     if len(companies) == 1:
-        callback.data = f"realestate:list:{companies[0].id}"
-        await cb_estate_list(callback)
+        await cb_estate_list(callback, companies[0].id)
         return
 
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -67,7 +66,7 @@ async def cb_realestate_menu(callback: types.CallbackQuery):
         [InlineKeyboardButton(text=c.name, callback_data=f"realestate:list:{c.id}")]
         for c in companies
     ]
-    buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:main")])
+    buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:company")])
     await callback.message.edit_text(
         "🏗 选择公司查看地产:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
@@ -76,13 +75,19 @@ async def cb_realestate_menu(callback: types.CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("realestate:list:"))
-async def cb_estate_list(callback: types.CallbackQuery):
-    company_id = int(callback.data.split(":")[2])
+async def cb_estate_list(callback: types.CallbackQuery, company_id: int | None = None):
+    if company_id is None:
+        company_id = int(callback.data.split(":")[2])
+    tg_id = callback.from_user.id
 
     async with async_session() as session:
+        user = await get_user_by_tg_id(session, tg_id)
         company = await get_company_by_id(session, company_id)
-        if not company:
-            await callback.answer("公司不存在", show_alert=True)
+        if not user:
+            await callback.answer("请先 /create_company 创建公司", show_alert=True)
+            return
+        if not company or company.owner_id != user.id:
+            await callback.answer("无权操作", show_alert=True)
             return
         estates = await get_company_estates(session, company_id)
 
@@ -114,7 +119,7 @@ async def cb_buy_building(callback: types.CallbackQuery):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await callback.answer("请先 /start 注册", show_alert=True)
+                await callback.answer("请先 /create_company 创建公司", show_alert=True)
                 return
             company = await get_company_by_id(session, company_id)
             if not company or company.owner_id != user.id:

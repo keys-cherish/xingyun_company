@@ -17,6 +17,7 @@ from services.quest_service import (
     get_user_titles,
 )
 from services.user_service import get_user_by_tg_id
+from utils.panel_owner import mark_panel
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ def _quest_list_kb(tasks) -> InlineKeyboardMarkup:
                 text=f"⬜ {name} ({t.progress}/{t.target}) {pct}%",
                 callback_data=f"quest:detail:{t.quest_id}",
             )])
-    buttons.append([InlineKeyboardButton(text="🔙 主菜单", callback_data="menu:main")])
+    buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:company")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -70,12 +71,13 @@ async def cmd_quest(message: types.Message):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await message.answer("请先 /start 注册")
+                await message.answer("请先 /create_company 创建公司")
                 return
             tasks = await get_or_create_weekly_tasks(session, user.id)
 
     text = await _build_quest_text(user.id, tasks)
-    await message.answer(text, reply_markup=_quest_list_kb(tasks))
+    sent = await message.answer(text, reply_markup=_quest_list_kb(tasks))
+    await mark_panel(message.chat.id, sent.message_id, tg_id)
 
 
 @router.callback_query(F.data == "menu:quest")
@@ -85,7 +87,7 @@ async def cb_quest_menu(callback: types.CallbackQuery):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await callback.answer("请先 /start 注册", show_alert=True)
+                await callback.answer("请先 /create_company 创建公司", show_alert=True)
                 return
             tasks = await get_or_create_weekly_tasks(session, user.id)
 
@@ -93,7 +95,8 @@ async def cb_quest_menu(callback: types.CallbackQuery):
     try:
         await callback.message.edit_text(text, reply_markup=_quest_list_kb(tasks))
     except Exception:
-        await callback.message.answer(text, reply_markup=_quest_list_kb(tasks))
+        sent = await callback.message.answer(text, reply_markup=_quest_list_kb(tasks))
+        await mark_panel(sent.chat.id, sent.message_id, tg_id)
     await callback.answer()
 
 
@@ -106,7 +109,7 @@ async def cb_quest_claim(callback: types.CallbackQuery):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await callback.answer("请先 /start 注册", show_alert=True)
+                await callback.answer("请先 /create_company 创建公司", show_alert=True)
                 return
             ok, msg = await claim_quest_reward(session, user.id, quest_id)
 

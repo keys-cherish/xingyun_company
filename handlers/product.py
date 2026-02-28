@@ -21,6 +21,7 @@ from services.product_service import (
 )
 from services.user_service import get_user_by_tg_id, add_points
 from utils.formatters import fmt_traffic
+from utils.panel_owner import mark_panel
 from db.models import Product as ProductModel
 
 router = Router()
@@ -45,7 +46,7 @@ async def cmd_new_product(message: types.Message):
             "例: /new_product 智能助手 10000 3\n\n"
             "• 投入资金从公司扣除，决定产品基础日收入\n"
             "• 分配人员提供额外收入加成（每人+10%）\n"
-            "• 分配的人员不会减少公司员工数"
+            "• 分配人员仅用于本次研发，研发完成后自动释放"
         )
         return
 
@@ -74,7 +75,7 @@ async def cmd_new_product(message: types.Message):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await message.answer("请先 /start 注册")
+                await message.answer("请先 /create_company 创建公司")
                 return
             companies = await get_companies_by_owner(session, user.id)
             if not companies:
@@ -82,25 +83,19 @@ async def cmd_new_product(message: types.Message):
                 return
             company = companies[0]
 
-            # 计算已分配员工数
-            from sqlalchemy import select, func as sqlfunc
-            assigned_total = (await session.execute(
-                select(sqlfunc.coalesce(sqlfunc.sum(ProductModel.assigned_employees), 0))
-                .where(ProductModel.company_id == company.id)
-            )).scalar() or 0
-            available_employees = company.employee_count - assigned_total
-
-            if employees > available_employees:
+            # 分配人员只用于本次研发，不做长期占用
+            if employees > company.employee_count:
                 await message.answer(
                     f"❌ 可用员工不足\n"
-                    f"总员工: {company.employee_count} | 已分配: {assigned_total} | 可用: {available_employees}"
+                    f"总员工: {company.employee_count} | 本次需要: {employees}"
                 )
                 return
 
             # 每日创建上限
             import datetime as dt
+            from sqlalchemy import select, func as sqlfunc
             from services.product_service import MAX_DAILY_PRODUCT_CREATE
-            today_start = dt.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            today_start = dt.datetime.now(dt.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
             today_count = (await session.execute(
                 select(sqlfunc.coalesce(sqlfunc.count(ProductModel.id), 0)).where(
                     ProductModel.company_id == company.id,
@@ -169,7 +164,8 @@ async def cmd_new_product(message: types.Message):
                 tech_id="custom",
                 daily_income=daily_income,
                 quality=quality,
-                assigned_employees=employees,
+                # 分配人员仅用于本次研发，创建完成即释放
+                assigned_employees=0,
             )
             session.add(product)
             await update_daily_revenue(session, company.id)
@@ -184,6 +180,7 @@ async def cmd_new_product(message: types.Message):
         f"{'─' * 24}\n"
         f"投入资金: {fmt_traffic(investment)}\n"
         f"分配人员: {employees} 人\n"
+        f"人员状态: 已自动释放\n"
         f"基础日收入: {fmt_traffic(base_income)}\n"
         f"人员加成: +{fmt_traffic(employee_bonus)}\n"
         f"总日收入: {fmt_traffic(daily_income)}\n"
@@ -242,7 +239,7 @@ async def cb_product_menu(callback: types.CallbackQuery):
     async with async_session() as session:
         user = await get_user_by_tg_id(session, tg_id)
         if not user:
-            await callback.answer("请先 /start 注册", show_alert=True)
+            await callback.answer("请先 /create_company 创建公司", show_alert=True)
             return
         from services.company_service import get_companies_by_owner
         companies = await get_companies_by_owner(session, user.id)
@@ -252,15 +249,14 @@ async def cb_product_menu(callback: types.CallbackQuery):
         return
 
     if len(companies) == 1:
-        callback.data = f"product:list:{companies[0].id}"
-        await cb_product_list(callback)
+        await cb_product_list(callback, companies[0].id)
         return
 
     buttons = [
         [InlineKeyboardButton(text=c.name, callback_data=f"product:list:{c.id}")]
         for c in companies
     ]
-    buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:main")])
+    buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:company")])
     await callback.message.edit_text(
         "📦 选择公司查看产品:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
@@ -269,19 +265,26 @@ async def cb_product_menu(callback: types.CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("product:list:"))
-async def cb_product_list(callback: types.CallbackQuery):
-    company_id = int(callback.data.split(":")[2])
+async def cb_product_list(callback: types.CallbackQuery, company_id: int | None = None):
+    if company_id is None:
+        company_id = int(callback.data.split(":")[2])
+
+    tg_id = callback.from_user.id
     async with async_session() as session:
+        user = await get_user_by_tg_id(session, tg_id)
         company = await get_company_by_id(session, company_id)
-        if not company:
-            await callback.answer("公司不存在", show_alert=True)
+        if not user:
+            await callback.answer("请先 /create_company 创建公司", show_alert=True)
             return
+        if not company or company.owner_id != user.id:
+            await callback.answer("无权操作", show_alert=True)
+            return
+
         products = await get_company_products(session, company_id)
         templates = await get_available_product_templates(session, company_id)
 
     lines = [f"📦 {company.name} — 产品列表", "─" * 24]
 
-    # 为每个产品生成详情按钮
     product_buttons = []
     if products:
         for p in products:
@@ -294,17 +297,22 @@ async def cb_product_list(callback: types.CallbackQuery):
     else:
         lines.append("暂无产品")
 
-    lines.append("\n🆕 可创建的产品:")
-    text = "\n".join(lines)
+    template_buttons = []
+    if templates:
+        lines.append("\n🆕 可创建的产品:")
+        template_buttons = [
+            [InlineKeyboardButton(
+                text=f"{t['name']} (💰{t['base_daily_income']}/日)",
+                callback_data=f"product:create:{company_id}:{t['product_key']}",
+            )]
+            for t in templates
+        ]
+    else:
+        lines.append("\n💡 完成科研可解锁产品模板")
 
-    # 合并产品操作按钮和模板按钮
-    template_buttons = [
-        [InlineKeyboardButton(
-            text=f"{t['name']} (💰{t['base_daily_income']}/日)",
-            callback_data=f"product:create:{company_id}:{t['product_key']}",
-        )]
-        for t in templates
-    ]
+    lines.append("\n📦 也可使用命令创建自定义产品:")
+    lines.append("  /new_product <名字> <资金> <人员>")
+    text = "\n".join(lines)
     all_buttons = product_buttons + template_buttons
     all_buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")])
     kb = InlineKeyboardMarkup(inline_keyboard=all_buttons)
@@ -313,11 +321,13 @@ async def cb_product_list(callback: types.CallbackQuery):
         await callback.message.edit_text(text, reply_markup=kb)
     except TelegramBadRequest as e:
         if "message is not modified" not in str(e).lower():
-            await callback.message.answer(text, reply_markup=kb)
+            sent = await callback.message.answer(text, reply_markup=kb)
+            await mark_panel(sent.chat.id, sent.message_id, callback.from_user.id)
     except Exception:
-        await callback.message.answer(text, reply_markup=kb)
-    await callback.answer()
+        sent = await callback.message.answer(text, reply_markup=kb)
+        await mark_panel(sent.chat.id, sent.message_id, callback.from_user.id)
 
+    await callback.answer()
 
 @router.callback_query(F.data.startswith("product:create:"))
 async def cb_create_product(callback: types.CallbackQuery):
@@ -330,7 +340,7 @@ async def cb_create_product(callback: types.CallbackQuery):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await callback.answer("请先 /start 注册", show_alert=True)
+                await callback.answer("请先 /create_company 创建公司", show_alert=True)
                 return
             company = await get_company_by_id(session, company_id)
             if not company or company.owner_id != user.id:
@@ -359,7 +369,7 @@ async def cb_upgrade_product(callback: types.CallbackQuery):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await callback.answer("请先 /start 注册", show_alert=True)
+                await callback.answer("请先 /create_company 创建公司", show_alert=True)
                 return
             for i in range(count):
                 ok, msg = await upgrade_product(session, product_id, user.id)
@@ -402,7 +412,7 @@ async def cb_delete_product(callback: types.CallbackQuery):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await callback.answer("请先 /start 注册", show_alert=True)
+                await callback.answer("请先 /create_company 创建公司", show_alert=True)
                 return
             company = await get_company_by_id(session, company_id)
             if not company or company.owner_id != user.id:

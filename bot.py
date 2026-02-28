@@ -72,6 +72,8 @@ def _register_routers(dp: Dispatcher):
             return
         if message.text and message.text.startswith("/start"):
             return
+        if message.text and message.text.startswith("/create_company"):
+            return
         if message.text and message.text.startswith("/admin"):
             return
         if message.text and message.text.startswith("/help"):
@@ -92,7 +94,11 @@ def _register_routers(dp: Dispatcher):
             return
         if message.text and message.text.startswith("/give_money"):
             return
+        if message.text and message.text.startswith("/welfare"):
+            return
         if message.text and message.text.startswith("/quest"):
+            return
+        if message.text and message.text.startswith("/cleanup"):
             return
         # 已认证管理员放行
         if await is_admin_authenticated(message.from_user.id):
@@ -125,6 +131,10 @@ async def main():
     from utils.throttle import ThrottleMiddleware
     dp.message.middleware(ThrottleMiddleware())
     dp.callback_query.middleware(ThrottleMiddleware())
+
+    # 注册面板权限中间件（群组中禁止点击他人面板）
+    from utils.panel_owner import PanelOwnerMiddleware
+    dp.callback_query.middleware(PanelOwnerMiddleware())
 
     # 注册Bot命令列表（Telegram输入框命令提示）
     from handlers.start import BOT_COMMANDS

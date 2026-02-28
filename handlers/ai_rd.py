@@ -12,13 +12,15 @@ from aiogram.fsm.state import State, StatesGroup
 from db.engine import async_session
 from keyboards.menus import main_menu_kb
 from services.ai_rd_service import (
+    MAX_EXTRA_RD_STAFF,
     R_AND_D_COST_PER_STAFF,
     apply_rd_result,
     evaluate_proposal_ai,
 )
 from services.company_service import add_funds, get_company_by_id
 from services.product_service import get_company_products
-from services.user_service import add_traffic, get_user_by_tg_id
+from services.user_service import get_user_by_tg_id
+from utils.panel_owner import mark_panel
 
 router = Router()
 
@@ -73,27 +75,29 @@ async def cb_aird_select(callback: types.CallbackQuery, state: FSMContext):
     await state.set_state(AIRDState.waiting_proposal)
     await callback.message.edit_text(
         "🧪 AI产品研发\n\n"
-        "请输入你的产品方案（越详细评分越高）:\n"
+        "请输入你的产品方案（可无限次研发，无冷却）:\n"
         "• 描述产品功能和创新点\n"
         "• 阐述市场定位和目标用户\n"
         "• 说明商业模式和盈利方式\n"
-        "• 分析技术可行性\n\n"
-        "AI将从创新性、市场可行性、技术可行性、商业价值四个维度评分(1-100分)。\n"
-        "评分越高，产品收入永久提升越多！"
+        "• 分析技术可行性与合规风险\n"
+        "• 给出可量化指标（转化、留存、ROI等）\n\n"
+        "AI将采用【严格文案批判标准】：\n"
+        "先指出硬伤，再给分项评分和改进建议。\n"
+        "评分越高，产品收入永久提升越多。"
     )
     await callback.answer()
 
 
 @router.message(AIRDState.waiting_proposal)
 async def on_proposal(message: types.Message, state: FSMContext):
-    proposal = message.text.strip()
+    proposal = (message.text or "").strip()
     if len(proposal) < 10:
         await message.answer("方案描述太短，请至少写10个字:")
         return
 
     # Evaluate
-    score, feedback = await evaluate_proposal_ai(proposal)
-    await state.update_data(score=score, feedback=feedback)
+    score, feedback, special_effect = await evaluate_proposal_ai(proposal)
+    await state.update_data(score=score, feedback=feedback, special_effect=special_effect)
     await state.set_state(AIRDState.waiting_staff)
 
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
@@ -104,25 +108,52 @@ async def on_proposal(message: types.Message, state: FSMContext):
         [InlineKeyboardButton(text=f"招10人 (花费{10*R_AND_D_COST_PER_STAFF}💰)", callback_data="aird:staff:10")],
     ]
 
-    await message.answer(
+    special_preview = ""
+    if special_effect:
+        emoji_pack = str(special_effect.get("emoji_pack", "")).strip()
+        soul_question = str(special_effect.get("soul_question", "")).strip()
+        meme_lines = special_effect.get("meme_lines", [])
+        if not isinstance(meme_lines, list):
+            meme_lines = []
+
+        special_preview = (
+            f"\n🎼 关键词触发: {special_effect.get('name', '春日影彩蛋')}\n"
+            f"✨ 预览: 收益倍率×{float(special_effect.get('income_multiplier', 1.0)):.2f} | "
+            f"声望+{int(special_effect.get('reputation_bonus', 0))} | "
+            f"品质+{int(special_effect.get('quality_bonus', 0))}\n"
+            f"📝 {special_effect.get('flavor_text', '')}"
+        )
+        if emoji_pack:
+            special_preview += f"\n{emoji_pack} 氛围拉满"
+        if soul_question:
+            special_preview += f"\n🗣 灵魂句: {soul_question}"
+        if meme_lines:
+            special_preview += "\n📌 梗清单:"
+            for line in meme_lines[:2]:
+                special_preview += f"\n  · {line}"
+
+    sent = await message.answer(
         f"🧪 AI评估结果\n"
         f"{'─' * 24}\n"
         f"评分: {score}/100\n"
-        f"评价: {feedback}\n\n"
-        f"预计收入提升: ~{score}%\n\n"
+        f"{feedback}\n"
+        f"{special_preview}\n\n"
+        f"预计收入提升: 约{score}%\n\n"
         "是否招聘额外研发人员加速研发？\n"
         "(每名研发人员+5%研发效率)",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
     )
+    await mark_panel(message.chat.id, sent.message_id, message.from_user.id)
 
 
 @router.callback_query(AIRDState.waiting_staff, F.data.startswith("aird:staff:"))
 async def cb_aird_staff(callback: types.CallbackQuery, state: FSMContext):
-    extra_staff = int(callback.data.split(":")[2])
+    extra_staff = max(0, min(int(callback.data.split(":")[2]), MAX_EXTRA_RD_STAFF))
     data = await state.get_data()
     company_id = data["company_id"]
     product_id = data["product_id"]
     score = data["score"]
+    special_effect = data.get("special_effect")
     tg_id = callback.from_user.id
 
     staff_cost = extra_staff * R_AND_D_COST_PER_STAFF
@@ -135,6 +166,13 @@ async def cb_aird_staff(callback: types.CallbackQuery, state: FSMContext):
                 await state.clear()
                 return
 
+            # 二次校验公司归属
+            company = await get_company_by_id(session, company_id)
+            if not company or company.owner_id != user.id:
+                await callback.answer("无权操作此公司", show_alert=True)
+                await state.clear()
+                return
+
             # Deduct staff cost from company
             if staff_cost > 0:
                 ok = await add_funds(session, company_id, -staff_cost)
@@ -143,7 +181,7 @@ async def cb_aird_staff(callback: types.CallbackQuery, state: FSMContext):
                     return
 
             ok, msg, income_increase = await apply_rd_result(
-                session, product_id, user.id, score, extra_staff
+                session, product_id, user.id, score, extra_staff, special_effect=special_effect
             )
 
     await state.clear()

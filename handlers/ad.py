@@ -31,6 +31,17 @@ def _ad_menu_kb(company_id: int):
 @router.callback_query(F.data.startswith("ad:menu:"))
 async def cb_ad_menu(callback: types.CallbackQuery):
     company_id = int(callback.data.split(":")[2])
+    tg_id = callback.from_user.id
+
+    async with async_session() as session:
+        user = await get_user_by_tg_id(session, tg_id)
+        company = await get_company_by_id(session, company_id)
+        if not user:
+            await callback.answer("请先 /create_company 创建公司", show_alert=True)
+            return
+        if not company or company.owner_id != user.id:
+            await callback.answer("无权操作", show_alert=True)
+            return
 
     ad_info = await get_active_ad_info(company_id)
     if ad_info:

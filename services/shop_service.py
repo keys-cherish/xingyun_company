@@ -7,10 +7,12 @@ import json
 import random
 from pathlib import Path
 
+from sqlalchemy import func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cache.redis_client import get_redis
-from services.user_service import add_traffic, get_user_by_tg_id
+from services.company_service import add_funds, get_company_by_id
+from services.user_service import get_user_by_tg_id
 from utils.formatters import fmt_traffic
 
 _shop_items: dict | None = None
@@ -54,7 +56,7 @@ async def buy_item(
     item_key: str,
     price_override: int | None = None,
 ) -> tuple[bool, str]:
-    """Purchase a shop item. Deducts from user's currency, applies buff."""
+    """Purchase a shop item. Deducts from company funds, applies buff."""
     items = load_shop_items()
     if item_key not in items:
         return False, "无效的道具"
@@ -69,10 +71,15 @@ async def buy_item(
     user = await get_user_by_tg_id(session, tg_id)
     if user is None:
         return False, "用户不存在"
+    company = await get_company_by_id(session, company_id)
+    if company is None:
+        return False, "公司不存在"
+    if company.owner_id != user.id:
+        return False, "无权操作"
 
-    ok = await add_traffic(session, user.id, -price)
+    ok = await add_funds(session, company_id, -price)
     if not ok:
-        return False, f"金币不足，需要 {fmt_traffic(price)}"
+        return False, f"公司资金不足，需要 {fmt_traffic(price)}"
 
     # Apply buff
     r = await get_redis()
@@ -96,13 +103,26 @@ async def buy_item(
 
 async def _apply_research_speed(session: AsyncSession, company_id: int):
     """Halve remaining research time for all in-progress research."""
-    from services.research_service import get_in_progress_research
-    now = dt.datetime.utcnow()
+    from services.research_service import get_in_progress_research, _load_tech_tree
+    now = (await session.execute(select(sqlfunc.now()))).scalar()
+    if now is None:
+        now = dt.datetime.utcnow()
+    if getattr(now, "tzinfo", None):
+        now = now.replace(tzinfo=None)
+    tech_tree = _load_tech_tree()
     in_progress = await get_in_progress_research(session, company_id)
     for rp in in_progress:
-        elapsed = now - rp.started_at
-        # Move started_at forward by half the elapsed time, effectively halving remaining time
-        rp.started_at = rp.started_at - elapsed
+        started = rp.started_at.replace(tzinfo=None) if rp.started_at.tzinfo else rp.started_at
+        duration_seconds = int(tech_tree.get(rp.tech_id, {}).get("duration_seconds", 3600))
+
+        elapsed = max(0.0, (now - started).total_seconds())
+        remaining = max(0.0, duration_seconds - elapsed)
+        if remaining <= 1:
+            continue
+
+        # Halve remaining time: move started_at earlier by half of current remaining.
+        shift_seconds = remaining / 2.0
+        rp.started_at = rp.started_at - dt.timedelta(seconds=shift_seconds)
         await session.flush()
 
 

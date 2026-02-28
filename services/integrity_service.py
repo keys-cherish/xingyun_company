@@ -75,7 +75,7 @@ async def cleanup_illegal_shareholders(session: AsyncSession) -> list[str]:
         )).scalars().all())
 
         total_shares = sum(s.shares for s in shareholders)
-        if total_shares <= 100.0:
+        if total_shares <= 100.01:
             continue
 
         for sh in shareholders:

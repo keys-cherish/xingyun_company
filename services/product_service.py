@@ -9,10 +9,11 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cache.redis_client import get_redis
@@ -27,6 +28,7 @@ _products_data: dict | None = None
 # 产品收入上限和版本上限
 MAX_PRODUCT_DAILY_INCOME = 500_000
 MAX_PRODUCT_VERSION = 50
+MAX_DAILY_PRODUCT_CREATE = 3
 
 
 def _load_products() -> dict:
@@ -86,6 +88,17 @@ async def create_product(
     )
     if existing.scalar_one_or_none():
         return None, f"已存在同名产品「{name}」"
+
+    # 每日创建上限
+    today_start = dt.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_count = (await session.execute(
+        select(sqlfunc.count()).select_from(Product).where(
+            Product.company_id == company_id,
+            Product.created_at >= today_start,
+        )
+    )).scalar() or 0
+    if today_count >= MAX_DAILY_PRODUCT_CREATE:
+        return None, f"每日最多创建{MAX_DAILY_PRODUCT_CREATE}个产品"
 
     # 扣除费用（从公司资金）
     from services.company_service import add_funds

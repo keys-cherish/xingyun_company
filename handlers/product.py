@@ -97,6 +97,20 @@ async def cmd_new_product(message: types.Message):
                 )
                 return
 
+            # 每日创建上限
+            import datetime as dt
+            from services.product_service import MAX_DAILY_PRODUCT_CREATE
+            today_start = dt.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            today_count = (await session.execute(
+                select(sqlfunc.coalesce(sqlfunc.count(ProductModel.id), 0)).where(
+                    ProductModel.company_id == company.id,
+                    ProductModel.created_at >= today_start,
+                )
+            )).scalar() or 0
+            if today_count >= MAX_DAILY_PRODUCT_CREATE:
+                await message.answer(f"❌ 每日最多创建{MAX_DAILY_PRODUCT_CREATE}个产品")
+                return
+
             # Deduct investment from company funds
             ok = await add_funds(session, company.id, -investment)
             if not ok:

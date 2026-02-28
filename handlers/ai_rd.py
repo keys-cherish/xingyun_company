@@ -140,7 +140,7 @@ async def cb_aird_staff(callback: types.CallbackQuery, state: FSMContext):
             if staff_cost > 0:
                 ok = await add_funds(session, company_id, -staff_cost)
                 if not ok:
-                    await callback.answer(f"公司资金不足，需要{staff_cost}流量", show_alert=True)
+                    await callback.answer(f"公司资金不足，需要{staff_cost}MB", show_alert=True)
                     return
 
             ok, msg, income_increase = await apply_rd_result(

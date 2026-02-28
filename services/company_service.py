@@ -48,7 +48,7 @@ async def create_company(
     # Deduct traffic
     ok = await add_traffic(session, owner.id, -settings.company_creation_cost)
     if not ok:
-        return None, f"流量不足，创建公司需要{settings.company_creation_cost}流量"
+        return None, f"流量不足，创建公司需要{settings.company_creation_cost}MB"
 
     type_info = types[company_type]
     company = Company(
@@ -115,6 +115,6 @@ async def add_funds(session: AsyncSession, company_id: int, amount: int) -> bool
     )
     if result.rowcount == 0:
         return False
-    company.total_funds += amount
-    company.version += 1
+    # 使对象过期，下次访问时从DB重新加载，避免重复计数
+    session.expire(company)
     return True

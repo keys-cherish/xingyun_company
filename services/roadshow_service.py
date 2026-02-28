@@ -46,7 +46,7 @@ async def do_roadshow(
     # Deduct cost
     ok = await add_traffic(session, owner_user_id, -settings.roadshow_cost)
     if not ok:
-        return False, f"流量不足，路演需要{settings.roadshow_cost}流量"
+        return False, f"流量不足，路演需要{settings.roadshow_cost}MB"
 
     # Random type
     rs_type = random.choice(ROADSHOW_TYPES)
@@ -63,13 +63,13 @@ async def do_roadshow(
     if reward["type"] == "traffic" or reward["type"] == "jackpot":
         await add_traffic(session, owner_user_id, amount)
         bonus = amount
-        result_text += f" +{amount}流量"
+        result_text += f" +{amount}MB"
     elif reward["type"] == "reputation":
         await add_reputation(session, owner_user_id, amount)
         rep_gained = amount
         result_text += f" +{amount}声望"
     elif reward["type"] == "points":
-        await add_points(owner_user_id, amount)
+        await add_points(owner_user_id, amount, session=session)
         result_text += f" +{amount}积分"
 
     # Base reputation gain for doing roadshow
@@ -93,6 +93,6 @@ async def do_roadshow(
     await r.setex(f"roadshow_cd:{company_id}", settings.roadshow_cooldown_seconds, "1")
 
     # Points for roadshow
-    await add_points(owner_user_id, 3)
+    await add_points(owner_user_id, 3, session=session)
 
     return True, result_text

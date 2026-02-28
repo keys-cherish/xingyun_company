@@ -77,7 +77,7 @@ async def create_cooperation(
     await add_reputation(session, cb.owner_id, rep)
 
     # Points
-    await add_points(ca.owner_id, 8)
-    await add_points(cb.owner_id, 8)
+    await add_points(ca.owner_id, 8, session=session)
+    await add_points(cb.owner_id, 8, session=session)
 
     return True, f"「{ca.name}」与「{cb.name}」建立合作! 营收加成+{DEFAULT_BONUS_MULTIPLIER*100:.0f}%，有效期{days}天"

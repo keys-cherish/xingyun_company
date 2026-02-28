@@ -46,13 +46,10 @@ async def cmd_company(message: types.Message):
         companies = await get_companies_by_owner(session, user.id)
 
     if not companies:
-        if message.chat.type == "private":
-            await message.answer("你还没有公司。请在群组频道中创建公司。")
-        else:
-            await message.answer(
-                "你还没有公司。",
-                reply_markup=company_list_kb([]),
-            )
+        await message.answer(
+            "你还没有公司。",
+            reply_markup=company_list_kb([]),
+        )
         return
 
     items = [(c.id, c.name) for c in companies]
@@ -159,7 +156,7 @@ async def cb_company_create(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.callback_query(CreateCompanyState.waiting_type, F.data.startswith("company:type:"), group_only)
+@router.callback_query(F.data.startswith("company:type:"))
 async def cb_company_type_selected(callback: types.CallbackQuery, state: FSMContext):
     company_type = callback.data.split(":")[2]
     await state.update_data(company_type=company_type)
@@ -170,7 +167,7 @@ async def cb_company_type_selected(callback: types.CallbackQuery, state: FSMCont
     await callback.answer()
 
 
-@router.message(CreateCompanyState.waiting_name, group_only)
+@router.message(CreateCompanyState.waiting_name)
 async def on_company_name(message: types.Message, state: FSMContext):
     name = message.text.strip()
     if not (2 <= len(name) <= 16):
@@ -224,7 +221,7 @@ async def cb_hire(callback: types.CallbackQuery):
             from services.company_service import add_funds
             ok = await add_funds(session, company_id, -hire_cost)
             if not ok:
-                await callback.answer(f"公司资金不足，招聘需要{hire_cost}流量", show_alert=True)
+                await callback.answer(f"公司资金不足，招聘需要{hire_cost}MB", show_alert=True)
                 return
             company.employee_count += 1
 

@@ -2,12 +2,12 @@
 
 
 def fmt_traffic(amount: int) -> str:
-    """Format traffic amount with comma separators and unit."""
-    if amount >= 100_000_000:
-        return f"{amount / 100_000_000:.2f}亿流量"
-    if amount >= 10_000:
-        return f"{amount / 10_000:.2f}万流量"
-    return f"{amount:,}流量"
+    """Format traffic amount with MB/GB/TB unit (1024 based)."""
+    if amount >= 1024 * 1024:  # >= 1TB
+        return f"{amount / (1024 * 1024):.2f}TB ({amount:,}MB)"
+    if amount >= 1024:  # >= 1GB
+        return f"{amount / 1024:.2f}GB ({amount:,}MB)"
+    return f"{amount:,}MB"
 
 
 def fmt_pct(value: float) -> str:

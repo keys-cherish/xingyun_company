@@ -1,4 +1,8 @@
-"""Buff一览和管理员配置处理器。"""
+"""管理员认证和配置面板。
+
+/admin <密钥> — 认证管理员（需同时满足ID白名单+密钥）
+认证后可私聊使用所有游戏功能 + 管理员配置面板
+"""
 
 from __future__ import annotations
 
@@ -6,10 +10,11 @@ from aiogram import F, Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from db.engine import async_session
-from handlers.common import group_only
+from handlers.common import admin_only, authenticate_admin, is_admin_authenticated
 from keyboards.menus import main_menu_kb
 from services.ad_service import get_active_ad_info
 from services.company_service import get_company_by_id, get_company_type_info
@@ -106,11 +111,51 @@ async def cb_buff_list(callback: types.CallbackQuery):
     await callback.answer()
 
 
+# ---- 管理员认证 ----
+
+@router.message(Command("admin"))
+async def cmd_admin(message: types.Message):
+    """管理员认证: /admin <密钥>"""
+    tg_id = message.from_user.id
+
+    # 解析密钥参数
+    parts = message.text.strip().split(maxsplit=1)
+    if len(parts) < 2:
+        # 已认证的管理员直接打开面板
+        if await is_admin_authenticated(tg_id):
+            # 私聊中删除命令消息（避免密钥残留在聊天记录）
+            if message.chat.type == "private":
+                try:
+                    await message.delete()
+                except Exception:
+                    pass
+            await message.answer(
+                "⚙️ 管理员配置面板\n当前参数可实时修改:",
+                reply_markup=_admin_menu_kb(),
+            )
+            return
+        await message.answer("用法: /admin <密钥>")
+        return
+
+    secret_key = parts[1].strip()
+
+    # 尝试删除包含密钥的消息（防止密钥泄露到聊天记录）
+    try:
+        await message.delete()
+    except Exception:
+        pass
+
+    ok, msg = await authenticate_admin(tg_id, secret_key)
+    if ok:
+        await message.answer(
+            f"✅ {msg}\n\n⚙️ 管理员配置面板:",
+            reply_markup=_admin_menu_kb(),
+        )
+    else:
+        await message.answer(f"❌ 认证失败: {msg}")
+
+
 # ---- 管理员配置菜单 ----
-# 管理员通过 /admin 命令访问，可修改游戏参数
-
-ADMIN_TG_IDS: set[int] = set()  # 在bot启动时从环境变量加载
-
 
 class AdminConfigState(StatesGroup):
     waiting_param_value = State()
@@ -128,26 +173,12 @@ def _admin_menu_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="路演冷却(秒)", callback_data="admin:cfg:roadshow_cooldown_seconds")],
         [InlineKeyboardButton(text="产品创建费用", callback_data="admin:cfg:product_create_cost")],
         [InlineKeyboardButton(text="手动结算", callback_data="admin:settle")],
+        [InlineKeyboardButton(text="退出管理员模式", callback_data="admin:logout")],
         [InlineKeyboardButton(text="🔙 关闭", callback_data="admin:close")],
     ])
 
 
-@router.message(Command("admin"), group_only)
-async def cmd_admin(message: types.Message):
-    tg_id = message.from_user.id
-    from config import settings
-    # 管理员检查：如果设置了admin列表则检查，否则允许所有人（开发模式）
-    admin_ids = settings.allowed_chat_id_set  # 复用或单独配置
-    # 简单方案：首个注册的用户就是管理员，或者通过环境变量配置
-    # 这里暂时允许所有人访问管理面板，生产环境应配置ADMIN_TG_IDS
-
-    await message.answer(
-        "⚙️ 管理员配置面板\n当前参数可实时修改:",
-        reply_markup=_admin_menu_kb(),
-    )
-
-
-@router.callback_query(F.data.startswith("admin:cfg:"), group_only)
+@router.callback_query(F.data.startswith("admin:cfg:"), admin_only)
 async def cb_admin_cfg(callback: types.CallbackQuery, state: FSMContext):
     param = callback.data.split(":")[2]
     from config import settings
@@ -160,7 +191,7 @@ async def cb_admin_cfg(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
 
 
-@router.message(AdminConfigState.waiting_param_value, group_only)
+@router.message(AdminConfigState.waiting_param_value, admin_only)
 async def on_admin_param_value(message: types.Message, state: FSMContext):
     data = await state.get_data()
     param = data["param"]
@@ -192,9 +223,9 @@ async def on_admin_param_value(message: types.Message, state: FSMContext):
     await state.clear()
 
 
-@router.callback_query(F.data == "admin:settle", group_only)
+@router.callback_query(F.data == "admin:settle", admin_only)
 async def cb_admin_settle(callback: types.CallbackQuery):
-    """手动触发结算。"""
+    """手动触发结算（仅私聊发送结果，不在群组暴露）。"""
     await callback.answer("正在执行结算...", show_alert=True)
     from services.settlement_service import settle_all, format_daily_report
     async with async_session() as session:
@@ -209,7 +240,29 @@ async def cb_admin_settle(callback: types.CallbackQuery):
     text = "\n".join(lines)
     if len(text) > 4000:
         text = text[:4000] + "\n...(截断)"
-    await callback.message.edit_text(text, reply_markup=_admin_menu_kb())
+
+    # 如果在群组触发，私聊发送结果，群内只提示
+    if callback.message.chat.type in ("group", "supergroup"):
+        try:
+            await callback.bot.send_message(
+                callback.from_user.id,
+                text,
+                reply_markup=_admin_menu_kb(),
+            )
+            await callback.message.edit_text("✅ 结算完成，结果已私聊发送。")
+        except Exception:
+            await callback.message.edit_text("结算完成，但无法私聊发送结果，请先私聊bot一次。")
+    else:
+        await callback.message.edit_text(text, reply_markup=_admin_menu_kb())
+
+
+@router.callback_query(F.data == "admin:logout", admin_only)
+async def cb_admin_logout(callback: types.CallbackQuery):
+    """退出管理员模式。"""
+    from handlers.common import revoke_admin
+    await revoke_admin(callback.from_user.id)
+    await callback.message.edit_text("已退出管理员模式。如需重新进入请使用 /admin <密钥>")
+    await callback.answer()
 
 
 @router.callback_query(F.data == "admin:close")

@@ -66,9 +66,10 @@ EVENT_CHANCE = 0.35  # 35% chance per company per day
 
 async def roll_daily_events(session: AsyncSession, company: Company) -> list[str]:
     """Roll for random events during daily settlement. Returns event descriptions."""
+    from config import settings
     messages = []
 
-    if random.random() > EVENT_CHANCE:
+    if random.random() > settings.event_chance:
         return messages  # No event today
 
     # Roll 1-2 events
@@ -142,7 +143,7 @@ async def _apply_event(session: AsyncSession, company: Company, event: GameEvent
             effect_desc = "无产品受影响"
 
     # Award points for experiencing events (even bad ones are "content")
-    await add_points(company.owner_id, 1)
+    await add_points(company.owner_id, 1, session=session)
 
     category_emoji = {"employee": "👤", "market": "📊", "pr": "📰", "lucky": "🎲"}
     emoji = category_emoji.get(event.category, "❓")

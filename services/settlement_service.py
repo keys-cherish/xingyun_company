@@ -10,12 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from db.models import Company, DailyReport, Product
-from services.company_service import add_funds, update_daily_revenue
+from services.company_service import add_funds, update_daily_revenue, get_company_type_info
 from services.cooperation_service import get_cooperation_bonus
 from services.dividend_service import distribute_dividends
 from services.realestate_service import get_total_estate_income
 from services.random_events import roll_daily_events
 from services.research_service import check_and_complete_research
+from cache.redis_client import update_leaderboard
 from utils.formatters import reputation_buff_multiplier
 
 logger = logging.getLogger(__name__)
@@ -56,8 +57,13 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
     ad_boost_rate = await get_ad_boost(company.id)
     ad_boost_income = int(product_income * ad_boost_rate)
 
+    # 6. Company type buff (收入加成)
+    type_info = get_company_type_info(company.company_type)
+    type_income_bonus = type_info.get("income_bonus", 0.0) if type_info else 0.0
+    type_income = int(product_income * type_income_bonus)
+
     # Total gross
-    total_income = product_income + cooperation_bonus + realestate_income + reputation_buff_income + ad_boost_income
+    total_income = product_income + cooperation_bonus + realestate_income + reputation_buff_income + ad_boost_income + type_income
 
     # Tax (on gross income)
     tax = int(total_income * settings.tax_rate)
@@ -66,8 +72,13 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
     salary_cost = company.employee_count * settings.employee_salary_base
     social_insurance = int(salary_cost * settings.social_insurance_rate)
 
-    # Operating cost = base overhead + tax + salary + insurance
-    operating_cost = int(total_income * settings.daily_operating_cost_pct) + tax + salary_cost + social_insurance
+    # Company type cost buff
+    type_cost_bonus = type_info.get("cost_bonus", 0.0) if type_info else 0.0
+
+    # Operating cost = base overhead + tax + salary + insurance, modified by type cost buff
+    base_operating = int(total_income * settings.daily_operating_cost_pct) + salary_cost + social_insurance
+    base_operating = int(base_operating * (1.0 + type_cost_bonus))  # cost_bonus < 0 means cheaper
+    operating_cost = base_operating + tax
     profit = total_income - operating_cost
 
     # Add profit to company funds
@@ -95,6 +106,10 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
     )
     session.add(report)
     await session.flush()
+
+    # 更新排行榜
+    await update_leaderboard("revenue", company.name, total_income)
+
     return report, event_messages
 
 

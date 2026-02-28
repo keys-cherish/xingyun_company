@@ -98,7 +98,7 @@ async def start_research(
     cost = tech.get("cost", settings.base_research_cost)
     ok = await add_traffic(session, owner_user_id, -cost)
     if not ok:
-        return False, f"流量不足，需要{cost}流量"
+        return False, f"流量不足，需要{cost}MB"
 
     rp = ResearchProgress(
         company_id=company_id,
@@ -109,7 +109,7 @@ async def start_research(
     await session.flush()
 
     # Grant points for starting research
-    await add_points(owner_user_id, 5)
+    await add_points(owner_user_id, 5, session=session)
 
     return True, f"开始研究「{tech['name']}」，需要{tech.get('duration_seconds', 3600)}秒完成"
 
@@ -137,7 +137,7 @@ async def check_and_complete_research(session: AsyncSession, company_id: int) ->
             if company:
                 rep = tech.get("reputation_reward", settings.reputation_per_research)
                 await add_reputation(session, company.owner_id, rep)
-                await add_points(company.owner_id, rep)
+                await add_points(company.owner_id, rep, session=session)
 
     await session.flush()
     return completed_names

@@ -24,7 +24,7 @@ async def invest(
     if amount <= 0:
         return False, "投资金额必须大于0"
     if amount > MAX_SINGLE_INVESTMENT:
-        return False, f"单次投资上限为{MAX_SINGLE_INVESTMENT}流量"
+        return False, f"单次投资上限为{MAX_SINGLE_INVESTMENT}MB"
 
     company = await session.get(Company, company_id)
     if company is None:
@@ -50,7 +50,7 @@ async def invest(
             # 回滚流量
             await add_traffic(session, user_id, amount)
             max_invest = _max_investable(valuation, owner_sh.shares)
-            return False, f"此投资会导致老板持股低于{settings.min_owner_share_pct}%，最多可投资{max_invest}流量"
+            return False, f"此投资会导致老板持股低于{settings.min_owner_share_pct}%，最多可投资{max_invest}MB"
 
     # 按比例稀释所有现有股东
     result = await session.execute(

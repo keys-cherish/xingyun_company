@@ -89,7 +89,7 @@ async def create_product(
     # 扣除费用
     ok = await add_traffic(session, owner_user_id, -settings.product_create_cost)
     if not ok:
-        return None, f"流量不足，需要{settings.product_create_cost}流量"
+        return None, f"流量不足，需要{settings.product_create_cost}MB"
 
     product = Product(
         company_id=company_id,
@@ -101,9 +101,9 @@ async def create_product(
     session.add(product)
     await session.flush()
 
-    await add_points(owner_user_id, 10)
+    await add_points(owner_user_id, 10, session=session)
 
-    return product, f"产品「{name}」打造成功! 日收入: {tmpl['base_daily_income']}流量"
+    return product, f"产品「{name}」打造成功! 日收入: {tmpl['base_daily_income']}MB"
 
 
 async def upgrade_product(
@@ -136,7 +136,7 @@ async def upgrade_product(
     cost = int(settings.product_upgrade_cost_base * (1.3 ** (product.version - 1)))
     ok = await add_traffic(session, owner_user_id, -cost)
     if not ok:
-        return False, f"流量不足，升级需要{cost}流量"
+        return False, f"流量不足，升级需要{cost}MB"
 
     # 迭代收入增幅随版本递减（防止无限刷）
     diminish = max(0.05, settings.product_upgrade_income_pct - (product.version - 1) * 0.01)
@@ -152,9 +152,9 @@ async def upgrade_product(
     # 设置24小时CD
     await r.setex(cd_key, 86400, "1")
 
-    await add_points(owner_user_id, 5)
+    await add_points(owner_user_id, 5, session=session)
 
     return True, (
         f"产品「{product.name}」升级到v{product.version}! "
-        f"日收入+{actual_boost} → {product.daily_income}流量"
+        f"日收入+{actual_boost} → {product.daily_income}MB"
     )

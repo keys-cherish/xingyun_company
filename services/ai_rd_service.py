@@ -157,7 +157,7 @@ async def apply_rd_result(
     # Reputation and points for R&D
     rep = max(1, score // 5)
     await add_reputation(session, owner_user_id, rep)
-    await add_points(owner_user_id, score // 2)
+    await add_points(owner_user_id, score // 2, session=session)
 
     return True, (
         f"研发完成! 评分: {score}/100\n"

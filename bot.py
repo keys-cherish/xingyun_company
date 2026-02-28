@@ -46,8 +46,8 @@ def _register_routers(dp: Dispatcher):
     dp.include_router(ai_rd_router)
     dp.include_router(admin_router)
 
-    # 私聊兜底：除/start和/company外的命令提示用户去群组
-    from handlers.common import reject_private
+    # 私聊兜底：非管理员只允许/start和/company，管理员放行所有
+    from handlers.common import reject_private, is_admin_authenticated
     from aiogram import F, Router
     fallback = Router()
 
@@ -56,6 +56,11 @@ def _register_routers(dp: Dispatcher):
         if message.text and message.text.startswith("/company"):
             return
         if message.text and message.text.startswith("/start"):
+            return
+        if message.text and message.text.startswith("/admin"):
+            return
+        # 已认证管理员放行
+        if await is_admin_authenticated(message.from_user.id):
             return
         await reject_private(message)
 
@@ -80,6 +85,11 @@ async def main():
 
     # 注册处理器
     _register_routers(dp)
+
+    # 注册限流中间件
+    from utils.throttle import ThrottleMiddleware
+    dp.message.middleware(ThrottleMiddleware())
+    dp.callback_query.middleware(ThrottleMiddleware())
 
     # 启动定时任务
     set_bot(bot)

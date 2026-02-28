@@ -46,8 +46,8 @@ async def add_traffic(session: AsyncSession, user_id: int, amount: int) -> bool:
             .values(traffic=User.traffic + amount, version=User.version + 1)
         )
         if result.rowcount > 0:
-            user.traffic += amount
-            user.version += 1
+            # 使对象过期，下次访问时从DB重新加载，避免重复计数
+            session.expire(user)
             return True
         # 并发冲突，刷新后重试
         await session.refresh(user)
@@ -77,8 +77,18 @@ async def get_points(tg_id: int) -> int:
     return int(val) if val else 0
 
 
-async def add_points(tg_id: int, amount: int) -> int:
-    """Add points and return new total."""
+async def add_points(tg_id_or_user_id: int, amount: int, *, session: AsyncSession | None = None) -> int:
+    """Add points and return new total.
+
+    tg_id_or_user_id: 如果传入session，则视为user_id（内部ID），自动查询tg_id。
+    否则视为tg_id直接使用。
+    """
+    tg_id = tg_id_or_user_id
+    if session is not None:
+        user = await session.get(User, tg_id_or_user_id)
+        if user is None:
+            return 0
+        tg_id = user.tg_id
     r = await get_redis()
     return await r.incrby(f"points:{tg_id}", amount)
 
@@ -96,7 +106,7 @@ async def exchange_points_for_traffic(session: AsyncSession, tg_id: int, points_
 
     traffic_gained = points_amount // POINTS_TO_TRAFFIC_RATE
     if traffic_gained <= 0:
-        return False, f"至少需要{POINTS_TO_TRAFFIC_RATE}积分才能兑换1流量"
+        return False, f"至少需要{POINTS_TO_TRAFFIC_RATE}积分才能兑换1MB"
 
     actual_points_used = traffic_gained * POINTS_TO_TRAFFIC_RATE
     user = await get_user_by_tg_id(session, tg_id)
@@ -110,4 +120,4 @@ async def exchange_points_for_traffic(session: AsyncSession, tg_id: int, points_
         # rollback points
         await r.incrby(f"points:{tg_id}", actual_points_used)
         return False, "流量添加失败，请重试"
-    return True, f"成功兑换! 消耗{actual_points_used}积分，获得{traffic_gained}流量"
+    return True, f"成功兑换! 消耗{actual_points_used}积分，获得{traffic_gained}MB"

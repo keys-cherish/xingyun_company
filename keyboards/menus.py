@@ -85,7 +85,7 @@ def company_detail_kb(company_id: int, is_owner: bool) -> InlineKeyboardMarkup:
 def invest_kb(company_id: int) -> InlineKeyboardMarkup:
     amounts = [500, 1000, 2000, 5000]
     buttons = [
-        [InlineKeyboardButton(text=f"投资 {a} 流量", callback_data=f"shareholder:doinvest:{company_id}:{a}")]
+        [InlineKeyboardButton(text=f"投资 {a} MB", callback_data=f"shareholder:doinvest:{company_id}:{a}")]
         for a in amounts
     ]
     buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")])

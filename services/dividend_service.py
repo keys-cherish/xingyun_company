@@ -37,6 +37,6 @@ async def distribute_dividends(
             await add_reputation(session, sh.user_id, rep)
 
             # Points for receiving dividends
-            await add_points(sh.user_id, 2)
+            await add_points(sh.user_id, 2, session=session)
 
     return distributions

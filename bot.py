@@ -132,9 +132,9 @@ async def main():
     dp.message.middleware(ThrottleMiddleware())
     dp.callback_query.middleware(ThrottleMiddleware())
 
-    # 注册面板权限中间件（群组中禁止点击他人面板）
-    from utils.panel_owner import PanelOwnerMiddleware
-    dp.callback_query.middleware(PanelOwnerMiddleware())
+    # 注册面板权限中间件（outer，在路由匹配前执行）
+    from utils.panel_auth import PanelOwnerMiddleware
+    dp.callback_query.outer_middleware(PanelOwnerMiddleware())
 
     # 注册Bot命令列表（Telegram输入框命令提示）
     from handlers.start import BOT_COMMANDS

@@ -10,7 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from db.engine import async_session
-from keyboards.menus import main_menu_kb
+from keyboards.menus import main_menu_kb, tag_kb
 from services.ai_rd_service import (
     MAX_EXTRA_RD_STAFF,
     R_AND_D_COST_PER_STAFF,
@@ -61,7 +61,7 @@ async def cb_aird_start(callback: types.CallbackQuery, state: FSMContext):
 
     await callback.message.edit_text(
         "🧪 AI产品研发\n选择要进行研发的产品:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        reply_markup=tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), callback.from_user.id),
     )
     await state.set_state(AIRDState.select_product)
     await state.update_data(company_id=company_id)
@@ -108,31 +108,11 @@ async def on_proposal(message: types.Message, state: FSMContext):
         [InlineKeyboardButton(text=f"招10人 (花费{10*R_AND_D_COST_PER_STAFF}💰)", callback_data="aird:staff:10")],
     ]
 
-    special_preview = ""
-    if special_effect:
-        emoji_pack = str(special_effect.get("emoji_pack", "")).strip()
-        soul_question = str(special_effect.get("soul_question", "")).strip()
-        meme_lines = special_effect.get("meme_lines", [])
-        if not isinstance(meme_lines, list):
-            meme_lines = []
+    data = await state.get_data()
+    company_id = data["company_id"]
+    buttons.append([InlineKeyboardButton(text="🔙 取消", callback_data=f"company:view:{company_id}")])
 
-        special_preview = (
-            f"\n🎼 关键词触发: {special_effect.get('name', '春日影彩蛋')}\n"
-            f"✨ 预览: 收益倍率×{float(special_effect.get('income_multiplier', 1.0)):.2f} | "
-            f"声望+{int(special_effect.get('reputation_bonus', 0))} | "
-            f"品质+{int(special_effect.get('quality_bonus', 0))}\n"
-            f"📝 {special_effect.get('flavor_text', '')}"
-        )
-        if emoji_pack:
-            special_preview += f"\n{emoji_pack} 氛围拉满"
-        if soul_question:
-            special_preview += f"\n🗣 灵魂句: {soul_question}"
-        if meme_lines:
-            special_preview += "\n📌 梗清单:"
-            for line in meme_lines[:2]:
-                special_preview += f"\n  · {line}"
-
-    sent = await message.answer(
+    await message.answer(
         f"🧪 AI评估结果\n"
         f"{'─' * 24}\n"
         f"评分: {score}/100\n"
@@ -141,7 +121,7 @@ async def on_proposal(message: types.Message, state: FSMContext):
         f"预计收入提升: 约{score}%\n\n"
         "是否招聘额外研发人员加速研发？\n"
         "(每名研发人员+5%研发效率)",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        reply_markup=tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), message.from_user.id),
     )
     await mark_panel(message.chat.id, sent.message_id, message.from_user.id)
 
@@ -185,10 +165,14 @@ async def cb_aird_staff(callback: types.CallbackQuery, state: FSMContext):
             )
 
     await state.clear()
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup as IKM
+    result_kb = tag_kb(IKM(inline_keyboard=[
+        [InlineKeyboardButton(text="🔙 返回公司", callback_data=f"company:view:{company_id}")],
+    ]), tg_id)
     if ok:
         await callback.message.edit_text(
             f"🧪 研发完成!\n─" + "─" * 23 + f"\n{msg}",
-            reply_markup=main_menu_kb(),
+            reply_markup=result_kb,
         )
         await callback.answer()
     else:

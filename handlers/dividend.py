@@ -26,7 +26,7 @@ async def cb_dividend_menu(callback: types.CallbackQuery):
         companies = await get_companies_by_owner(session, user.id)
 
         if not companies:
-            await callback.message.edit_text("你还没有公司。", reply_markup=main_menu_kb())
+            await callback.message.edit_text("你还没有公司。", reply_markup=main_menu_kb(tg_id=callback.from_user.id))
             await callback.answer()
             return
 
@@ -46,5 +46,5 @@ async def cb_dividend_menu(callback: types.CallbackQuery):
             else:
                 lines.append(f"「{company.name}」暂无结算记录")
 
-    await callback.message.edit_text("\n".join(lines), reply_markup=main_menu_kb())
+    await callback.message.edit_text("\n".join(lines), reply_markup=main_menu_kb(tg_id=callback.from_user.id))
     await callback.answer()

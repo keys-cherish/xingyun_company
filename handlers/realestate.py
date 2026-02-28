@@ -5,7 +5,7 @@ from __future__ import annotations
 from aiogram import F, Router, types
 
 from db.engine import async_session
-from keyboards.menus import building_list_kb
+from keyboards.menus import building_list_kb, tag_kb
 from services.company_service import get_company_by_id
 from services.realestate_service import get_building_list, get_company_estates, purchase_building
 from services.user_service import get_user_by_tg_id
@@ -16,6 +16,7 @@ router = Router()
 
 async def _refresh_estate_list(callback: types.CallbackQuery, company_id: int):
     """操作后刷新地产列表消息。"""
+    tg_id = callback.from_user.id
     try:
         async with async_session() as session:
             company = await get_company_by_id(session, company_id)
@@ -36,7 +37,7 @@ async def _refresh_estate_list(callback: types.CallbackQuery, company_id: int):
         lines.append("\n🏪 可购买地产:")
         buildings = get_building_list()
         text = "\n".join(lines)
-        await callback.message.edit_text(text, reply_markup=building_list_kb(buildings, company_id))
+        await callback.message.edit_text(text, reply_markup=building_list_kb(buildings, company_id, tg_id=tg_id))
     except Exception:
         pass  # 消息未变化时edit会抛异常，忽略
 
@@ -69,7 +70,7 @@ async def cb_realestate_menu(callback: types.CallbackQuery):
     buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:company")])
     await callback.message.edit_text(
         "🏗 选择公司查看地产:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        reply_markup=tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), callback.from_user.id),
     )
     await callback.answer()
 
@@ -104,7 +105,7 @@ async def cb_estate_list(callback: types.CallbackQuery, company_id: int | None =
     lines.append("\n🏪 可购买地产:")
     buildings = get_building_list()
     text = "\n".join(lines)
-    await callback.message.edit_text(text, reply_markup=building_list_kb(buildings, company_id))
+    await callback.message.edit_text(text, reply_markup=building_list_kb(buildings, company_id, tg_id=callback.from_user.id))
     await callback.answer()
 
 

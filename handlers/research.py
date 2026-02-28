@@ -8,7 +8,7 @@ from aiogram import F, Router, types
 from sqlalchemy import func as sqlfunc, select
 
 from db.engine import async_session
-from keyboards.menus import tech_list_kb
+from keyboards.menus import tech_list_kb, tag_kb
 from services.company_service import get_company_by_id
 from services.research_service import (
     get_available_techs,
@@ -52,7 +52,7 @@ async def cb_research_menu(callback: types.CallbackQuery):
     buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:company")])
     await callback.message.edit_text(
         "🔬 选择公司查看科研:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        reply_markup=tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), callback.from_user.id),
     )
     await callback.answer()
 
@@ -122,7 +122,7 @@ async def cb_research_list(callback: types.CallbackQuery, company_id: int | None
         lines.append("暂无可研究科技")
 
     text = "\n".join(lines)
-    await callback.message.edit_text(text, reply_markup=tech_list_kb(available, company_id))
+    await callback.message.edit_text(text, reply_markup=tech_list_kb(available, company_id, tg_id=callback.from_user.id))
     await callback.answer()
 
 @router.callback_query(F.data.startswith("research:start:"))

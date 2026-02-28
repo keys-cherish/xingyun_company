@@ -108,6 +108,7 @@ class Product(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     daily_income: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     quality: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    assigned_employees: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
 
     company: Mapped[Company] = relationship("Company", back_populates="products")

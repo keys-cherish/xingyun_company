@@ -139,6 +139,12 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
 
 async def settle_all(session: AsyncSession) -> list[tuple[Company, DailyReport, list[str]]]:
     """Run daily settlement for all companies."""
+    # Run data integrity checks before settlement
+    from services.integrity_service import run_all_checks
+    integrity_msgs = await run_all_checks(session)
+    if integrity_msgs:
+        logger.info("Integrity checks: %s", integrity_msgs)
+
     result = await session.execute(select(Company))
     companies = list(result.scalars().all())
     reports = []

@@ -11,7 +11,7 @@ from config import settings
 from db.models import Company, Cooperation
 from services.user_service import add_reputation, add_points
 
-DEFAULT_BONUS_MULTIPLIER = 0.10  # +10% per cooperation
+DEFAULT_BONUS_MULTIPLIER = 0.05  # +5% per cooperation
 COOP_CAP_NORMAL = 0.50          # 50% max for normal companies
 COOP_CAP_MAX_LEVEL = 1.00       # 100% max for max-level companies
 

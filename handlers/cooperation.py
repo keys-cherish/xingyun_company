@@ -30,17 +30,51 @@ class CoopState(StatesGroup):
 
 @router.message(Command("cooperate"))
 async def cmd_cooperate(message: types.Message):
-    """Handle /cooperate all | /cooperate <company_id>."""
+    """Handle /cooperate all | /cooperate <company_id> | reply to cooperate."""
     tg_id = message.from_user.id
     args = (message.text or "").split(maxsplit=1)
     arg = args[1].strip() if len(args) > 1 else ""
 
+    # 回复消息合作：回复某人消息并发 /cooperate
+    if not arg and message.reply_to_message:
+        target = message.reply_to_message.from_user
+        if not target or target.is_bot:
+            await message.answer("❌ 不能与机器人合作")
+            return
+        if target.id == tg_id:
+            await message.answer("❌ 不能与自己合作")
+            return
+
+        async with async_session() as session:
+            async with session.begin():
+                user = await get_user_by_tg_id(session, tg_id)
+                target_user = await get_user_by_tg_id(session, target.id)
+                if not user:
+                    await message.answer("请先 /start 注册")
+                    return
+                if not target_user:
+                    await message.answer("❌ 对方还未注册")
+                    return
+                from services.company_service import get_companies_by_owner
+                my_companies = await get_companies_by_owner(session, user.id)
+                target_companies = await get_companies_by_owner(session, target_user.id)
+                if not my_companies:
+                    await message.answer("你还没有公司")
+                    return
+                if not target_companies:
+                    await message.answer("❌ 对方没有公司")
+                    return
+                ok, msg = await cooperate_with(session, my_companies[0].id, target_companies[0].id)
+        await message.answer(msg)
+        return
+
     if not arg:
         await message.answer(
             "🤝 合作命令:\n"
+            "  /cooperate — 回复某人消息直接合作\n"
             "  /cooperate all — 一键与所有公司合作\n"
             "  /cooperate <公司ID> — 与指定公司合作\n"
-            "合作加成每次+10%，次日结算后清空需重新合作\n"
+            "合作加成每次+5%，次日结算后清空需重新合作\n"
             "普通公司上限50%，满级公司上限100%"
         )
         return

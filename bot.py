@@ -80,6 +80,10 @@ def _register_routers(dp: Dispatcher):
             return
         if message.text and message.text.startswith("/new_product"):
             return
+        if message.text and message.text.startswith("/dissolve"):
+            return
+        if message.text and message.text.startswith("/clear_product"):
+            return
         # 已认证管理员放行
         if await is_admin_authenticated(message.from_user.id):
             return

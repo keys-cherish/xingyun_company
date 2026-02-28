@@ -19,7 +19,7 @@ from cache.redis_client import get_redis
 from config import settings
 from db.models import Product
 from services.research_service import get_completed_techs
-from services.user_service import add_traffic, add_points
+from services.user_service import add_points
 from utils.formatters import fmt_traffic
 
 _products_data: dict | None = None
@@ -87,10 +87,11 @@ async def create_product(
     if existing.scalar_one_or_none():
         return None, f"已存在同名产品「{name}」"
 
-    # 扣除费用
-    ok = await add_traffic(session, owner_user_id, -settings.product_create_cost)
+    # 扣除费用（从公司资金）
+    from services.company_service import add_funds
+    ok = await add_funds(session, company_id, -settings.product_create_cost)
     if not ok:
-        return None, f"金币不足，需要 {fmt_traffic(settings.product_create_cost)}"
+        return None, f"公司资金不足，需要 {fmt_traffic(settings.product_create_cost)}"
 
     product = Product(
         company_id=company_id,
@@ -135,9 +136,10 @@ async def upgrade_product(
         return False, f"产品迭代冷却中，剩余{hours}时{minutes}分"
 
     cost = int(settings.product_upgrade_cost_base * (1.3 ** (product.version - 1)))
-    ok = await add_traffic(session, owner_user_id, -cost)
+    from services.company_service import add_funds
+    ok = await add_funds(session, product.company_id, -cost)
     if not ok:
-        return False, f"金币不足，升级需要 {fmt_traffic(cost)}"
+        return False, f"公司资金不足，升级需要 {fmt_traffic(cost)}"
 
     # 迭代收入增幅随版本递减（防止无限刷）
     diminish = max(0.05, settings.product_upgrade_income_pct - (product.version - 1) * 0.01)

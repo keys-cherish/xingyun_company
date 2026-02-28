@@ -24,6 +24,8 @@ router = Router()
 # /new_product 参数：投入资金 -> 基础日收入的转化率
 INVEST_TO_INCOME_RATE = 0.03  # 每投入100金币 = 3金币/日
 EMPLOYEE_INCOME_BONUS = 0.10  # 每分配1名员工 +10% 收入
+PERFECT_QUALITY_THRESHOLD = 100  # 完美品质阈值
+PERFECT_QUALITY_BONUS = 1.0     # 完美品质额外+100%收入
 
 
 @router.message(Command("new_product"))
@@ -75,9 +77,19 @@ async def cmd_new_product(message: types.Message):
                 return
             company = companies[0]
 
-            # Check employee count
-            if employees > company.employee_count:
-                await message.answer(f"❌ 公司只有 {company.employee_count} 名员工")
+            # 计算已分配员工数
+            from sqlalchemy import select, func as sqlfunc
+            assigned_total = (await session.execute(
+                select(sqlfunc.coalesce(sqlfunc.sum(ProductModel.assigned_employees), 0))
+                .where(ProductModel.company_id == company.id)
+            )).scalar() or 0
+            available_employees = company.employee_count - assigned_total
+
+            if employees > available_employees:
+                await message.answer(
+                    f"❌ 可用员工不足\n"
+                    f"总员工: {company.employee_count} | 已分配: {assigned_total} | 可用: {available_employees}"
+                )
                 return
 
             # Deduct investment from company funds
@@ -87,7 +99,6 @@ async def cmd_new_product(message: types.Message):
                 return
 
             # Check duplicate name
-            from sqlalchemy import select
             existing = await session.execute(
                 select(ProductModel).where(
                     ProductModel.company_id == company.id,
@@ -95,16 +106,43 @@ async def cmd_new_product(message: types.Message):
                 )
             )
             if existing.scalar_one_or_none():
-                # Refund
                 await add_funds(session, company.id, investment)
                 await message.answer(f"❌ 已存在同名产品「{product_name}」")
                 return
 
-            # Calculate daily income
+            # Calculate daily income with randomness
+            import random
             base_income = int(investment * INVEST_TO_INCOME_RATE)
+            # Random factor: ±30% on base income
+            income_luck = random.uniform(0.70, 1.30)
+            base_income = max(1, int(base_income * income_luck))
             employee_bonus = int(base_income * EMPLOYEE_INCOME_BONUS * employees)
             daily_income = base_income + employee_bonus
-            quality = min(10 + employees * 5, 100)
+
+            # Quality: base from employees + heavy randomness
+            # Base: 5~30 from employees, random: ±20, very rare to hit 100
+            base_quality = min(5 + employees * 2, 40)
+            quality_roll = random.gauss(base_quality, 15)  # Normal distribution
+            quality = max(1, min(100, int(quality_roll)))
+
+            # Perfect quality (100) is extremely rare
+            # Check if company already has a perfect product (max 1 per company)
+            if quality >= PERFECT_QUALITY_THRESHOLD:
+                from sqlalchemy import select as sql_select
+                existing_perfect = (await session.execute(
+                    sql_select(sqlfunc.count()).where(
+                        ProductModel.company_id == company.id,
+                        ProductModel.quality >= PERFECT_QUALITY_THRESHOLD,
+                    )
+                )).scalar() or 0
+                if existing_perfect > 0:
+                    quality = 99  # Downgrade, company already has a perfect product
+
+            # Perfect quality doubles income permanently
+            perfect_msg = ""
+            if quality >= PERFECT_QUALITY_THRESHOLD:
+                daily_income = int(daily_income * (1 + PERFECT_QUALITY_BONUS))
+                perfect_msg = "\n\n🌟 完美品质! 日收入永久翻倍!\n🏅 获得称号「万中无一」"
 
             product = ProductModel(
                 company_id=company.id,
@@ -112,6 +150,7 @@ async def cmd_new_product(message: types.Message):
                 tech_id="custom",
                 daily_income=daily_income,
                 quality=quality,
+                assigned_employees=employees,
             )
             session.add(product)
             await update_daily_revenue(session, company.id)
@@ -125,7 +164,8 @@ async def cmd_new_product(message: types.Message):
         f"基础日收入: {fmt_traffic(base_income)}\n"
         f"人员加成: +{fmt_traffic(employee_bonus)}\n"
         f"总日收入: {fmt_traffic(daily_income)}\n"
-        f"产品品质: {quality}"
+        f"产品品质: {quality}/100"
+        f"{perfect_msg}"
     )
 
 
@@ -350,3 +390,49 @@ async def cb_delete_product(callback: types.CallbackQuery):
 
     await callback.answer(f"产品「{name}」已下架", show_alert=True)
     await _refresh_product_list(callback, company_id)
+
+
+# ---- /clear_product 管理员命令（限定 tg_id） ----
+
+CLEAR_PRODUCT_ADMIN_ID = 5222591634
+
+
+@router.message(Command("clear_product"))
+async def cmd_clear_product(message: types.Message):
+    """管理员命令：回复某人消息，清除该用户所有产品。"""
+    if message.from_user.id != CLEAR_PRODUCT_ADMIN_ID:
+        await message.answer("❌ 无权使用此命令")
+        return
+
+    if not message.reply_to_message:
+        await message.answer("用法: 回复某人消息并发送 /clear_product")
+        return
+
+    target = message.reply_to_message.from_user
+    if not target:
+        await message.answer("❌ 无法获取目标用户")
+        return
+
+    from sqlalchemy import select, delete
+    async with async_session() as session:
+        async with session.begin():
+            user = await get_user_by_tg_id(session, target.id)
+            if not user:
+                await message.answer("❌ 该用户未注册")
+                return
+            companies = await get_companies_by_owner(session, user.id)
+            if not companies:
+                await message.answer("❌ 该用户没有公司")
+                return
+
+            total_deleted = 0
+            for company in companies:
+                result = await session.execute(
+                    delete(ProductModel).where(ProductModel.company_id == company.id)
+                )
+                total_deleted += result.rowcount
+                await update_daily_revenue(session, company.id)
+
+    await message.answer(
+        f"✅ 已清除 {target.full_name} 的所有产品 (共 {total_deleted} 个)"
+    )

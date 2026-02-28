@@ -317,15 +317,23 @@ async def cb_menu_company(callback: types.CallbackQuery):
             return
         companies = await get_companies_by_owner(session, user.id)
 
+    is_group = callback.message.chat.type in ("group", "supergroup")
+
     # 只有一家公司时直接打开详情
     if len(companies) == 1:
         text, kb = await render_company_detail(companies[0].id, tg_id)
-        await callback.message.edit_text(text, reply_markup=kb)
+        if is_group:
+            await callback.message.answer(text, reply_markup=kb)
+        else:
+            await callback.message.edit_text(text, reply_markup=kb)
         await callback.answer()
         return
 
     items = [(c.id, c.name) for c in companies]
-    await callback.message.edit_text("🏢 你的公司列表:", reply_markup=company_list_kb(items))
+    if is_group:
+        await callback.message.answer("🏢 你的公司列表:", reply_markup=company_list_kb(items))
+    else:
+        await callback.message.edit_text("🏢 你的公司列表:", reply_markup=company_list_kb(items))
     await callback.answer()
 
 
@@ -568,3 +576,82 @@ async def on_new_name(message: types.Message, state: FSMContext):
     await state.clear()
     from keyboards.menus import main_menu_kb
     await message.answer("返回主菜单:", reply_markup=main_menu_kb())
+
+
+# ---- /dissolve 注销公司 ----
+
+DISSOLVE_COOLDOWN_SECONDS = 86400  # 24小时后才能重新创建
+
+
+@router.message(Command("dissolve"))
+async def cmd_dissolve(message: types.Message):
+    """注销公司，24小时后才能重新创建。"""
+    tg_id = message.from_user.id
+
+    from cache.redis_client import get_redis
+    r = await get_redis()
+    cd_key = f"dissolve_cd:{tg_id}"
+    cd_ttl = await r.ttl(cd_key)
+    if cd_ttl > 0:
+        hours = cd_ttl // 3600
+        mins = (cd_ttl % 3600) // 60
+        await message.answer(f"⏳ 注销冷却中，{hours}小时{mins}分后可重新创建公司")
+        return
+
+    args = (message.text or "").split()
+    if len(args) < 2 or args[1].lower() != "confirm":
+        async with async_session() as session:
+            user = await get_user_by_tg_id(session, tg_id)
+            if not user:
+                await message.answer("请先 /start 注册")
+                return
+            companies = await get_companies_by_owner(session, user.id)
+            if not companies:
+                await message.answer("你没有公司可以注销")
+                return
+            names = ", ".join(f"「{c.name}」" for c in companies)
+        await message.answer(
+            f"⚠️ 确认要注销以下公司吗？\n{names}\n\n"
+            "注销后所有数据将被清除，24小时内不能重新创建。\n"
+            "确认请发送: /dissolve confirm"
+        )
+        return
+
+    from sqlalchemy import select, delete as sql_delete
+    from db.models import Company, Product, Shareholder, ResearchProgress, Roadshow, RealEstate, DailyReport
+    from services.cooperation_service import Cooperation
+
+    async with async_session() as session:
+        async with session.begin():
+            user = await get_user_by_tg_id(session, tg_id)
+            if not user:
+                await message.answer("请先 /start 注册")
+                return
+            companies = await get_companies_by_owner(session, user.id)
+            if not companies:
+                await message.answer("你没有公司可以注销")
+                return
+
+            names = []
+            for company in companies:
+                cid = company.id
+                names.append(company.name)
+                # Delete all related data
+                await session.execute(sql_delete(Product).where(Product.company_id == cid))
+                await session.execute(sql_delete(Shareholder).where(Shareholder.company_id == cid))
+                await session.execute(sql_delete(ResearchProgress).where(ResearchProgress.company_id == cid))
+                await session.execute(sql_delete(Roadshow).where(Roadshow.company_id == cid))
+                await session.execute(sql_delete(RealEstate).where(RealEstate.company_id == cid))
+                await session.execute(sql_delete(DailyReport).where(DailyReport.company_id == cid))
+                await session.execute(sql_delete(Cooperation).where(
+                    (Cooperation.company_a_id == cid) | (Cooperation.company_b_id == cid)
+                ))
+                await session.delete(company)
+
+    # Set 24h cooldown
+    await r.set(cd_key, "1", ex=DISSOLVE_COOLDOWN_SECONDS)
+
+    await message.answer(
+        f"🗑 公司已注销: {', '.join(f'「{n}」' for n in names)}\n"
+        f"24小时后可重新创建公司"
+    )

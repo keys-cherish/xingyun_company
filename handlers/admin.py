@@ -41,9 +41,10 @@ async def cb_buff_list(callback: types.CallbackQuery):
         owner = await session.get(User, company.owner_id)
         rep = owner.reputation if owner else 0
 
-        # 合作Buff
+        # 合作Buff（可叠加）
         coops = await get_active_cooperations(session, company_id)
-        coop_buff = max((c.bonus_multiplier for c in coops), default=0.0)
+        from services.cooperation_service import get_cooperation_bonus
+        coop_buff = await get_cooperation_bonus(session, company_id)
 
     # 声望Buff（不可叠加，取最高）
     rep_mult = reputation_buff_multiplier(rep)
@@ -68,9 +69,9 @@ async def cb_buff_list(callback: types.CallbackQuery):
         f"  当前声望: {rep}",
         f"  营收加成: +{rep_buff_pct:.1f}%",
         "",
-        "【合作Buff】(不可叠加，取最高)",
+        "【合作Buff】(可叠加，每家+5%)",
         f"  当前合作数: {len(coops)}",
-        f"  营收加成: +{coop_buff*100:.0f}%",
+        f"  合计营收加成: +{coop_buff*100:.0f}%",
         "",
         "【广告Buff】(有时效)",
     ]
@@ -100,7 +101,7 @@ async def cb_buff_list(callback: types.CallbackQuery):
         "  通过AI研发永久提升产品收入",
         "  提升幅度取决于方案评分(1-100%)",
         "─" * 24,
-        "注: 声望/合作/广告Buff均不可叠加，取各类别最高值",
+        "注: 合作Buff可叠加(上限50%，满级100%)，其他取最高值",
     ]
 
     from keyboards.menus import company_detail_kb

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from aiogram import F, Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -20,6 +22,7 @@ from services.user_service import get_user_by_tg_id
 from utils.formatters import fmt_traffic
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 
 class CoopState(StatesGroup):
@@ -45,27 +48,30 @@ async def cmd_cooperate(message: types.Message):
             await message.answer("❌ 不能与自己合作")
             return
 
-        async with async_session() as session:
-            async with session.begin():
-                user = await get_user_by_tg_id(session, tg_id)
-                target_user = await get_user_by_tg_id(session, target.id)
-                if not user:
-                    await message.answer("请先 /start 注册")
-                    return
-                if not target_user:
-                    await message.answer("❌ 对方还未注册")
-                    return
-                from services.company_service import get_companies_by_owner
-                my_companies = await get_companies_by_owner(session, user.id)
-                target_companies = await get_companies_by_owner(session, target_user.id)
-                if not my_companies:
-                    await message.answer("你还没有公司")
-                    return
-                if not target_companies:
-                    await message.answer("❌ 对方没有公司")
-                    return
-                ok, msg = await cooperate_with(session, my_companies[0].id, target_companies[0].id)
-        await message.answer(msg)
+        try:
+            async with async_session() as session:
+                async with session.begin():
+                    user = await get_user_by_tg_id(session, tg_id)
+                    target_user = await get_user_by_tg_id(session, target.id)
+                    if not user:
+                        await message.answer("请先 /start 注册")
+                        return
+                    if not target_user:
+                        await message.answer("❌ 对方还未注册")
+                        return
+                    my_companies = await get_companies_by_owner(session, user.id)
+                    target_companies = await get_companies_by_owner(session, target_user.id)
+                    if not my_companies:
+                        await message.answer("你还没有公司")
+                        return
+                    if not target_companies:
+                        await message.answer("❌ 对方没有公司")
+                        return
+                    ok, msg = await cooperate_with(session, my_companies[0].id, target_companies[0].id)
+            await message.answer(msg)
+        except Exception:
+            logger.exception("cooperate reply error")
+            await message.answer("❌ 合作失败，请稍后重试")
         return
 
     if not arg:
@@ -79,38 +85,52 @@ async def cmd_cooperate(message: types.Message):
         )
         return
 
-    async with async_session() as session:
-        async with session.begin():
-            user = await get_user_by_tg_id(session, tg_id)
-            if not user:
-                await message.answer("请先 /start 注册")
-                return
-            companies = await get_companies_by_owner(session, user.id)
-            if not companies:
-                await message.answer("你还没有公司")
-                return
+    try:
+        if arg.lower() == "all":
+            async with async_session() as session:
+                async with session.begin():
+                    user = await get_user_by_tg_id(session, tg_id)
+                    if not user:
+                        await message.answer("请先 /start 注册")
+                        return
+                    companies = await get_companies_by_owner(session, user.id)
+                    if not companies:
+                        await message.answer("你还没有公司")
+                        return
+                    my_company = companies[0]
+                    success, skip, msgs = await cooperate_all(session, my_company.id)
+                    company_name = my_company.name
 
-            my_company = companies[0]
-
-            if arg.lower() == "all":
-                success, skip, msgs = await cooperate_all(session, my_company.id)
-                lines = [
-                    f"🤝 「{my_company.name}」一键合作完成",
-                    f"新增合作: {success} 家",
-                ]
-                if skip > 0:
-                    lines.append(f"跳过: {skip} 家（已合作或达上限）")
-                if msgs:
-                    lines.extend(msgs)
-                await message.answer("\n".join(lines))
-            else:
-                try:
-                    target_id = int(arg)
-                except ValueError:
-                    await message.answer("请输入有效的公司ID (数字) 或 all")
-                    return
-                ok, msg = await cooperate_with(session, my_company.id, target_id)
-                await message.answer(msg)
+            lines = [
+                f"🤝 「{company_name}」一键合作完成",
+                f"新增合作: {success} 家",
+            ]
+            if skip > 0:
+                lines.append(f"跳过: {skip} 家（已合作或达上限）")
+            if msgs:
+                lines.extend(msgs)
+            await message.answer("\n".join(lines))
+        else:
+            try:
+                target_id = int(arg)
+            except ValueError:
+                await message.answer("请输入有效的公司ID (数字) 或 all")
+                return
+            async with async_session() as session:
+                async with session.begin():
+                    user = await get_user_by_tg_id(session, tg_id)
+                    if not user:
+                        await message.answer("请先 /start 注册")
+                        return
+                    companies = await get_companies_by_owner(session, user.id)
+                    if not companies:
+                        await message.answer("你还没有公司")
+                        return
+                    ok, msg = await cooperate_with(session, companies[0].id, target_id)
+            await message.answer(msg)
+    except Exception:
+        logger.exception("cooperate command error")
+        await message.answer("❌ 合作操作失败，请稍后重试")
 
 
 # ---- Inline menu handlers (legacy) ----

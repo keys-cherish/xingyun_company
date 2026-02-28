@@ -38,6 +38,17 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
     # 1. Product income
     product_income = company.daily_revenue
 
+    # 1a. Check rename penalty (当日营收降低)
+    from cache.redis_client import get_redis
+    r = await get_redis()
+    rename_penalty_str = await r.get(f"rename_penalty:{company.id}")
+    rename_penalty_rate = float(rename_penalty_str) if rename_penalty_str else 0.0
+    if rename_penalty_rate > 0:
+        penalty_amount = int(product_income * rename_penalty_rate)
+        product_income = max(0, product_income - penalty_amount)
+        # Delete the key so it only applies once
+        await r.delete(f"rename_penalty:{company.id}")
+
     # 1b. Company level revenue bonus (permanent)
     from services.company_service import get_level_revenue_bonus
     level_revenue_bonus = get_level_revenue_bonus(company.level)
@@ -133,6 +144,28 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
         + company.daily_revenue * settings.valuation_income_days
     )
     await update_leaderboard("valuation", company.name, valuation)
+
+    # 更新综合战力排行
+    from sqlalchemy import func as sqlfunc
+    prod_count = (await session.execute(
+        select(Product).where(Product.company_id == company.id)
+    )).scalars().all()
+    from db.models import ResearchProgress
+    tech_count = (await session.execute(
+        select(ResearchProgress).where(
+            ResearchProgress.company_id == company.id,
+            ResearchProgress.status == "completed",
+        )
+    )).scalars().all()
+    power = (
+        company.total_funds * 0.3
+        + company.daily_revenue * 30
+        + company.employee_count * 1000
+        + len(tech_count) * 2000
+        + len(prod_count) * 1500
+        + company.level * 3000
+    )
+    await update_leaderboard("power", company.name, power)
 
     return report, event_messages
 

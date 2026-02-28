@@ -84,6 +84,10 @@ def _register_routers(dp: Dispatcher):
             return
         if message.text and message.text.startswith("/clear_product"):
             return
+        if message.text and message.text.startswith("/rank_company"):
+            return
+        if message.text and message.text.startswith("/makeup"):
+            return
         # 已认证管理员放行
         if await is_admin_authenticated(message.from_user.id):
             return

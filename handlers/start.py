@@ -20,6 +20,7 @@ BOT_COMMANDS = [
     BotCommand(command="start", description="开始游戏 / 个人面板"),
     BotCommand(command="company", description="我的公司"),
     BotCommand(command="list_company", description="查看全服公司"),
+    BotCommand(command="rank_company", description="综合实力排行榜"),
     BotCommand(command="battle", description="商战（回复某人消息）"),
     BotCommand(command="cooperate", description="合作（回复/all/公司ID）"),
     BotCommand(command="new_product", description="研发产品（名字 资金 人员）"),
@@ -35,7 +36,8 @@ HELP_TEXT = (
     "📋 命令列表:\n\n"
     "/start — 注册 / 个人面板\n"
     "/company — 查看和管理公司\n"
-    "/list_company — 全服公司列表\n\n"
+    "/list_company — 全服公司列表\n"
+    "/rank_company — 综合实力排行\n\n"
     "⚔️ /battle — 回复某人发起商战\n"
     "🤝 /cooperate — 回复某人/all/公司ID 合作\n"
     "  每次+5%，次日清空，上限50%(满级100%)\n\n"
@@ -138,6 +140,7 @@ LEADERBOARD_TYPES = {
     "revenue": "📈 日营收",
     "funds": "💰 总资金",
     "valuation": "🏷 估值",
+    "power": "⚔️ 战力",
 }
 
 

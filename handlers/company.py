@@ -31,6 +31,17 @@ from utils.formatters import fmt_traffic
 router = Router()
 
 
+async def _safe_edit_or_send(callback: types.CallbackQuery, text: str, reply_markup=None):
+    """In group chats, send a new message; in private, edit the existing one."""
+    if callback.message.chat.type in ("group", "supergroup"):
+        await callback.message.answer(text, reply_markup=reply_markup)
+    else:
+        try:
+            await callback.message.edit_text(text, reply_markup=reply_markup)
+        except Exception:
+            pass
+
+
 # ---- /list_company 列出所有公司 ----
 
 @router.message(Command("list_company"))
@@ -60,6 +71,91 @@ async def cmd_list_company(message: types.Message):
         )
 
     await message.answer("\n".join(lines))
+
+
+# ---- /rank_company 综合实力排行 ----
+
+@router.message(Command("rank_company"))
+async def cmd_rank_company(message: types.Message):
+    """显示公司综合实力排行榜（实时计算）。"""
+    from sqlalchemy import select, func as sqlfunc
+    from db.models import Company, Product, ResearchProgress
+    from utils.formatters import compact_number
+
+    async with async_session() as session:
+        result = await session.execute(select(Company))
+        companies = list(result.scalars().all())
+
+        if not companies:
+            await message.answer("目前还没有任何公司")
+            return
+
+        rankings = []
+        for company in companies:
+            prod_count = (await session.execute(
+                select(sqlfunc.count()).where(Product.company_id == company.id)
+            )).scalar() or 0
+            tech_count = (await session.execute(
+                select(sqlfunc.count()).where(
+                    ResearchProgress.company_id == company.id,
+                    ResearchProgress.status == "completed",
+                )
+            )).scalar() or 0
+
+            # Deterministic power score (no randomness)
+            power = (
+                company.total_funds * 0.3
+                + company.daily_revenue * 30
+                + company.employee_count * 1000
+                + tech_count * 2000
+                + prod_count * 1500
+                + company.level * 3000
+            )
+            rankings.append((company, power, prod_count, tech_count))
+
+    # Sort by power descending
+    rankings.sort(key=lambda x: x[1], reverse=True)
+
+    lines = [
+        "⚔️ 公司综合实力排行 TOP 20",
+        "─" * 28,
+    ]
+    for i, (c, power, prods, techs) in enumerate(rankings[:20], 1):
+        medal = {1: "\U0001f947", 2: "\U0001f948", 3: "\U0001f949"}.get(i, f"{i}.")
+        type_info = get_company_type_info(c.company_type)
+        emoji = type_info["emoji"] if type_info else "🏢"
+        lines.append(
+            f"{medal} {emoji} {c.name}\n"
+            f"   战力:{compact_number(int(power))} | Lv.{c.level} | "
+            f"📦{prods} | 🔬{techs} | 👷{c.employee_count}"
+        )
+
+    await message.answer("\n".join(lines))
+
+
+# ---- /makeup 数据清理命令 ----
+
+MAKEUP_ADMIN_ID = 5222591634
+
+
+@router.message(Command("makeup"))
+async def cmd_makeup(message: types.Message):
+    """管理员命令：清理所有公司的异常数据。"""
+    if message.from_user.id != MAKEUP_ADMIN_ID:
+        await message.answer("❌ 无权使用此命令")
+        return
+
+    from services.integrity_service import run_all_checks
+
+    async with async_session() as session:
+        async with session.begin():
+            msgs = await run_all_checks(session)
+
+    if msgs:
+        lines = ["🔧 数据清理报告:", "─" * 24] + msgs
+        await message.answer("\n".join(lines))
+    else:
+        await message.answer("✅ 所有数据正常，无需清理")
 
 
 class CreateCompanyState(StatesGroup):
@@ -317,23 +413,15 @@ async def cb_menu_company(callback: types.CallbackQuery):
             return
         companies = await get_companies_by_owner(session, user.id)
 
-    is_group = callback.message.chat.type in ("group", "supergroup")
-
     # 只有一家公司时直接打开详情
     if len(companies) == 1:
         text, kb = await render_company_detail(companies[0].id, tg_id)
-        if is_group:
-            await callback.message.answer(text, reply_markup=kb)
-        else:
-            await callback.message.edit_text(text, reply_markup=kb)
+        await _safe_edit_or_send(callback, text, kb)
         await callback.answer()
         return
 
     items = [(c.id, c.name) for c in companies]
-    if is_group:
-        await callback.message.answer("🏢 你的公司列表:", reply_markup=company_list_kb(items))
-    else:
-        await callback.message.edit_text("🏢 你的公司列表:", reply_markup=company_list_kb(items))
+    await _safe_edit_or_send(callback, "🏢 你的公司列表:", company_list_kb(items))
     await callback.answer()
 
 
@@ -341,7 +429,7 @@ async def cb_menu_company(callback: types.CallbackQuery):
 async def cb_company_view(callback: types.CallbackQuery):
     company_id = int(callback.data.split(":")[2])
     text, kb = await render_company_detail(company_id, callback.from_user.id)
-    await callback.message.edit_text(text, reply_markup=kb)
+    await _safe_edit_or_send(callback, text, kb)
     await callback.answer()
 
 
@@ -523,10 +611,50 @@ async def cb_upgrade(callback: types.CallbackQuery):
         await _refresh_company_view(callback, company_id)
 
 
-# ---- 公司改名 ----
+# ---- 公司改名（花钱 + 当日营收降低 + 二级确认） ----
+
+RENAME_COST_RATE = 0.05  # 改名费用 = 公司资金 * 5%
+RENAME_MIN_COST = 5000   # 最低5000金币
+RENAME_REVENUE_PENALTY = 0.50  # 改名当日营收降低50%
+
 
 @router.callback_query(F.data.startswith("company:rename:"))
 async def cb_rename(callback: types.CallbackQuery, state: FSMContext):
+    company_id = int(callback.data.split(":")[2])
+    tg_id = callback.from_user.id
+
+    async with async_session() as session:
+        company = await get_company_by_id(session, company_id)
+        if not company:
+            await callback.answer("公司不存在", show_alert=True)
+            return
+        user = await get_user_by_tg_id(session, tg_id)
+        if not user or company.owner_id != user.id:
+            await callback.answer("只有老板才能改名", show_alert=True)
+            return
+        rename_cost = max(RENAME_MIN_COST, int(company.total_funds * RENAME_COST_RATE))
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ 确认改名", callback_data=f"company:rename_confirm:{company_id}"),
+            InlineKeyboardButton(text="❌ 取消", callback_data=f"company:view:{company_id}"),
+        ],
+    ])
+    await callback.message.edit_text(
+        f"✏️ 公司改名 — {company.name}\n"
+        f"{'─' * 24}\n"
+        f"⚠️ 改名须知:\n"
+        f"  💰 费用: {fmt_traffic(rename_cost)}\n"
+        f"  📉 当日营收降低 {int(RENAME_REVENUE_PENALTY * 100)}%\n"
+        f"  （次日自动恢复正常营收）\n\n"
+        f"确认要改名吗？",
+        reply_markup=kb,
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("company:rename_confirm:"))
+async def cb_rename_confirm(callback: types.CallbackQuery, state: FSMContext):
     company_id = int(callback.data.split(":")[2])
     tg_id = callback.from_user.id
 
@@ -569,10 +697,28 @@ async def on_new_name(message: types.Message, state: FSMContext):
                 await message.answer("公司不存在")
                 await state.clear()
                 return
+
+            # Calculate and deduct rename cost
+            rename_cost = max(RENAME_MIN_COST, int(company.total_funds * RENAME_COST_RATE))
+            ok = await add_funds(session, company_id, -rename_cost)
+            if not ok:
+                await message.answer(f"❌ 公司资金不足，改名需要 {fmt_traffic(rename_cost)}")
+                await state.clear()
+                return
+
             old_name = company.name
             company.name = new_name
 
-    await message.answer(f"公司改名成功! {old_name} → {new_name}")
+            # Apply revenue penalty via Redis (settlement will check this)
+            from cache.redis_client import get_redis
+            r = await get_redis()
+            await r.set(f"rename_penalty:{company_id}", str(RENAME_REVENUE_PENALTY), ex=86400)
+
+    await message.answer(
+        f"✅ 公司改名成功! {old_name} → {new_name}\n"
+        f"💰 花费: {fmt_traffic(rename_cost)}\n"
+        f"📉 当日营收将降低 {int(RENAME_REVENUE_PENALTY * 100)}%，次日恢复"
+    )
     await state.clear()
     from keyboards.menus import main_menu_kb
     await message.answer("返回主菜单:", reply_markup=main_menu_kb())
@@ -619,7 +765,7 @@ async def cmd_dissolve(message: types.Message):
 
     from sqlalchemy import select, delete as sql_delete
     from db.models import Company, Product, Shareholder, ResearchProgress, Roadshow, RealEstate, DailyReport
-    from services.cooperation_service import Cooperation
+    from db.models import Cooperation
 
     async with async_session() as session:
         async with session.begin():

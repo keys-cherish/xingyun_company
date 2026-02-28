@@ -1,4 +1,4 @@
-"""Redis async client and utility helpers."""
+"""Redis async client, distributed lock, and leaderboard helpers."""
 
 from __future__ import annotations
 

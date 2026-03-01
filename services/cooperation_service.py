@@ -11,9 +11,9 @@ from db.models import Company, Cooperation
 from services.user_service import add_reputation, add_points
 from utils.timezone import BJ_TZ
 
-DEFAULT_BONUS_MULTIPLIER = 0.05  # +5% per cooperation
+DEFAULT_BONUS_MULTIPLIER = 0.02  # +2% per cooperation
 COOP_REPUTATION_GAIN = 30
-COOP_EXTRA_DAILY_BONUS_MULTIPLIER = 0.01  # +1% daily revenue per cooperation (resets after settlement)
+COOP_BUFF_CAP = 0.50  # Normal company cap: 50%
 
 
 def _utc_now_naive() -> dt.datetime:
@@ -43,11 +43,12 @@ async def get_active_cooperations(session: AsyncSession, company_id: int) -> lis
 
 
 async def get_cooperation_bonus(session: AsyncSession, company_id: int) -> float:
-    """Return total cooperation bonus multiplier for a company."""
+    """Return total cooperation bonus multiplier for a company (capped)."""
     coops = await get_active_cooperations(session, company_id)
     if not coops:
         return 0.0
-    return sum(c.bonus_multiplier for c in coops)
+    raw = sum(c.bonus_multiplier for c in coops)
+    return min(raw, COOP_BUFF_CAP)
 
 
 async def create_cooperation(
@@ -64,22 +65,23 @@ async def create_cooperation(
     if not ca or not cb:
         return False, "公司不存在"
 
-    # Daily limit: each company can only cooperate with one company per day.
+    # Check if already cooperating with this specific company today
     a_active = await get_active_cooperations(session, company_a_id)
-    if a_active:
-        partner_id = a_active[0].company_b_id if a_active[0].company_a_id == company_a_id else a_active[0].company_a_id
-        partner = await session.get(Company, partner_id)
-        partner_name = partner.name if partner else "未知"
-        return False, f"你今天已与「{partner_name}」合作，每天仅可合作一家"
-    b_active = await get_active_cooperations(session, company_b_id)
-    if b_active:
-        return False, f"❌ 对方公司今天已与其他公司合作"
+    for c in a_active:
+        partner = c.company_b_id if c.company_a_id == company_a_id else c.company_a_id
+        if partner == company_b_id:
+            return False, f"今天已经与「{cb.name}」合作过了"
+
+    # Check buff cap
+    current_bonus = sum(c.bonus_multiplier for c in a_active)
+    if current_bonus >= COOP_BUFF_CAP:
+        return False, f"合作Buff已达上限（{int(COOP_BUFF_CAP * 100)}%），今日无法继续合作"
 
     expires_at = _next_settlement_time()
     coop = Cooperation(
         company_a_id=company_a_id,
         company_b_id=company_b_id,
-        bonus_multiplier=DEFAULT_BONUS_MULTIPLIER + COOP_EXTRA_DAILY_BONUS_MULTIPLIER,
+        bonus_multiplier=DEFAULT_BONUS_MULTIPLIER,
         expires_at=expires_at,
     )
     session.add(coop)
@@ -96,9 +98,11 @@ async def create_cooperation(
     await update_quest_progress(session, ca.owner_id, "cooperation_count", increment=1)
     await update_quest_progress(session, cb.owner_id, "cooperation_count", increment=1)
 
+    new_total = min(current_bonus + DEFAULT_BONUS_MULTIPLIER, COOP_BUFF_CAP)
     return True, (
-        f"「{ca.name}」与「{cb.name}」建立合作! 营收+{(DEFAULT_BONUS_MULTIPLIER + COOP_EXTRA_DAILY_BONUS_MULTIPLIER)*100:.0f}%（今日有效）\n"
-        f"双方各 +{COOP_REPUTATION_GAIN} 声望（额外+1%营收为当日Buff，次日重置）"
+        f"「{ca.name}」与「{cb.name}」建立合作! 营收+{DEFAULT_BONUS_MULTIPLIER*100:.0f}%（今日有效）\n"
+        f"当前合作Buff：+{new_total*100:.0f}%（上限{int(COOP_BUFF_CAP*100)}%）\n"
+        f"双方各 +{COOP_REPUTATION_GAIN} 声望"
     )
 
 
@@ -115,19 +119,31 @@ async def cooperate_all(
         return 0, 0, ["公司不存在"]
 
     existing = await get_active_cooperations(session, my_company_id)
-    if existing:
-        partner_id = existing[0].company_b_id if existing[0].company_a_id == my_company_id else existing[0].company_a_id
-        partner = await session.get(Company, partner_id)
-        partner_name = partner.name if partner else "未知"
-        return 0, len(all_companies), [f"今天已与「{partner_name}」合作，每天仅可合作一家"]
+    current_bonus = sum(c.bonus_multiplier for c in existing)
+
+    # Already at cap
+    if current_bonus >= COOP_BUFF_CAP:
+        return 0, len(all_companies), [f"合作Buff已达上限（{int(COOP_BUFF_CAP * 100)}%），今日无法继续合作"]
+
+    # Build set of already-cooperated company IDs
+    already_partners = set()
+    for c in existing:
+        partner = c.company_b_id if c.company_a_id == my_company_id else c.company_a_id
+        already_partners.add(partner)
 
     success = 0
     skip = 0
     msgs = []
 
     for target in all_companies:
-        target_active = await get_active_cooperations(session, target.id)
-        if target_active:
+        # Check cap
+        if current_bonus >= COOP_BUFF_CAP:
+            skip += len(all_companies) - success - skip
+            msgs.append(f"合作Buff已达上限（{int(COOP_BUFF_CAP * 100)}%）")
+            break
+
+        # Skip already cooperated
+        if target.id in already_partners:
             skip += 1
             continue
 
@@ -135,10 +151,11 @@ async def cooperate_all(
         coop = Cooperation(
             company_a_id=my_company_id,
             company_b_id=target.id,
-            bonus_multiplier=DEFAULT_BONUS_MULTIPLIER + COOP_EXTRA_DAILY_BONUS_MULTIPLIER,
+            bonus_multiplier=DEFAULT_BONUS_MULTIPLIER,
             expires_at=expires_at,
         )
         session.add(coop)
+        current_bonus += DEFAULT_BONUS_MULTIPLIER
         success += 1
 
         # Reputation & points
@@ -151,8 +168,10 @@ async def cooperate_all(
         from services.quest_service import update_quest_progress
         await update_quest_progress(session, my_company.owner_id, "cooperation_count", increment=1)
         await update_quest_progress(session, target.owner_id, "cooperation_count", increment=1)
-        msgs.append("双方各 +30 声望；合作额外+1%营收为当日Buff，次日重置")
-        break
+
+    if success > 0:
+        capped = min(current_bonus, COOP_BUFF_CAP)
+        msgs.append(f"合作Buff：+{capped*100:.0f}%（上限{int(COOP_BUFF_CAP*100)}%），双方各+{COOP_REPUTATION_GAIN}声望")
 
     await session.flush()
     return success, skip, msgs

@@ -23,12 +23,13 @@ from services.product_service import (
 from services.user_service import get_user_by_tg_id, add_points
 from utils.formatters import fmt_traffic
 from utils.panel_owner import mark_panel
+from utils.validators import validate_name
 from db.models import Product as ProductModel
 
 router = Router()
 logger = logging.getLogger(__name__)
 
-# /company_new 参数：投入资金 -> 基础日收入的转化率
+# /cp_new_product 参数：投入资金 -> 基础日收入的转化率
 INVEST_TO_INCOME_RATE = 0.03  # 每投入100积分 = 3积分/日
 EMPLOYEE_INCOME_BONUS = 0.10  # 每分配1名员工 +10% 收入
 PERFECT_QUALITY_THRESHOLD = 100  # 完美品质阈值
@@ -37,15 +38,15 @@ PERFECT_QUALITY_BONUS = 1.0     # 完美品质额外+100%收入
 
 @router.message(Command(CMD_NEW_PRODUCT))
 async def cmd_new_product(message: types.Message):
-    """Create a custom product: /company_new <name> <investment> [employees]."""
+    """Create a custom product: /cp_new_product <name> <investment> [employees]."""
     tg_id = message.from_user.id
     args = (message.text or "").split()
 
     if len(args) < 3:
         await message.answer(
-            "📦 用法: /company_new <产品名> <投入资金> [分配人员]\n"
-            "例1: /company_new 智能助手 10000\n"
-            "例2: /company_new 智能助手 10000 3\n\n"
+            "📦 用法: /cp_new_product <产品名> <投入资金> [分配人员]\n"
+            "例1: /cp_new_product 智能助手 10000\n"
+            "例2: /cp_new_product 智能助手 10000 3\n\n"
             "• 投入资金从公司扣除，决定产品基础日收入\n"
             "• 分配人员可省略，省略时默认为 0（无人员加成）\n"
             "• 分配人员提供额外收入加成（每人+10%）\n"
@@ -70,8 +71,9 @@ async def cmd_new_product(message: types.Message):
     if employees < 0 or employees > 50:
         await message.answer("❌ 分配人员数量 0-50")
         return
-    if len(product_name) > 32:
-        await message.answer("❌ 产品名称最长32字符")
+    name_err = validate_name(product_name, min_len=1, max_len=32)
+    if name_err:
+        await message.answer(f"❌ {name_err}")
         return
 
     async with async_session() as session:
@@ -315,7 +317,7 @@ async def cb_product_list(callback: types.CallbackQuery, company_id: int | None 
         lines.append("\n💡 完成科研可解锁产品模板")
 
     lines.append("\n📦 也可使用命令创建自定义产品:")
-    lines.append("  /company_new <名字> <资金> [人员]")
+    lines.append("  /cp_new_product <名字> <资金> [人员]")
     text = "\n".join(lines)
     all_buttons = product_buttons + template_buttons
     all_buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")])

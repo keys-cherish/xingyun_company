@@ -458,13 +458,14 @@ async def apply_rd_result(
     extra_staff: int = 0,
     special_effect: dict[str, Any] | None = None,
 ) -> tuple[bool, str, int]:
-    """Apply R&D result to a product with optional themed trigger effect."""
+    """Apply R&D result to a product with risk/reward tiers and diminishing returns."""
+    import math
+
     product = await session.get(Product, product_id)
     if product is None:
         return False, "产品不存在", 0
 
     safe_staff = max(0, min(extra_staff, MAX_EXTRA_RD_STAFF))
-    staff_bonus = safe_staff * 0.05
 
     special_multiplier = 1.0
     special_rep_bonus = 0
@@ -496,27 +497,92 @@ async def apply_rd_result(
             for line in meme_lines[:2]:
                 special_text += f"\n  · {line}"
 
-    boost_pct = max(0.01, score / 100.0) * (1 + staff_bonus) * special_multiplier
-    boost_pct = max(0.01, min(boost_pct, MAX_RD_BOOST_PCT))
-
-    income_increase = max(1, int(product.daily_income * boost_pct))
     from services.product_service import MAX_PRODUCT_DAILY_INCOME
-    income_increase = min(income_increase, MAX_PRODUCT_DAILY_INCOME - product.daily_income)
+
+    # ── Risk/reward tiers based on score ──
+    BASE_RD_INCOME = 300
+    SCORE_FACTOR = 5.0
+    DIMINISH_THRESHOLD = 50_000
+    DIMINISH_RATE = 0.6
+
+    quality_delta = 0
+    tier_text = ""
+
+    if score < 30:
+        # 翻车：收入-3%（最低不低于初始值的50%）
+        penalty = max(1, int(product.daily_income * 0.03))
+        min_income = max(1, product.daily_income // 2)
+        new_income = max(min_income, product.daily_income - penalty)
+        income_change = new_income - product.daily_income  # negative
+        product.daily_income = new_income
+        product.quality = max(1, product.quality - 1)
+        product.version += 1
+        await session.flush()
+        from services.company_service import update_daily_revenue
+        await update_daily_revenue(session, product.company_id)
+
+        rep = 1 + special_rep_bonus
+        await add_reputation(session, owner_user_id, rep)
+        await add_points(owner_user_id, max(1, score // 4), session=session)
+
+        return True, (
+            f"💥 方案翻车！市场反馈极差，产品口碑受损\n"
+            f"评分: {score}/100\n"
+            f"产品「{product.name}」日收入{income_change}  → {product.daily_income}"
+            f"{special_text}"
+        ), income_change
+
+    # For scores >= 30, calculate additive boost
+    raw_boost = BASE_RD_INCOME + int(score * SCORE_FACTOR)
+    staff_mult = 1 + safe_staff * 0.03
+    raw_boost = int(raw_boost * staff_mult * special_multiplier)
+
+    # High-income diminishing returns
+    if product.daily_income > DIMINISH_THRESHOLD:
+        ratio = product.daily_income / DIMINISH_THRESHOLD
+        diminish = max(0.05, 1.0 / (1 + DIMINISH_RATE * math.log(ratio)))
+        raw_boost = max(1, int(raw_boost * diminish))
+
+    # Apply tier multiplier
+    if score < 50:
+        # 平庸
+        raw_boost = max(1, int(raw_boost * 0.3))
+        quality_delta = 0
+        tier_text = "😐 方案平庸，勉强维持现状"
+    elif score < 70:
+        # 可行
+        quality_delta = 1
+        tier_text = "✅ 方案可行，稳步推进中"
+    elif score < 85:
+        # 优秀
+        raw_boost = int(raw_boost * 1.5)
+        quality_delta = 2
+        tier_text = "🌟 方案优秀！市场反响良好"
+    else:
+        # 卓越
+        raw_boost = int(raw_boost * 2.0)
+        quality_delta = 3
+        tier_text = "🏆 方案卓越！引领行业新风向"
+
+    income_increase = min(raw_boost, MAX_PRODUCT_DAILY_INCOME - product.daily_income)
+    income_increase = max(0, income_increase)
     product.daily_income += income_increase
-    product.quality += max(1, score // 10) + special_quality_bonus
+    product.quality = min(100, product.quality + quality_delta + special_quality_bonus)
     product.version += 1
     await session.flush()
-    # Keep company panel in sync immediately after product income changes.
     from services.company_service import update_daily_revenue
     await update_daily_revenue(session, product.company_id)
 
     rep = max(1, score // 5) + special_rep_bonus
+    # 卓越额外声望
+    if score >= 85:
+        rep += 5
     await add_reputation(session, owner_user_id, rep)
     await add_points(owner_user_id, score // 2, session=session)
 
     return True, (
+        f"{tier_text}\n"
         f"评分: {score}/100\n"
-        f"产品「{product.name}」永久收入+{income_increase} ({boost_pct*100:.1f}%)\n"
-        f"新日收入: {product.daily_income}"
+        f"产品「{product.name}」日收入+{income_increase} → {product.daily_income}"
         f"{special_text}"
     ), income_increase

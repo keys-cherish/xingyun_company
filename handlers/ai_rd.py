@@ -10,6 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from db.engine import async_session
+from cache.redis_client import get_redis
 from keyboards.menus import main_menu_kb, tag_kb
 from services.ai_rd_service import (
     MAX_EXTRA_RD_STAFF,
@@ -23,6 +24,9 @@ from services.user_service import get_user_by_tg_id
 from utils.panel_owner import mark_panel
 
 router = Router()
+
+RD_COOLDOWN_SECONDS = 4 * 3600  # 4 hours per product
+RD_DAILY_LIMIT = 5              # per company per day
 
 
 class AIRDState(StatesGroup):
@@ -71,11 +75,47 @@ async def cb_aird_start(callback: types.CallbackQuery, state: FSMContext):
 @router.callback_query(AIRDState.select_product, F.data.startswith("aird:select:"))
 async def cb_aird_select(callback: types.CallbackQuery, state: FSMContext):
     product_id = int(callback.data.split(":")[2])
+    data = await state.get_data()
+    company_id = data.get("company_id")
+
+    r = await get_redis()
+
+    # Per-product cooldown check
+    cd_key = f"rd_cd:{product_id}"
+    cd_ttl = await r.ttl(cd_key)
+    if cd_ttl > 0:
+        hours = cd_ttl // 3600
+        minutes = (cd_ttl % 3600) // 60
+        await callback.answer(
+            f"该产品研发冷却中，剩余{hours}时{minutes}分",
+            show_alert=True,
+        )
+        return
+
+    # Per-company daily limit check
+    if company_id:
+        daily_key = f"rd_daily:{company_id}"
+        daily_count = int(await r.get(daily_key) or 0)
+        if daily_count >= RD_DAILY_LIMIT:
+            await callback.answer(
+                f"今日研发次数已达上限（{RD_DAILY_LIMIT}次/天）",
+                show_alert=True,
+            )
+            return
+
     await state.update_data(product_id=product_id)
     await state.set_state(AIRDState.waiting_proposal)
+
+    # Build cooldown/limit info for display
+    remaining_info = ""
+    if company_id:
+        daily_key = f"rd_daily:{company_id}"
+        daily_count = int(await r.get(daily_key) or 0)
+        remaining_info = f"\n⏱ 研发冷却: 每产品{RD_COOLDOWN_SECONDS // 3600}小时 | 今日剩余: {RD_DAILY_LIMIT - daily_count}次"
+
     await callback.message.edit_text(
         "🧪 AI产品研发\n\n"
-        "请输入你的产品方案（可无限次研发，无冷却）:\n"
+        f"请输入你的产品方案:{remaining_info}\n"
         "• 描述产品功能和创新点\n"
         "• 阐述市场定位和目标用户\n"
         "• 说明商业模式和盈利方式\n"
@@ -83,7 +123,7 @@ async def cb_aird_select(callback: types.CallbackQuery, state: FSMContext):
         "• 给出可量化指标（转化、留存、ROI等）\n\n"
         "AI将采用【专业评审标准】：\n"
         "指出主要问题，并给分项评分与改进建议。\n"
-        "评分越高，产品收入永久提升越多。"
+        "⚠️ 低分方案可能导致收入下降！高分方案有额外奖励。"
     )
     await callback.answer()
 
@@ -171,6 +211,19 @@ async def cb_aird_staff(callback: types.CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="🔙 返回公司", callback_data=f"company:view:{company_id}")],
     ]), tg_id)
     if ok:
+        # Set per-product cooldown and increment daily counter
+        r = await get_redis()
+        await r.setex(f"rd_cd:{product_id}", RD_COOLDOWN_SECONDS, "1")
+        daily_key = f"rd_daily:{company_id}"
+        await r.incr(daily_key)
+        # Set TTL to expire at end of day (UTC) if not already set
+        if await r.ttl(daily_key) < 0:
+            import datetime as _dt
+            now = _dt.datetime.now(_dt.timezone.utc)
+            end_of_day = now.replace(hour=23, minute=59, second=59, microsecond=0)
+            remaining = int((end_of_day - now).total_seconds()) + 1
+            await r.expire(daily_key, max(1, remaining))
+
         await callback.message.edit_text(
             f"🧪 研发完成!\n─" + "─" * 23 + f"\n{msg}",
             reply_markup=result_kb,

@@ -87,15 +87,53 @@ async def _mark_newbie_highlight_done(company_id: int):
     await r.set(f"newbie_highlight:{company_id}", "1")
 
 
+def _calc_risk_factor(profile) -> float:
+    """Calculate dynamic risk factor based on company operations.
+
+    Returns a modifier to the base event chance. Higher = more events.
+    Risk increases from:
+      - High work hours (10h: +10%, 12h: +25%)
+      - Low ethics (<50: up to +20%)
+      - High regulation pressure (up to +15%)
+    Risk decreases from:
+      - Culture (up to -30%)
+    """
+    risk = 0.0
+    # Work hours risk
+    if profile.work_hours >= 12:
+        risk += 0.25
+    elif profile.work_hours >= 10:
+        risk += 0.10
+    # Low ethics risk
+    if profile.ethics < 50:
+        risk += (50 - profile.ethics) / 50 * 0.20  # max +20%
+    # Regulation pressure risk
+    risk += (profile.regulation_pressure / 100) * 0.15  # max +15%
+    # Culture mitigation
+    culture_reduce = (profile.culture / 100) * 0.30  # max -30%
+    risk -= culture_reduce
+    return risk
+
+
 async def roll_daily_events(session: AsyncSession, company: Company) -> list[str]:
     """Roll for random events during daily settlement. Returns event descriptions."""
     from config import settings
+    from services.operations_service import get_or_create_profile
     messages = []
 
     is_newbie = await _is_newbie_highlight(company)
 
-    if not is_newbie and random.random() > settings.event_chance:
-        return messages  # No event today
+    # Load profile for dynamic risk calculation
+    profile = await get_or_create_profile(session, company.id)
+
+    if not is_newbie:
+        # Dynamic event chance: base 35% + risk factor
+        risk_mod = _calc_risk_factor(profile)
+        effective_chance = max(0.10, min(0.80, settings.event_chance + risk_mod))
+        if random.random() > effective_chance:
+            return messages  # No event today
+
+    culture = profile.culture  # 0-100
 
     if is_newbie:
         # Force 1 positive event, maybe 1 extra normal event
@@ -107,8 +145,18 @@ async def roll_daily_events(session: AsyncSession, company: Company) -> list[str
         await _mark_newbie_highlight_done(company.id)
     else:
         num_events = random.choices([1, 2], weights=[75, 25], k=1)[0]
-        weights = [e.weight for e in EVENTS]
-        selected = list(random.choices(EVENTS, weights=weights, k=num_events))
+        # Culture reduces negative event weight: up to -30% at culture 100
+        culture_neg_reduce = (culture / 100) * 0.30
+        # Low ethics increases negative event weight: up to +20%
+        ethics_neg_boost = max(0, (50 - profile.ethics) / 50 * 0.20)
+        adjusted_weights = []
+        for e in EVENTS:
+            w = e.weight
+            if e.effect_value < 0:
+                w = int(w * (1.0 - culture_neg_reduce + ethics_neg_boost))
+                w = max(1, w)
+            adjusted_weights.append(w)
+        selected = list(random.choices(EVENTS, weights=adjusted_weights, k=num_events))
 
     # Deduplicate by name
     seen = set()

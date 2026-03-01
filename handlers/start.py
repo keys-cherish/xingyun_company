@@ -49,6 +49,7 @@ BOT_COMMANDS = [
     BotCommand(command=CMD_HELP, description="帮助信息"),
     BotCommand(command=CMD_GIVE_MONEY, description="超管发放积分（回复+金额）"),
     BotCommand(command=CMD_WELFARE, description="超管全服福利（每家100万）"),
+    BotCommand(command="cp_slot", description="🎰 老虎机（每日奖励一次）"),
 ]
 
 HELP_TEXT = (
@@ -64,14 +65,15 @@ HELP_TEXT = (
     "⚔️ /company_battle [战术] — 回复某人发起商战（每次消耗200积分）\n"
     "  战术: 稳扎稳打 / 激进营销 / 奇袭渗透\n"
     "🤝 /company_cooperate — 回复某人/all 合作\n"
-    "  每次+6%（含额外1%），次日清空，双方各+30声望，每天仅可合作一家\n\n"
-    "📦 /company_new <名字> <资金> [人员]\n"
+    "  每次+2%（上限50%），次日清空，双方各+30声望\n\n"
+    "📦 /cp_new_product <名字> <资金> [人员]\n"
     "  人员参数可省略；无人员时不吃人员加成\n"
     "  完美品质(100分) 极稀有，收入翻倍\n\n"
     "👷 /company_member add|minus <数量|max>\n"
     "🗑 /company_dissolve — 注销公司(24h冷却)\n"
     "/company_admin <密钥> — 管理员认证\n"
     "/company_help — 显示此帮助\n"
+    "\n🎰 /cp_slot — 老虎机（三个一样中奖，777大奖77777！每日奖励一次）\n"
     "\n🤖 AI对话: 任意消息带 @机器人用户名 即可调用\n"
     "普通用户每分钟最多 10 次，管理员/超管不限制\n"
 )

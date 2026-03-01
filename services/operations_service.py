@@ -250,9 +250,11 @@ async def cycle_option(
     if field == "insurance":
         keys = list(INSURANCE_LEVELS.keys())
         idx = keys.index(profile.insurance_level) if profile.insurance_level in keys else 0
-        profile.insurance_level = keys[(idx + 1) % len(keys)]
+        if idx >= len(keys) - 1:
+            return True, "已是最高保险方案，无需继续升级"
+        profile.insurance_level = keys[idx + 1]
         await session.flush()
-        return True, f"保险方案切换为：{INSURANCE_LEVELS[profile.insurance_level]['name']}"
+        return True, f"保险方案升级为：{INSURANCE_LEVELS[profile.insurance_level]['name']}"
 
     if field == "culture":
         profile.culture = _clamp(profile.culture + 8, 0, 100)

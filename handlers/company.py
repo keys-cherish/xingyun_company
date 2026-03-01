@@ -58,6 +58,7 @@ from services.operations_service import (
 from services.user_service import get_user_by_tg_id
 from utils.formatters import fmt_quota, fmt_traffic
 from utils.panel_owner import mark_panel
+from utils.validators import validate_name
 
 router = Router()
 
@@ -741,8 +742,9 @@ async def cb_company_type_selected(callback: types.CallbackQuery, state: FSMCont
 @router.message(CreateCompanyState.waiting_name)
 async def on_company_name(message: types.Message, state: FSMContext):
     name = message.text.strip()
-    if not (2 <= len(name) <= 16):
-        await message.answer("公司名称需要2-16个字符，请重新输入:")
+    name_err = validate_name(name, min_len=2, max_len=16)
+    if name_err:
+        await message.answer(f"{name_err}，请重新输入:")
         return
 
     data = await state.get_data()
@@ -1060,8 +1062,9 @@ async def cb_rename_confirm(callback: types.CallbackQuery, state: FSMContext):
 @router.message(RenameCompanyState.waiting_new_name)
 async def on_new_name(message: types.Message, state: FSMContext):
     new_name = message.text.strip()
-    if not (2 <= len(new_name) <= 16):
-        await message.answer("公司名称需要2-16个字符:")
+    name_err = validate_name(new_name, min_len=2, max_len=16)
+    if name_err:
+        await message.answer(f"{name_err}，请重新输入:")
         return
 
     data = await state.get_data()

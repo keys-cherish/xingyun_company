@@ -22,6 +22,7 @@ from db.models import Company, Product, User
 from services.research_service import check_and_complete_research, get_completed_techs
 from services.user_service import add_points
 from utils.formatters import fmt_traffic
+from utils.validators import validate_name
 
 _products_data: dict | None = None
 
@@ -97,8 +98,9 @@ async def create_product(
 
     # 产品名称
     name = custom_name.strip() if custom_name.strip() else tmpl["name"]
-    if len(name) > 32:
-        return None, "产品名称最长32字符"
+    name_err = validate_name(name, min_len=1, max_len=32)
+    if name_err:
+        return None, name_err
 
     # 重名检测（同公司内）
     existing = await session.execute(

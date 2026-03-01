@@ -61,7 +61,10 @@ class Settings(BaseSettings):
 
     # Roadshow
     roadshow_cost: int = 700
-    roadshow_cooldown_seconds: int = 7200  # 2 hours
+    roadshow_daily_once: bool = True
+    roadshow_cooldown_seconds: int = 7200  # legacy: used only when roadshow_daily_once = false
+    roadshow_satire_chance: float = 0.18
+    roadshow_satire_penalty_rate: float = 0.20
 
     # Reputation buff
     max_reputation_buff_pct: float = 0.50  # max 50% revenue buff

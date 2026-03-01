@@ -38,6 +38,7 @@ def _register_routers(dp: Dispatcher):
     from handlers.exchange import router as exchange_router
     from handlers.battle import router as battle_router
     from handlers.quest import router as quest_router
+    from handlers.slot_machine import router as slot_router
 
     dp.include_router(start_router)
     dp.include_router(company_router)
@@ -55,6 +56,7 @@ def _register_routers(dp: Dispatcher):
     dp.include_router(exchange_router)
     dp.include_router(battle_router)
     dp.include_router(quest_router)
+    dp.include_router(slot_router)
 
     # 私聊兜底：非管理员只允许常用命令，管理员放行
     from handlers.common import reject_private, is_admin_authenticated
@@ -77,7 +79,7 @@ def _register_routers(dp: Dispatcher):
             "/company_help",
             "/company_battle",
             "/company_cooperate",
-            "/company_new",
+            "/cp_new_product",
             "/company_dissolve",
             "/company_clear",
             "/company_rank",
@@ -87,6 +89,7 @@ def _register_routers(dp: Dispatcher):
             "/company_quest",
             "/company_cleanup",
             "/company_cancel",
+            "/cp_slot",
         )
         if message.text and message.text.startswith(allowed_prefixes):
             return

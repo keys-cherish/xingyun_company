@@ -81,7 +81,7 @@ async def cb_buff_list(callback: types.CallbackQuery):
         f"  当前声望: {rep}",
         f"  营收加成: +{rep_buff_pct:.1f}%",
         "",
-        "【合作Buff】(可叠加，每家+5%)",
+        "【合作Buff】(可叠加，每家+2%)",
         f"  当前合作数: {len(coops)}",
         f"  合计营收加成: +{coop_buff*100:.0f}%",
         "",

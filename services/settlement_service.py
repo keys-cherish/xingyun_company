@@ -69,7 +69,21 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
         battle_debuff_amount = int(product_income * battle_debuff_rate)
         product_income = max(0, product_income - battle_debuff_amount)
 
-    # 1c. Company level revenue bonus (permanent)
+    # 1c. Roadshow satire penalty (one-time, consumed in this settlement)
+    roadshow_penalty_rate = 0.0
+    roadshow_penalty_amount = 0
+    roadshow_penalty_str = await r.get(f"roadshow_penalty:{company.id}")
+    if roadshow_penalty_str:
+        try:
+            roadshow_penalty_rate = float(roadshow_penalty_str)
+        except (TypeError, ValueError):
+            roadshow_penalty_rate = 0.0
+    if roadshow_penalty_rate > 0:
+        roadshow_penalty_amount = int(product_income * roadshow_penalty_rate)
+        product_income = max(0, product_income - roadshow_penalty_amount)
+        await r.delete(f"roadshow_penalty:{company.id}")
+
+    # 1d. Company level revenue bonus (permanent)
     from services.company_service import get_level_revenue_bonus
     level_revenue_bonus = get_level_revenue_bonus(company.level)
 
@@ -183,6 +197,11 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
         )
     if fine > 0:
         event_messages.append(f"⚖️ 合规罚款触发：-{fine:,} 积分")
+    if roadshow_penalty_amount > 0:
+        event_messages.append(
+            f"🎭 路演翻车反噬：当日营收 -{int(roadshow_penalty_rate * 100)}% "
+            f"(-{roadshow_penalty_amount:,})"
+        )
     await save_recent_events(company.id, event_messages)
     await settle_profile_daily(session, profile, now_utc)
 

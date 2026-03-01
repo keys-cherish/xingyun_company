@@ -1,59 +1,58 @@
-"""Roadshow system - spend gold for random rewards with narrative flavor text."""
+"""Roadshow system: daily-limited event with dramatic narrative outcomes."""
 
 from __future__ import annotations
 
 import datetime as dt
 import random
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cache.redis_client import get_redis
 from config import settings
-from db.models import Company, Roadshow
+from db.models import Roadshow
 from services.company_service import add_funds
-from services.user_service import add_reputation, add_points
+from services.user_service import add_points, add_reputation
 from utils.formatters import fmt_traffic
 
 ROADSHOW_TYPES = ["技术展会", "投资峰会", "媒体发布会", "行业论坛"]
+ROADSHOW_DAILY_KEY_PREFIX = "roadshow_daily"
+ROADSHOW_PENALTY_KEY_PREFIX = "roadshow_penalty"
 
 REWARD_TABLE = [
-    {"weight": 30, "type": "traffic", "min": 200, "max": 800, "desc": "获得积分奖励"},
-    {"weight": 25, "type": "reputation", "min": 3, "max": 15, "desc": "声望提升"},
-    {"weight": 20, "type": "traffic", "min": 500, "max": 2000, "desc": "大额积分奖励"},
-    {"weight": 15, "type": "points", "min": 10, "max": 50, "desc": "获得积分"},
-    {"weight": 10, "type": "jackpot", "min": 2000, "max": 5000, "desc": "路演大成功! 巨额积分"},
+    {"weight": 30, "type": "traffic", "min": 200, "max": 800},
+    {"weight": 25, "type": "reputation", "min": 3, "max": 15},
+    {"weight": 20, "type": "traffic", "min": 500, "max": 2000},
+    {"weight": 15, "type": "points", "min": 10, "max": 50},
+    {"weight": 10, "type": "jackpot", "min": 2000, "max": 5000},
 ]
 
-# ---- Narrative flavor text ----
-
 STORIES_TRAFFIC = [
-    "你的演讲征服了在场的投资人，多家基金当场表示合作意向！",
-    "产品演示环节出现了意想不到的惊喜效果，观众掌声雷动，订单纷至沓来！",
-    "你在台上侃侃而谈，一位神秘大佬悄悄塞过来一张支票...",
-    "路演现场气氛热烈，你的商业计划书被投资人疯抢，资金涌入！",
-    "演讲结束后，好几家企业主动来谈合作，你的邮箱被塞满了合同。",
+    "台下两位对手当场抬价抢人，原本冷清的会场突然像拍卖厅。",
+    "演示中设备几乎失控，但你硬把失误说成“反脆弱设计”，全场居然买账。",
+    "你刚讲完第三页，后排投资人直接把意向书拍到桌上，要求今天就签。",
+    "主持人试图控场，结果观众直接围上来问估值和交付节奏。",
 ]
 
 STORIES_REPUTATION = [
-    "你的演讲被媒体大量报道，行业内纷纷议论你的公司是下一匹黑马！",
-    "路演中你展示的技术方案震惊全场，多家媒体争相采访。",
-    "一位知名行业分析师在社交媒体上盛赞你的公司，粉丝暴涨！",
-    "你的路演视频意外走红网络，公司知名度大幅提升。",
-    "观众中有一位顶级KOL，他发了一条关于你的推荐帖，引发了行业热议。",
+    "争议发言把话题点燃，媒体争吵了一夜，但你的名字冲上了行业热榜。",
+    "你和评委当场互怼，剪辑版在圈内疯传，品牌声量暴涨。",
+    "一段高压问答把气氛拉满，虽然火药味十足，但观众记住了你。",
+    "你当众拆解竞品路线，现场一片哗然，评论区却一致叫好。",
 ]
 
 STORIES_POINTS = [
-    "路演虽然反响平平，但你认识了一些有价值的行业人脉，经验值得积累。",
-    "你在路演中遇到了一位老前辈，他的指点让你受益匪浅。",
-    "这次路演规模不大，但细水长流，你获得了一些有用的行业洞察。",
-    "现场来了一些行业记者，虽然没有大单，但积累了不少人脉资源。",
+    "现场反应一般，但你拿到了一堆高价值反馈，少走了不少弯路。",
+    "没有爆单，也没翻车，你收获的是可落地的执行建议。",
+    "台下问题很刁钻，但这些质疑刚好补齐了你方案里的短板。",
+    "这次像打磨会，不热闹，但每条意见都值钱。",
 ]
 
 STORIES_JACKPOT = [
-    "🎉 天降好运！台下坐着一位隐形富豪，他对你的项目一见钟情，当场签下巨额投资协议！",
-    "🎉 你的路演引发了投资人之间的竞价大战，最终以远超预期的金额成交！",
-    "🎉 一位跨国集团的CEO恰好路过会场，被你的演讲吸引驻足。他说：'这就是我一直在找的项目！'",
-    "🎉 你的产品在路演现场引发轰动，媒体争相报道，多家顶级VC连夜发来投资意向书！",
+    "会后电梯口被堵，三家机构抢着约下一轮，报价一路抬升。",
+    "你刚说完“最后一页”，顶级基金合伙人当场说：现在就推进DD。",
+    "对手准备的发布会被你截胡，媒体镜头全转向你这边。",
+    "原本只是例行路演，最终演成了资本围猎现场。",
 ]
 
 STORIES_BY_TYPE = {
@@ -63,15 +62,115 @@ STORIES_BY_TYPE = {
     "jackpot": STORIES_JACKPOT,
 }
 
+SATIRE_SCORES = [114514, 23333, 9527, 1919810]
+SATIRE_STORIES = [
+    "你刚开场三十秒，评委席已经开始低头改返程机票。",
+    "投影切换失败四次，唯一稳定输出的是现场沉默。",
+    "对手没发言都赢了，你却成功把会场变成吐槽专场。",
+    "本想路演融资，结果像在做“反面教材现场教学”。",
+]
+SATIRE_CRITIQUES = [
+    "商业逻辑：像把三份BP打碎后再随机拼接。",
+    "市场判断：你看的是明年，市场活在今天下午。",
+    "产品叙事：故事很燃，落地路径像失踪人口。",
+    "执行可信度：承诺拉满，证据偏少。",
+    "风险控制：你把最大风险写成了“后续再议”。",
+]
+
+
+def _app_timezone() -> ZoneInfo:
+    try:
+        return ZoneInfo(settings.app_timezone or "Asia/Shanghai")
+    except Exception:
+        return ZoneInfo("Asia/Shanghai")
+
+
+def _now_local() -> dt.datetime:
+    return dt.datetime.now(_app_timezone())
+
+
+def _today_key(company_id: int) -> str:
+    return f"{ROADSHOW_DAILY_KEY_PREFIX}:{company_id}:{_now_local().date().isoformat()}"
+
+
+def _seconds_until_next_day() -> int:
+    now = _now_local()
+    tomorrow = (now + dt.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return max(1, int((tomorrow - now).total_seconds()))
+
+
+def _clamp_rate(rate: float, *, min_value: float = 0.0, max_value: float = 1.0) -> float:
+    return max(min_value, min(max_value, float(rate)))
+
+
+def _format_remaining(seconds: int) -> str:
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    return f"{hours}小时{minutes}分钟"
+
+
+async def _mark_roadshow_used(company_id: int):
+    r = await get_redis()
+    if settings.roadshow_daily_once:
+        await r.setex(_today_key(company_id), _seconds_until_next_day() + 60, "1")
+        return
+    await r.setex(f"roadshow_cd:{company_id}", settings.roadshow_cooldown_seconds, "1")
+
 
 async def can_roadshow(company_id: int) -> tuple[bool, int]:
-    """Check cooldown. Returns (can_do, remaining_seconds)."""
+    """Check roadshow availability. Returns (can_do, remaining_seconds)."""
     r = await get_redis()
-    key = f"roadshow_cd:{company_id}"
-    ttl = await r.ttl(key)
+
+    if settings.roadshow_daily_once:
+        if await r.exists(_today_key(company_id)):
+            return False, _seconds_until_next_day()
+        return True, 0
+
+    ttl = await r.ttl(f"roadshow_cd:{company_id}")
     if ttl > 0:
         return False, ttl
     return True, 0
+
+
+async def _build_satire_result(company_id: int, rs_type: str) -> tuple[str, float]:
+    score = random.choice(SATIRE_SCORES)
+    story = random.choice(SATIRE_STORIES)
+    critiques = random.sample(SATIRE_CRITIQUES, k=min(3, len(SATIRE_CRITIQUES)))
+
+    penalty_rate = _clamp_rate(settings.roadshow_satire_penalty_rate, min_value=0.05, max_value=0.90)
+    r = await get_redis()
+    await r.setex(
+        f"{ROADSHOW_PENALTY_KEY_PREFIX}:{company_id}",
+        _seconds_until_next_day() + 86400,
+        f"{penalty_rate:.4f}",
+    )
+
+    result_text = (
+        f"🎭 《{rs_type}》灾难路演\n"
+        f"{'─' * 24}\n"
+        f"📉 评审总分: {score}/100\n"
+        f"🧨 现场实况: {story}\n"
+        f"{'─' * 24}\n"
+        f"🗣 评委毒评:\n"
+        f"- {critiques[0]}\n"
+        f"- {critiques[1]}\n"
+        f"- {critiques[2]}\n"
+        f"{'─' * 24}\n"
+        f"⚠️ 该评分仅节目效果，不提供任何正向加成。\n"
+        f"📉 当日营收惩罚: -{int(penalty_rate * 100)}%"
+    )
+    return result_text, penalty_rate
+
+
+def _normal_score_by_reward(reward_type: str) -> int:
+    ranges = {
+        "traffic": (64, 92),
+        "reputation": (72, 96),
+        "points": (58, 84),
+        "jackpot": (90, 100),
+    }
+    low, high = ranges.get(reward_type, (60, 90))
+    return random.randint(low, high)
 
 
 async def do_roadshow(
@@ -79,71 +178,80 @@ async def do_roadshow(
     company_id: int,
     owner_user_id: int,
 ) -> tuple[bool, str]:
-    """Perform a roadshow with narrative flavor text."""
+    """Perform one roadshow. Default mode is daily-once."""
     can, remaining = await can_roadshow(company_id)
     if not can:
-        hours = remaining // 3600
-        minutes = (remaining % 3600) // 60
-        return False, f"路演冷却中，还需 {hours}时{minutes}分"
+        if settings.roadshow_daily_once:
+            return False, f"今天已路演过，明天再来（约 {_format_remaining(remaining)} 后重置）"
+        return False, f"路演冷却中，还需 {_format_remaining(remaining)}"
 
-    # Deduct cost from company funds
     ok = await add_funds(session, company_id, -settings.roadshow_cost)
     if not ok:
         return False, f"公司资金不足，路演需要 {fmt_traffic(settings.roadshow_cost)}"
 
-    # Random type
     rs_type = random.choice(ROADSHOW_TYPES)
-
-    # Roll reward
-    weights = [r["weight"] for r in REWARD_TABLE]
-    reward = random.choices(REWARD_TABLE, weights=weights, k=1)[0]
-    amount = random.randint(reward["min"], reward["max"])
-
-    # Check precision_marketing buff (roadshow double)
-    from services.shop_service import get_roadshow_multiplier
-    rs_multiplier = await get_roadshow_multiplier(company_id)
-    if rs_multiplier > 1.0:
-        amount = int(amount * rs_multiplier)
-
-    # Pick a narrative story
-    stories = STORIES_BY_TYPE.get(reward["type"], STORIES_TRAFFIC)
-    story = random.choice(stories)
+    satire_chance = _clamp_rate(settings.roadshow_satire_chance)
 
     bonus = 0
     rep_gained = 0
-    reward_line = ""
+    result_text = ""
 
-    if reward["type"] == "traffic" or reward["type"] == "jackpot":
-        await add_funds(session, company_id, amount)
-        bonus = amount
-        reward_line = f"💰 资金 +{fmt_traffic(amount)}"
-    elif reward["type"] == "reputation":
-        await add_reputation(session, owner_user_id, amount)
-        rep_gained = amount
-        reward_line = f"⭐ 声望 +{amount}"
-    elif reward["type"] == "points":
-        await add_points(owner_user_id, amount, session=session)
-        reward_line = f"🎁 积分 +{amount}"
+    if random.random() < satire_chance:
+        result_text, _penalty_rate = await _build_satire_result(company_id, rs_type)
+    else:
+        weights = [r["weight"] for r in REWARD_TABLE]
+        reward = random.choices(REWARD_TABLE, weights=weights, k=1)[0]
+        amount = random.randint(reward["min"], reward["max"])
 
-    if rs_multiplier > 1.0:
-        reward_line += " (精准营销翻倍!)"
+        from services.shop_service import get_roadshow_multiplier
 
-    # Base reputation gain for doing roadshow
-    base_rep = 2
-    await add_reputation(session, owner_user_id, base_rep)
-    rep_gained += base_rep
+        rs_multiplier = await get_roadshow_multiplier(company_id)
+        if rs_multiplier > 1.0:
+            amount = int(amount * rs_multiplier)
 
-    # Build narrative result
-    result_text = (
-        f"🎤 【{rs_type}】\n"
-        f"{'─' * 24}\n"
-        f"{story}\n"
-        f"{'─' * 24}\n"
-        f"{reward_line}\n"
-        f"⭐ 基础声望 +{base_rep}"
-    )
+        story = random.choice(STORIES_BY_TYPE.get(reward["type"], STORIES_TRAFFIC))
+        score = _normal_score_by_reward(reward["type"])
+        review = random.choice(
+            [
+                "评委结论：冲突足够强，叙事到位，执行还需要更狠。",
+                "评委结论：你把压力变成了注意力，这是路演最值钱的能力。",
+                "评委结论：方案并不完美，但现场掌控力非常强。",
+                "评委结论：你赢在节奏，不是赢在运气。",
+            ]
+        )
 
-    # Record
+        reward_line = ""
+        if reward["type"] in {"traffic", "jackpot"}:
+            await add_funds(session, company_id, amount)
+            bonus = amount
+            reward_line = f"💵 资金 +{fmt_traffic(amount)}"
+        elif reward["type"] == "reputation":
+            await add_reputation(session, owner_user_id, amount)
+            rep_gained = amount
+            reward_line = f"⭐ 声望 +{amount}"
+        elif reward["type"] == "points":
+            await add_points(owner_user_id, amount, session=session)
+            reward_line = f"🏅 积分 +{amount}"
+
+        if rs_multiplier > 1.0:
+            reward_line += "（精准营销翻倍）"
+
+        base_rep = 2
+        await add_reputation(session, owner_user_id, base_rep)
+        rep_gained += base_rep
+        await add_points(owner_user_id, 3, session=session)
+
+        result_text = (
+            f"🎤 《{rs_type}》路演现场\n"
+            f"{'─' * 24}\n"
+            f"📈 评审总分: {score}/100\n"
+            f"🧨 现场冲突: {story}\n"
+            f"{'─' * 24}\n"
+            f"{reward_line}\n"
+            f"⭐ 基础声望 +{base_rep}\n"
+            f"🗞 {review}"
+        )
+
     roadshow = Roadshow(
         company_id=company_id,
         type=rs_type,
@@ -154,11 +262,5 @@ async def do_roadshow(
     session.add(roadshow)
     await session.flush()
 
-    # Set cooldown
-    r = await get_redis()
-    await r.setex(f"roadshow_cd:{company_id}", settings.roadshow_cooldown_seconds, "1")
-
-    # Points for roadshow
-    await add_points(owner_user_id, 3, session=session)
-
+    await _mark_roadshow_used(company_id)
     return True, result_text

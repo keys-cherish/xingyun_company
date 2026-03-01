@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import json
+import logging
+
 import redis.asyncio as aioredis
 
 from config import settings
 
 _pool: aioredis.Redis | None = None
+logger = logging.getLogger(__name__)
 
 
 async def get_redis() -> aioredis.Redis:
@@ -57,3 +61,22 @@ async def update_leaderboard(board: str, member: str, score: float):
 async def get_leaderboard(board: str, top_n: int = 10) -> list[tuple[str, float]]:
     r = await get_redis()
     return await r.zrevrange(f"lb:{board}", 0, top_n - 1, withscores=True)
+
+
+async def add_stream_event(event_type: str, payload: dict):
+    if not settings.redis_stream_enabled:
+        return
+    try:
+        r = await get_redis()
+        fields = {
+            "event_type": event_type,
+            "payload": json.dumps(payload, ensure_ascii=False, default=str),
+        }
+        await r.xadd(
+            settings.redis_stream_key,
+            fields,
+            maxlen=settings.redis_stream_maxlen,
+            approximate=True,
+        )
+    except Exception:
+        logger.exception("Failed to append redis stream event: %s", event_type)

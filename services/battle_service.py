@@ -479,7 +479,7 @@ async def battle(
     attacker_user = await get_user_by_tg_id(session, attacker_tg_id)
     defender_user = await get_user_by_tg_id(session, defender_tg_id)
     if not attacker_user:
-        return False, "❌ 你还未注册，请先 /start"
+        return False, "❌ 你还未注册，请先 /company_start"
     if not defender_user:
         return False, "❌ 对方还未注册"
 

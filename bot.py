@@ -9,6 +9,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiohttp import web
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 from config import settings
 from db.engine import init_db
@@ -65,23 +67,24 @@ def _register_routers(dp: Dispatcher):
             return
         allowed_prefixes = (
             "/company",
-            "/list_company",
-            "/member",
-            "/start",
-            "/create_company",
-            "/admin",
-            "/help",
-            "/battle",
-            "/cooperate",
-            "/new_product",
-            "/dissolve",
-            "/clear_product",
-            "/rank_company",
-            "/makeup",
-            "/give_money",
-            "/welfare",
-            "/quest",
-            "/cleanup",
+            "/company_list",
+            "/company_member",
+            "/company_start",
+            "/company_create",
+            "/company_admin",
+            "/company_help",
+            "/company_battle",
+            "/company_cooperate",
+            "/company_new",
+            "/company_dissolve",
+            "/company_clear",
+            "/company_rank",
+            "/company_makeup",
+            "/company_give",
+            "/company_welfare",
+            "/company_quest",
+            "/company_cleanup",
+            "/company_cancel",
         )
         if message.text and message.text.startswith(allowed_prefixes):
             return
@@ -114,8 +117,11 @@ async def main():
     # 注册限流中间件
     from utils.throttle import ThrottleMiddleware
     from utils.topic_gate import TopicGateMiddleware
+    from utils.stream_event import StreamEventMiddleware
     dp.message.middleware(TopicGateMiddleware())
     dp.callback_query.middleware(TopicGateMiddleware())
+    dp.message.middleware(StreamEventMiddleware())
+    dp.callback_query.middleware(StreamEventMiddleware())
     dp.message.middleware(ThrottleMiddleware())
     dp.callback_query.middleware(ThrottleMiddleware())
 
@@ -131,15 +137,67 @@ async def main():
     set_bot(bot)
     start_scheduler()
 
-    # 启动轮询
-    logger.info("机器人启动中...")
+    # 启动模式：polling / webhook
+    runner: web.AppRunner | None = None
     try:
-        await dp.start_polling(bot)
+        if settings.run_mode.lower() == "webhook":
+            if not settings.webhook_base_url:
+                raise RuntimeError("WEBHOOK_BASE_URL 未配置，无法启动 webhook 模式")
+
+            webhook_url = f"{settings.webhook_base_url.rstrip('/')}{settings.webhook_path}"
+            await bot.set_webhook(
+                url=webhook_url,
+                secret_token=settings.webhook_secret_token or None,
+                drop_pending_updates=True,
+            )
+
+            app = web.Application()
+            request_handler = SimpleRequestHandler(
+                dispatcher=dp,
+                bot=bot,
+                secret_token=settings.webhook_secret_token or None,
+            )
+            request_handler.register(app, path=settings.webhook_path)
+            setup_application(app, dp, bot=bot)
+
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, host=settings.webhook_host, port=settings.webhook_port)
+            await site.start()
+            logger.info(
+                "Webhook started at %s%s (listen %s:%d)",
+                settings.webhook_base_url.rstrip("/"),
+                settings.webhook_path,
+                settings.webhook_host,
+                settings.webhook_port,
+            )
+            await asyncio.Event().wait()
+        else:
+            logger.info("机器人启动中（polling）...")
+            await dp.start_polling(bot)
     finally:
+        if settings.run_mode.lower() == "webhook":
+            try:
+                await bot.delete_webhook(drop_pending_updates=False)
+            except Exception:
+                pass
+            if runner is not None:
+                try:
+                    await runner.cleanup()
+                except Exception:
+                    pass
         stop_scheduler()
         await close_redis()
         await bot.session.close()
 
 
 if __name__ == "__main__":
+    if settings.use_uvloop:
+        try:
+            import uvloop
+
+            uvloop.install()
+            logger.info("uvloop enabled")
+        except Exception:
+            logger.warning("uvloop unavailable, fallback to default asyncio loop")
     asyncio.run(main())

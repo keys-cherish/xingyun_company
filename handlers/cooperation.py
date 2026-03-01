@@ -1,4 +1,4 @@
-"""Cooperation handlers – /cooperate command + reply-based '合作' trigger."""
+"""Cooperation handlers – /company_cooperate command + reply-based '合作' trigger."""
 
 from __future__ import annotations
 
@@ -6,7 +6,9 @@ import logging
 
 from aiogram import F, Router, types
 from aiogram.filters import Command
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from commands import CMD_COOPERATE
 from db.engine import async_session
 from keyboards.menus import tag_kb
 from services.company_service import get_companies_by_owner, get_company_by_id
@@ -22,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _do_reply_cooperate(message: types.Message):
-    """Common logic for reply-based cooperation (both /cooperate and '合作')."""
+    """Common logic for reply-based cooperation (both /company_cooperate and '合作')."""
     tg_id = message.from_user.id
     target = message.reply_to_message.from_user
     if not target or target.is_bot:
@@ -38,7 +40,7 @@ async def _do_reply_cooperate(message: types.Message):
                 user = await get_user_by_tg_id(session, tg_id)
                 target_user = await get_user_by_tg_id(session, target.id)
                 if not user:
-                    await message.answer("请先 /start 注册")
+                    await message.answer("请先 /company_start 注册")
                     return
                 if not target_user:
                     await message.answer("❌ 对方还未注册")
@@ -58,16 +60,16 @@ async def _do_reply_cooperate(message: types.Message):
         await message.answer("❌ 合作失败，请稍后重试")
 
 
-# ---- /cooperate command ----
+# ---- /company_cooperate command ----
 
-@router.message(Command("cooperate"))
+@router.message(Command(CMD_COOPERATE))
 async def cmd_cooperate(message: types.Message):
-    """Handle /cooperate all | /cooperate <company_id> | reply to cooperate."""
+    """Handle /company_cooperate all | /company_cooperate <company_id> | reply to cooperate."""
     tg_id = message.from_user.id
     args = (message.text or "").split(maxsplit=1)
     arg = args[1].strip() if len(args) > 1 else ""
 
-    # Reply-to cooperation: reply to someone and send /cooperate
+    # Reply-to cooperation: reply to someone and send /company_cooperate
     if not arg and message.reply_to_message:
         await _do_reply_cooperate(message)
         return
@@ -76,7 +78,7 @@ async def cmd_cooperate(message: types.Message):
         await message.answer(
             "🤝 合作命令:\n"
             "  回复某人消息 + 发送「合作」— 直接合作\n"
-            "  /cooperate all — 一键与所有公司合作\n"
+            "  /company_cooperate all — 一键与所有公司合作\n"
             "合作加成每次+5%，次日结算后清空需重新合作\n"
             "普通公司上限50%，满级公司上限100%"
         )
@@ -88,11 +90,11 @@ async def cmd_cooperate(message: types.Message):
                 async with session.begin():
                     user = await get_user_by_tg_id(session, tg_id)
                     if not user:
-                        await message.answer("请先 /create_company 创建公司")
+                        await message.answer("请先 /company_create 创建公司")
                         return
                     companies = await get_companies_by_owner(session, user.id)
                     if not companies:
-                        await message.answer("你还没有公司，请先使用 /create_company 创建")
+                        await message.answer("你还没有公司，请先使用 /company_create 创建")
                         return
                     my_company = companies[0]
                     success, skip, msgs = await cooperate_all(session, my_company.id)
@@ -108,7 +110,7 @@ async def cmd_cooperate(message: types.Message):
                 lines.extend(msgs)
             await message.answer("\n".join(lines))
         else:
-            await message.answer("请使用 /cooperate all 一键合作，或回复某人消息 /cooperate 直接合作")
+            await message.answer("请使用 /company_cooperate all 一键合作，或回复某人消息 /company_cooperate 直接合作")
     except Exception:
         logger.exception("cooperate command error")
         await message.answer("❌ 合作操作失败，请稍后重试")
@@ -122,7 +124,7 @@ async def cmd_cooperate_chinese(message: types.Message):
     if not message.reply_to_message:
         await message.answer(
             "💡 回复某人的消息并发送「合作」即可合作\n"
-            "或使用 /cooperate all 一键合作"
+            "或使用 /company_cooperate all 一键合作"
         )
         return
     await _do_reply_cooperate(message)
@@ -137,7 +139,7 @@ async def cb_coop_menu(callback: types.CallbackQuery):
     async with async_session() as session:
         user = await get_user_by_tg_id(session, tg_id)
         if not user:
-            await callback.answer("请先 /create_company 创建公司", show_alert=True)
+            await callback.answer("请先 /company_create 创建公司", show_alert=True)
             return
         companies = await get_companies_by_owner(session, user.id)
 
@@ -146,7 +148,7 @@ async def cb_coop_menu(callback: types.CallbackQuery):
         return
 
     buttons = [
-        [InlineKeyboardButton(text=c.name, callback_data=f"cooperation:init:menu:{c.id}")]
+        [InlineKeyboardButton(text=c.name, callback_data=f"cooperation:init:{c.id}")]
         for c in companies
     ]
     buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:main")])
@@ -154,7 +156,7 @@ async def cb_coop_menu(callback: types.CallbackQuery):
     await callback.message.edit_text(
         "🤝 选择公司查看合作状态:\n\n"
         "💡 也可以使用命令:\n"
-        "  /cooperate all — 一键全部合作\n"
+        "  /company_cooperate all — 一键全部合作\n"
         "  回复某人消息 + 发送「合作」",
         reply_markup=kb,
     )
@@ -164,14 +166,14 @@ async def cb_coop_menu(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("cooperation:init:"))
 async def cb_init_coop(callback: types.CallbackQuery):
     """Show cooperation status for a company (no longer enters FSM)."""
-    company_id = int(callback.data.split(":")[2])
+    parts = callback.data.split(":")
+    company_id = int(parts[-1])
     tg_id = callback.from_user.id
-    await state.clear()  # Ensure no lingering input state blocks future actions.
 
     async with async_session() as session:
         user = await get_user_by_tg_id(session, tg_id)
         if not user:
-            await callback.answer("请先 /start 注册", show_alert=True)
+            await callback.answer("请先 /company_start 注册", show_alert=True)
             return
         company = await get_company_by_id(session, company_id)
         if not company or company.owner_id != user.id:
@@ -193,9 +195,8 @@ async def cb_init_coop(callback: types.CallbackQuery):
 
     lines.append(f"\n💡 合作方式:")
     lines.append(f"  • 回复某人消息 + 发送「合作」")
-    lines.append(f"  • /cooperate all — 一键全部合作")
+    lines.append(f"  • /company_cooperate all — 一键全部合作")
 
-    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
     kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")],
     ]), tg_id)

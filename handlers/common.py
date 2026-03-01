@@ -185,4 +185,4 @@ group_scope_middleware = GroupScopeMiddleware()
 
 async def reject_private(message: types.Message):
     """非管理员私聊时的拒绝提示。"""
-    await message.answer("此命令仅限在群组指定频道中使用。\n私聊仅支持 /create_company 和 /company 查看信息。")
+    await message.answer("此命令仅限在群组指定频道中使用。\n私聊仅支持 /company_create 和 /company 查看信息。")

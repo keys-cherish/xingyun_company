@@ -25,6 +25,8 @@ services:
       - .env
     environment:
       REDIS_URL: redis://redis:6379/0
+    ports:
+      - "${WEBHOOK_PORT:-8080}:${WEBHOOK_PORT:-8080}"
     volumes:
       - .:/app
     depends_on:

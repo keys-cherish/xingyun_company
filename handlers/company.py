@@ -9,6 +9,15 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from commands import (
+    CMD_COMPANY,
+    CMD_CREATE_COMPANY,
+    CMD_DISSOLVE,
+    CMD_LIST_COMPANY,
+    CMD_MAKEUP,
+    CMD_MEMBER,
+    CMD_RANK_COMPANY,
+)
 from config import settings as cfg
 from db.engine import async_session
 from handlers.common import is_super_admin
@@ -27,8 +36,26 @@ from services.company_service import (
     load_company_types,
     upgrade_company,
 )
+from services.cooperation_service import get_cooperation_bonus
+from services.operations_service import (
+    INSURANCE_LEVELS,
+    OFFICE_LEVELS,
+    TRAINING_LEVELS,
+    WORK_HOUR_OPTIONS,
+    bar10,
+    calc_extra_operating_costs,
+    cycle_option,
+    ethics_rating,
+    get_market_trend,
+    get_operation_multipliers,
+    get_or_create_profile,
+    load_recent_events,
+    reputation_rating,
+    set_work_hours,
+    start_training,
+)
 from services.user_service import get_user_by_tg_id
-from utils.formatters import fmt_traffic
+from utils.formatters import fmt_quota, fmt_traffic
 from utils.panel_owner import mark_panel
 
 router = Router()
@@ -51,9 +78,9 @@ async def _safe_edit_or_send(callback: types.CallbackQuery, text: str, reply_mar
     await mark_panel(sent.chat.id, sent.message_id, callback.from_user.id)
 
 
-# ---- /list_company 列出所有公司 ----
+# ---- /company_list 列出所有公司 ----
 
-@router.message(Command("list_company"))
+@router.message(Command(CMD_LIST_COMPANY))
 async def cmd_list_company(message: types.Message):
     """列出服务器上所有公司。"""
     from sqlalchemy import select
@@ -82,9 +109,9 @@ async def cmd_list_company(message: types.Message):
     await message.answer("\n".join(lines))
 
 
-# ---- /rank_company 综合实力排行 ----
+# ---- /company_rank 综合实力排行 ----
 
-@router.message(Command("rank_company"))
+@router.message(Command(CMD_RANK_COMPANY))
 async def cmd_rank_company(message: types.Message):
     """显示公司综合实力排行榜（实时计算）。"""
     from sqlalchemy import select, func as sqlfunc
@@ -142,10 +169,10 @@ async def cmd_rank_company(message: types.Message):
     await message.answer("\n".join(lines))
 
 
-# ---- /makeup 数据清理命令 ----
+# ---- /company_makeup 数据清理命令 ----
 
 
-@router.message(Command("makeup"))
+@router.message(Command(CMD_MAKEUP))
 async def cmd_makeup(message: types.Message):
     """管理员命令：清理所有公司的异常数据。"""
     if not is_super_admin(message.from_user.id):
@@ -178,21 +205,21 @@ class RenameCompanyState(StatesGroup):
     waiting_new_name = State()
 
 
-# ---- /member 命令：招聘/裁员 ----
+# ---- /company_member 命令：招聘/裁员 ----
 
-@router.message(Command("member"))
+@router.message(Command(CMD_MEMBER))
 async def cmd_member(message: types.Message):
-    """Handle /member add|minus <count>."""
+    """Handle /company_member add|minus <count>."""
     tg_id = message.from_user.id
     args = (message.text or "").split()
 
     if len(args) < 3:
         await message.answer(
             "👷 员工管理:\n"
-            "  /member add <数量> — 招聘员工\n"
-            "  /member add max — 招满\n"
-            "  /member minus <数量> — 裁员\n"
-            "例: /member add 5"
+            "  /company_member add <数量> — 招聘员工\n"
+            "  /company_member add max — 招满\n"
+            "  /company_member minus <数量> — 裁员\n"
+            "例: /company_member add 5"
         )
         return
 
@@ -207,7 +234,7 @@ async def cmd_member(message: types.Message):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await message.answer("请先 /create_company 创建公司")
+                await message.answer("请先 /company_create 创建公司")
                 return
             companies = await get_companies_by_owner(session, user.id)
             if not companies:
@@ -291,9 +318,14 @@ async def cmd_member(message: types.Message):
 
 async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, InlineKeyboardMarkup]:
     """加载公司数据并返回 (text, keyboard)，供多个handler复用。"""
-    from db.models import Shareholder, Product, ResearchProgress
+    import datetime as dt
+
+    from db.models import DailyReport, Product, ResearchProgress, Shareholder, User
     from sqlalchemy import select, func as sqlfunc
+    from services.ad_service import get_ad_boost
     from services.realestate_service import get_total_estate_income
+    from services.shop_service import get_income_buff_multiplier
+    from utils.formatters import reputation_buff_multiplier
 
     async with async_session() as session:
         company = await get_company_by_id(session, company_id)
@@ -302,13 +334,15 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
         user = await get_user_by_tg_id(session, tg_id)
         valuation = await get_company_valuation(session, company)
         is_owner = user and company.owner_id == user.id
+        owner = await session.get(User, company.owner_id)
 
         sh_count = (await session.execute(
             select(sqlfunc.count()).where(Shareholder.company_id == company_id)
         )).scalar()
-        prod_count = (await session.execute(
-            select(sqlfunc.count()).where(Product.company_id == company_id)
-        )).scalar()
+        products = (await session.execute(
+            select(Product).where(Product.company_id == company_id).order_by(Product.quality.desc(), Product.id.asc())
+        )).scalars().all()
+        prod_count = len(products)
         tech_count = (await session.execute(
             select(sqlfunc.count()).where(
                 ResearchProgress.company_id == company_id,
@@ -316,9 +350,29 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
             )
         )).scalar()
         estate_income = await get_total_estate_income(session, company_id)
+        coop_bonus_rate = await get_cooperation_bonus(session, company_id)
+        ad_boost_rate = await get_ad_boost(company_id)
+        shop_buff_mult = await get_income_buff_multiplier(company_id)
+        profile = await get_or_create_profile(session, company_id)
+        report_sums = (
+            await session.execute(
+                select(
+                    sqlfunc.coalesce(sqlfunc.sum(DailyReport.total_income), 0),
+                    sqlfunc.coalesce(sqlfunc.sum(DailyReport.operating_cost), 0),
+                ).where(DailyReport.company_id == company_id)
+            )
+        ).one()
+        total_income_sum = int(report_sums[0] or 0)
+        total_cost_sum = int(report_sums[1] or 0)
 
         # 获取进行中的科研
-        from services.research_service import get_in_progress_research, get_tech_tree_display
+        from services.research_service import (
+            check_and_complete_research,
+            get_effective_research_duration_seconds,
+            get_in_progress_research,
+            get_tech_tree_display,
+        )
+        await check_and_complete_research(session, company_id)
         in_progress_research = await get_in_progress_research(session, company_id)
 
     type_info = get_company_type_info(company.company_type)
@@ -333,40 +387,58 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
     if type_info and type_info.get("extra_employee_limit"):
         max_employees += type_info["extra_employee_limit"]
 
-    total_daily = company.daily_revenue + estate_income + level_rev_bonus
-
-    # Upgrade requirements
-    next_level = company.level + 1
-    next_info = get_level_info(next_level)
-    if next_info:
-        def _icon(current, required):
-            return "✅" if current >= required else "❌"
-
-        req_lines = [f"📤 升级 Lv.{next_level}「{next_info['name']}」条件:"]
-        req_cost = next_info["upgrade_cost"]
-        req_emp = next_info.get("min_employees", 0)
-        req_prod = next_info.get("min_products", 0)
-        req_tech = next_info.get("min_techs", 0)
-        req_rev = next_info.get("min_daily_revenue", 0)
-
-        req_lines.append(f"  {_icon(company.total_funds, req_cost)} 资金 {fmt_traffic(req_cost)}")
-        if req_emp:
-            req_lines.append(f"  {_icon(company.employee_count, req_emp)} 员工 ≥{req_emp}")
-        if req_prod:
-            req_lines.append(f"  {_icon(prod_count, req_prod)} 产品 ≥{req_prod}")
-        if req_tech:
-            req_lines.append(f"  {_icon(tech_count, req_tech)} 科技 ≥{req_tech}")
-        if req_rev:
-            req_lines.append(f"  {_icon(company.daily_revenue, req_rev)} 日营收 ≥{fmt_traffic(req_rev)}")
-
-        upgrade_block = "\n".join(req_lines) + "\n"
-    else:
-        upgrade_block = "🏆 已达最高等级!\n"
+    now_utc = dt.datetime.now(dt.UTC)
+    market = get_market_trend(company, now_utc)
+    multipliers = get_operation_multipliers(profile, now_utc)
+    product_income = int(company.daily_revenue * multipliers["income_mult"] * market["income_mult"])
+    cooperation_bonus = int(product_income * coop_bonus_rate)
+    rep_multiplier = reputation_buff_multiplier(owner.reputation) if owner else 1.0
+    reputation_buff_income = int(product_income * (rep_multiplier - 1.0))
+    ad_boost_income = int(product_income * ad_boost_rate)
+    shop_buff_income = int(product_income * (shop_buff_mult - 1.0))
+    type_income_bonus = type_info.get("income_bonus", 0.0) if type_info else 0.0
+    type_income = int(product_income * type_income_bonus)
+    estimated_income = (
+        product_income
+        + level_rev_bonus
+        + cooperation_bonus
+        + estate_income
+        + reputation_buff_income
+        + ad_boost_income
+        + shop_buff_income
+        + type_income
+    )
+    tax = int(estimated_income * cfg.tax_rate)
+    salary_cost = company.employee_count * cfg.employee_salary_base
+    social_insurance = int(salary_cost * cfg.social_insurance_rate)
+    type_cost_bonus = type_info.get("cost_bonus", 0.0) if type_info else 0.0
+    base_operating = int(
+        (int(estimated_income * cfg.daily_operating_cost_pct) + salary_cost + social_insurance)
+        * (1.0 + type_cost_bonus)
+    )
+    extra_costs = calc_extra_operating_costs(
+        profile,
+        company.employee_count,
+        estimated_income,
+        salary_cost,
+        social_insurance,
+        now_utc,
+    )
+    estimated_cost = (
+        base_operating
+        + tax
+        + extra_costs["office_cost"]
+        + extra_costs["training_cost"]
+        + extra_costs["regulation_cost"]
+        + extra_costs["insurance_cost"]
+        + extra_costs["work_cost_adjust"]
+        + extra_costs["culture_maintenance"]
+    )
+    estimated_profit = estimated_income - estimated_cost
 
     # 科研进度文本
     research_block = ""
     if in_progress_research:
-        import datetime as dt
         from utils.formatters import fmt_duration
         tree = {t["tech_id"]: t for t in get_tech_tree_display()}
         now = dt.datetime.utcnow()
@@ -374,31 +446,77 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
         for rp in in_progress_research:
             tech_info = tree.get(rp.tech_id, {})
             name = tech_info.get("name", rp.tech_id)
-            duration_sec = tech_info.get("duration_seconds", 3600)
+            duration_sec = get_effective_research_duration_seconds(
+                tech_info,
+                company.company_type,
+                rp.tech_id,
+            )
             started = rp.started_at.replace(tzinfo=None) if rp.started_at.tzinfo else rp.started_at
             elapsed = (now - started).total_seconds()
             remaining = max(0, int(duration_sec - elapsed))
             if remaining > 0:
                 rlines.append(f"  • {name} — 剩余 {fmt_duration(remaining)}")
             else:
-                rlines.append(f"  • {name} — 即将完成")
+                rlines.append(f"  • {name} — 已到期，将自动完成")
         research_block = "⏳ 研究中:\n" + "\n".join(rlines) + "\n"
 
+    work_info = WORK_HOUR_OPTIONS.get(profile.work_hours, WORK_HOUR_OPTIONS[8])
+    office_info = OFFICE_LEVELS.get(profile.office_level, OFFICE_LEVELS["standard"])
+    training_info = TRAINING_LEVELS.get(profile.training_level, TRAINING_LEVELS["none"])
+    insurance_info = INSURANCE_LEVELS.get(profile.insurance_level, INSURANCE_LEVELS["basic"])
+    training_line = f"🏅 培训中：{training_info['name']}（×{multipliers['training']['income_mult']:.2f}）"
+    if profile.training_expires_at and profile.training_level != "none":
+        from utils.timezone import naive_utc_to_bj
+        expire_bj = naive_utc_to_bj(profile.training_expires_at).strftime("%m-%d %H:%M")
+        training_line = f"🏅 培训中：{training_info['name']}（×{multipliers['training']['income_mult']:.2f}，到期 {expire_bj}）"
+
+    products_block: list[str] = []
+    if products:
+        for p in products[:3]:
+            icon = "🚀" if p.quality >= 90 else "🔬"
+            products_block.append(f"  {icon} {p.name} ⭐{p.quality} 💰{fmt_quota(p.daily_income)}/日")
+        if len(products) > 3:
+            products_block.append(f"  ...还有 {len(products) - 3} 个产品")
+    else:
+        products_block.append("  暂无产品")
+
+    recent_events = await load_recent_events(company_id, limit=3)
+    events_block = [f"  · {e}" for e in recent_events] if recent_events else ["  · 暂无事件"]
+    rep_value = owner.reputation if owner else 0
+    if market["income_mult"] > 1.0:
+        market_effect = f"（景气加成 +{(market['income_mult'] - 1.0) * 100:.0f}%）"
+    elif market["income_mult"] < 1.0:
+        market_effect = f"（景气减成 {(market['income_mult'] - 1.0) * 100:.0f}%）"
+    else:
+        market_effect = "（景气无加成）"
+
     text = (
-        f"🏢 {company.name} (ID: {company.id})\n"
-        f"类型: {type_display}\n"
-        f"{'─' * 24}\n"
-        f"💰 资金: {fmt_traffic(company.total_funds)}\n"
-        f"📈 日营收: {fmt_traffic(company.daily_revenue)}\n"
-        f"🏗 地产收入: {fmt_traffic(estate_income)}\n"
-        f"🎖 等级加成: +{fmt_traffic(level_rev_bonus)}\n"
-        f"📊 日总收入: {fmt_traffic(total_daily)}\n"
-        f"🏷 估值: {fmt_traffic(valuation)}\n"
-        f"⭐ Lv.{company.level}「{level_name}」\n"
-        f"👥 股东:{sh_count} | 👷 员工:{company.employee_count}/{max_employees} | 📦 产品:{prod_count} | 🔬 科技:{tech_count}\n"
+        f"🏢 {company.name}\n\n"
+        f"🖥️ 行业：{type_display} {market['label']} {market_effect}\n"
+        f"📊 等级：Lv.{company.level} {level_name}\n"
+        f"⭐ 声望：{rep_value}（评级 {reputation_rating(rep_value)}）\n"
+        f"👥 员工：{company.employee_count}/{max_employees}\n"
+        f"💰 资金：{fmt_quota(company.total_funds)}\n"
+        f"😐 道德：{profile.ethics}/100 [{bar10(profile.ethics)}] {ethics_rating(profile.ethics)}\n\n"
+        f"📈 预估日营收：{fmt_quota(estimated_income)}\n"
+        f"📉 预估日成本：{fmt_quota(estimated_cost)}\n"
+        f"💵 预估日净利：{'+' if estimated_profit >= 0 else ''}{fmt_quota(estimated_profit)}\n\n"
+        f"📊 累计营收：{fmt_quota(total_income_sum)}\n"
+        f"📊 累计成本：{fmt_quota(total_cost_sum)}\n"
+        f"⏰ 工时：{profile.work_hours}h {work_info['label']}（营收×{work_info['income_mult']:.1f}）\n"
+        f"🌆 办公：{office_info['name']}（营收×{office_info['income_mult']:.1f}）\n"
+        f"{training_line}\n"
+        f"👑 保险：{insurance_info['name']}（罚款-{int(insurance_info['fine_reduction'] * 100)}%）\n"
+        f"🎭 文化：{profile.culture}/100（营收+{profile.culture/10:.1f}%，风险-{profile.culture * 0.3:.1f}%）\n"
+        f"🛂 监管：{profile.regulation_pressure}/100\n"
+        f"🏷 估值：{fmt_quota(valuation)}\n"
+        f"👥 股东:{sh_count} | 📦 产品:{prod_count} | 🔬 科技:{tech_count}\n"
         f"{'─' * 24}\n"
         f"{research_block}"
-        f"{upgrade_block}"
+        f"📦 产品（{prod_count}个）：\n"
+        f"{chr(10).join(products_block)}\n\n"
+        f"📋 最近事件：\n"
+        f"{chr(10).join(events_block)}\n"
     )
     return text, company_detail_kb(company_id, is_owner, tg_id=tg_id)
 
@@ -413,13 +531,13 @@ async def _refresh_company_view(callback: types.CallbackQuery, company_id: int):
 
 
 # /company
-@router.message(Command("company"))
+@router.message(Command(CMD_COMPANY))
 async def cmd_company(message: types.Message):
     tg_id = message.from_user.id
     async with async_session() as session:
         user = await get_user_by_tg_id(session, tg_id)
         if not user:
-            await message.answer("请先使用 /start 注册")
+            await message.answer("请先使用 /company_start 注册")
             return
         companies = await get_companies_by_owner(session, user.id)
 
@@ -447,7 +565,7 @@ async def cb_menu_company(callback: types.CallbackQuery):
     async with async_session() as session:
         user = await get_user_by_tg_id(session, tg_id)
         if not user:
-            await callback.answer("请先 /create_company 创建公司", show_alert=True)
+            await callback.answer("请先 /company_create 创建公司", show_alert=True)
             return
         companies = await get_companies_by_owner(session, user.id)
 
@@ -470,7 +588,7 @@ async def cb_menu_company_list(callback: types.CallbackQuery):
     async with async_session() as session:
         user = await get_user_by_tg_id(session, tg_id)
         if not user:
-            await callback.answer("请先 /create_company 创建公司", show_alert=True)
+            await callback.answer("请先 /company_create 创建公司", show_alert=True)
             return
         companies = await get_companies_by_owner(session, user.id)
 
@@ -491,11 +609,11 @@ async def cb_company_view(callback: types.CallbackQuery):
     await callback.answer()
 
 
-# ---- 创建公司：/create_company 命令或回调按钮 ----
+# ---- 创建公司：/company_create 命令或回调按钮 ----
 
-@router.message(Command("create_company"))
+@router.message(Command(CMD_CREATE_COMPANY))
 async def cmd_create_company(message: types.Message, state: FSMContext):
-    """创建公司命令入口。自动注册用户，无需先 /start。"""
+    """创建公司命令入口。自动注册用户，无需先 /company_start。"""
     tg_id = message.from_user.id
     tg_name = message.from_user.full_name or str(tg_id)
 
@@ -604,7 +722,7 @@ async def on_company_name(message: types.Message, state: FSMContext):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await message.answer("请先 /create_company 创建公司")
+                await message.answer("请先 /company_create 创建公司")
                 await state.clear()
                 return
             company, msg = await create_company(session, user, name, company_type)
@@ -733,6 +851,117 @@ async def cb_upgrade(callback: types.CallbackQuery):
         await _refresh_company_view(callback, company_id)
 
 
+# ---- 经营策略（工时/办公/培训/保险/文化/道德/监管）----
+
+def _ops_menu_kb(company_id: int, tg_id: int) -> InlineKeyboardMarkup:
+    rows = [
+        [
+            InlineKeyboardButton(text="工时 6h", callback_data=f"ops:work:{company_id}:6"),
+            InlineKeyboardButton(text="工时 8h", callback_data=f"ops:work:{company_id}:8"),
+            InlineKeyboardButton(text="工时 10h", callback_data=f"ops:work:{company_id}:10"),
+            InlineKeyboardButton(text="工时 12h", callback_data=f"ops:work:{company_id}:12"),
+        ],
+        [
+            InlineKeyboardButton(text="🏢 升级办公", callback_data=f"ops:cycle:{company_id}:office"),
+            InlineKeyboardButton(text="👑 切换保险", callback_data=f"ops:cycle:{company_id}:insurance"),
+        ],
+        [
+            InlineKeyboardButton(text="🎭 文化建设", callback_data=f"ops:cycle:{company_id}:culture"),
+            InlineKeyboardButton(text="😐 道德整改", callback_data=f"ops:cycle:{company_id}:ethics"),
+            InlineKeyboardButton(text="🛂 强化监管", callback_data=f"ops:cycle:{company_id}:regulation"),
+        ],
+        [
+            InlineKeyboardButton(text="🏅 基础培训", callback_data=f"ops:train:{company_id}:basic"),
+            InlineKeyboardButton(text="🏅 岗位实训", callback_data=f"ops:train:{company_id}:pro"),
+            InlineKeyboardButton(text="🏅 精英特训", callback_data=f"ops:train:{company_id}:elite"),
+        ],
+        [InlineKeyboardButton(text="⛔ 停止培训", callback_data=f"ops:train:{company_id}:none")],
+        [InlineKeyboardButton(text="🔙 返回公司", callback_data=f"company:view:{company_id}")],
+    ]
+    return tag_kb(InlineKeyboardMarkup(inline_keyboard=rows), tg_id)
+
+
+@router.callback_query(F.data.startswith("ops:menu:"))
+async def cb_ops_menu(callback: types.CallbackQuery):
+    company_id = int(callback.data.split(":")[2])
+    text, _ = await render_company_detail(company_id, callback.from_user.id)
+    header = (
+        "⚙️ 经营策略中心\n"
+        "工时、办公、培训、保险、文化、道德、监管会影响次日结算\n"
+        "请按需调整：\n\n"
+    )
+    await _safe_edit_or_send(
+        callback,
+        header + text,
+        _ops_menu_kb(company_id, callback.from_user.id),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("ops:work:"))
+async def cb_ops_work(callback: types.CallbackQuery):
+    _, _, company_id, hour = callback.data.split(":")
+    cid = int(company_id)
+    hours = int(hour)
+    async with async_session() as session:
+        async with session.begin():
+            user = await get_user_by_tg_id(session, callback.from_user.id)
+            if not user:
+                await callback.answer("请先 /company_create 创建公司", show_alert=True)
+                return
+            ok, msg = await set_work_hours(session, cid, user.id, hours)
+    await callback.answer(msg, show_alert=True)
+    if ok:
+        text, _ = await render_company_detail(cid, callback.from_user.id)
+        await _safe_edit_or_send(
+            callback,
+            "⚙️ 经营策略中心\n" + text,
+            _ops_menu_kb(cid, callback.from_user.id),
+        )
+
+
+@router.callback_query(F.data.startswith("ops:cycle:"))
+async def cb_ops_cycle(callback: types.CallbackQuery):
+    _, _, company_id, field = callback.data.split(":")
+    cid = int(company_id)
+    async with async_session() as session:
+        async with session.begin():
+            user = await get_user_by_tg_id(session, callback.from_user.id)
+            if not user:
+                await callback.answer("请先 /company_create 创建公司", show_alert=True)
+                return
+            ok, msg = await cycle_option(session, cid, user.id, field)
+    await callback.answer(msg, show_alert=True)
+    if ok:
+        text, _ = await render_company_detail(cid, callback.from_user.id)
+        await _safe_edit_or_send(
+            callback,
+            "⚙️ 经营策略中心\n" + text,
+            _ops_menu_kb(cid, callback.from_user.id),
+        )
+
+
+@router.callback_query(F.data.startswith("ops:train:"))
+async def cb_ops_train(callback: types.CallbackQuery):
+    _, _, company_id, level = callback.data.split(":")
+    cid = int(company_id)
+    async with async_session() as session:
+        async with session.begin():
+            user = await get_user_by_tg_id(session, callback.from_user.id)
+            if not user:
+                await callback.answer("请先 /company_create 创建公司", show_alert=True)
+                return
+            ok, msg = await start_training(session, cid, user.id, level)
+    await callback.answer(msg, show_alert=True)
+    if ok:
+        text, _ = await render_company_detail(cid, callback.from_user.id)
+        await _safe_edit_or_send(
+            callback,
+            "⚙️ 经营策略中心\n" + text,
+            _ops_menu_kb(cid, callback.from_user.id),
+        )
+
+
 # ---- 公司改名（花钱 + 当日营收降低 + 二级确认） ----
 
 RENAME_COST_RATE = 0.05  # 改名费用 = 公司资金 * 5%
@@ -852,7 +1081,7 @@ async def on_new_name(message: types.Message, state: FSMContext):
     await mark_panel(message.chat.id, sent.message_id, message.from_user.id)
 
 
-@router.message(Command("dissolve"))
+@router.message(Command(CMD_DISSOLVE))
 async def cmd_dissolve(message: types.Message):
     """注销公司，清空所有资金和信息，可立即重新创建。"""
     tg_id = message.from_user.id
@@ -862,7 +1091,7 @@ async def cmd_dissolve(message: types.Message):
         async with async_session() as session:
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await message.answer("请先 /create_company 创建公司")
+                await message.answer("请先 /company_create 创建公司")
                 return
             companies = await get_companies_by_owner(session, user.id)
             if not companies:
@@ -872,12 +1101,21 @@ async def cmd_dissolve(message: types.Message):
         await message.answer(
             f"⚠️ 确认要注销以下公司吗？\n{names}\n\n"
             "⚠️ 注销后所有公司数据和个人资金将被清零！\n"
-            "确认请发送: /dissolve confirm"
+            "确认请发送: /company_dissolve confirm"
         )
         return
 
     from sqlalchemy import select, delete as sql_delete
-    from db.models import Company, Product, Shareholder, ResearchProgress, Roadshow, RealEstate, DailyReport
+    from db.models import (
+        Company,
+        CompanyOperationProfile,
+        DailyReport,
+        Product,
+        RealEstate,
+        ResearchProgress,
+        Roadshow,
+        Shareholder,
+    )
     from db.models import Cooperation
     from services.user_service import add_traffic
 
@@ -885,7 +1123,7 @@ async def cmd_dissolve(message: types.Message):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await message.answer("请先 /create_company 创建公司")
+                await message.answer("请先 /company_create 创建公司")
                 return
             companies = await get_companies_by_owner(session, user.id)
             if not companies:
@@ -903,6 +1141,7 @@ async def cmd_dissolve(message: types.Message):
                 await session.execute(sql_delete(Roadshow).where(Roadshow.company_id == cid))
                 await session.execute(sql_delete(RealEstate).where(RealEstate.company_id == cid))
                 await session.execute(sql_delete(DailyReport).where(DailyReport.company_id == cid))
+                await session.execute(sql_delete(CompanyOperationProfile).where(CompanyOperationProfile.company_id == cid))
                 await session.execute(sql_delete(Cooperation).where(
                     (Cooperation.company_a_id == cid) | (Cooperation.company_b_id == cid)
                 ))
@@ -916,5 +1155,5 @@ async def cmd_dissolve(message: types.Message):
     await message.answer(
         f"🗑 公司已注销: {', '.join(f'「{n}」' for n in names)}\n"
         f"所有资金和声望已清零\n"
-        f"使用 /create_company 重新开始"
+        f"使用 /company_create 重新开始"
     )

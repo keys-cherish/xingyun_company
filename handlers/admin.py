@@ -1,6 +1,6 @@
 """管理员认证和配置面板。
 
-/admin <密钥> — 认证管理员（需同时满足ID白名单+密钥）
+/company_admin <密钥> — 认证管理员（需同时满足ID白名单+密钥）
 认证后可私聊使用所有游戏功能 + 管理员配置面板
 """
 
@@ -13,6 +13,7 @@ from aiogram.fsm.state import State, StatesGroup
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from commands import CMD_ADMIN, CMD_CLEANUP, CMD_GIVE_MONEY, CMD_WELFARE
 from db.engine import async_session
 from handlers.common import (
     authenticate_admin,
@@ -125,9 +126,9 @@ async def cb_buff_list(callback: types.CallbackQuery):
 
 # ---- 管理员认证 ----
 
-@router.message(Command("admin"))
+@router.message(Command(CMD_ADMIN))
 async def cmd_admin(message: types.Message):
-    """管理员认证: /admin <密钥>"""
+    """管理员认证: /company_admin <密钥>"""
     tg_id = message.from_user.id
     if not is_super_admin(tg_id):
         await message.answer("❌ 无权使用此命令")
@@ -149,7 +150,7 @@ async def cmd_admin(message: types.Message):
                 reply_markup=_admin_menu_kb(tg_id=tg_id),
             )
             return
-        await message.answer("用法: /admin <密钥>")
+        await message.answer("用法: /company_admin <密钥>")
         return
 
     secret_key = parts[1].strip()
@@ -170,7 +171,7 @@ async def cmd_admin(message: types.Message):
         await message.answer(f"❌ 认证失败: {msg}")
 
 
-@router.message(Command("give_money"))
+@router.message(Command(CMD_GIVE_MONEY))
 async def cmd_give_money(message: types.Message):
     """超管命令：回复某人并发放金币，同时奖励积分。"""
     if not is_super_admin(message.from_user.id):
@@ -179,11 +180,11 @@ async def cmd_give_money(message: types.Message):
 
     args = (message.text or "").split(maxsplit=1)
     if len(args) < 2:
-        await message.answer("用法: 回复某人消息并发送 /give_money <金额>")
+        await message.answer("用法: 回复某人消息并发送 /company_give <金额>")
         return
 
     if not message.reply_to_message or not message.reply_to_message.from_user:
-        await message.answer("用法: 回复某人消息并发送 /give_money <金额>")
+        await message.answer("用法: 回复某人消息并发送 /company_give <金额>")
         return
 
     target = message.reply_to_message.from_user
@@ -208,7 +209,7 @@ async def cmd_give_money(message: types.Message):
         async with session.begin():
             user = await get_user_by_tg_id(session, target.id)
             if not user:
-                await message.answer("❌ 目标用户未注册，请先让对方 /start")
+                await message.answer("❌ 目标用户未注册，请先让对方 /company_start")
                 return
 
             target_companies = await get_companies_by_owner(session, user.id)
@@ -245,7 +246,7 @@ async def cmd_give_money(message: types.Message):
 WELFARE_AMOUNT = 1_000_000
 
 
-@router.message(Command("welfare"))
+@router.message(Command(CMD_WELFARE))
 async def cmd_welfare(message: types.Message):
     """超管命令：给全部公司发放固定金币。"""
     if not is_super_admin(message.from_user.id):
@@ -384,7 +385,7 @@ async def cb_admin_logout(callback: types.CallbackQuery):
     """退出管理员模式。"""
     from handlers.common import revoke_admin
     await revoke_admin(callback.from_user.id)
-    await callback.message.edit_text("已退出管理员模式。如需重新进入请使用 /admin <密钥>")
+    await callback.message.edit_text("已退出管理员模式。如需重新进入请使用 /company_admin <密钥>")
     await callback.answer()
 
 
@@ -394,9 +395,9 @@ async def cb_admin_close(callback: types.CallbackQuery):
     await callback.answer()
 
 
-# ---- /cleanup 清理过期数据 ----
+# ---- /company_cleanup 清理过期数据 ----
 
-@router.message(Command("cleanup"))
+@router.message(Command(CMD_CLEANUP))
 async def cmd_cleanup(message: types.Message):
     """超管命令：清理数据库和Redis中的过期/残留数据。"""
     if not is_super_admin(message.from_user.id):

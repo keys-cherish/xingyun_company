@@ -1,4 +1,4 @@
-"""Battle handler – reply to someone with /battle to auto-PK."""
+"""Battle handler – reply to someone with /company_battle to auto-PK."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from aiogram.filters import Command
 
 from aiogram import types
 
+from commands import CMD_BATTLE
 from db.engine import async_session
 from services.battle_service import battle
 
@@ -16,7 +17,7 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 
-@router.message(Command("battle"))
+@router.message(Command(CMD_BATTLE))
 async def cmd_battle(message: types.Message):
     """Initiate a business battle by replying to someone's message."""
     strategy = None
@@ -26,7 +27,7 @@ async def cmd_battle(message: types.Message):
 
     if not message.reply_to_message:
         await message.answer(
-            "⚔️ 使用方法: 回复某人的消息并发送 /battle [战术]\n"
+            "⚔️ 使用方法: 回复某人的消息并发送 /company_battle [战术]\n"
             "战术可选: 稳扎稳打 / 激进营销 / 奇袭渗透"
         )
         return
@@ -50,11 +51,11 @@ async def cmd_battle(message: types.Message):
         async with async_session() as session:
             user = await get_user_by_tg_id(session, attacker_tg_id)
             if not user:
-                await message.answer("请先 /create_company 创建公司")
+                await message.answer("请先 /company_create 创建公司")
                 return
             companies = await get_companies_by_owner(session, user.id)
             if not companies:
-                await message.answer("❌ 你还没有公司，请先 /create_company 创建公司")
+                await message.answer("❌ 你还没有公司，请先 /company_create 创建公司")
                 return
 
         async with async_session() as session:

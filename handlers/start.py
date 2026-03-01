@@ -7,6 +7,23 @@ from aiogram.filters import Command
 from aiogram.types import BotCommand
 
 from cache.redis_client import get_leaderboard
+from commands import (
+    CMD_ADMIN,
+    CMD_BATTLE,
+    CMD_COOPERATE,
+    CMD_COMPANY,
+    CMD_CREATE_COMPANY,
+    CMD_DISSOLVE,
+    CMD_GIVE_MONEY,
+    CMD_HELP,
+    CMD_LIST_COMPANY,
+    CMD_MEMBER,
+    CMD_NEW_PRODUCT,
+    CMD_QUEST,
+    CMD_RANK_COMPANY,
+    CMD_START,
+    CMD_WELFARE,
+)
 from config import settings
 from db.engine import async_session
 from keyboards.menus import main_menu_kb, tag_kb
@@ -18,20 +35,20 @@ from utils.panel_owner import mark_panel
 router = Router()
 
 BOT_COMMANDS = [
-    BotCommand(command="start", description="开始游戏 / 创建公司"),
-    BotCommand(command="create_company", description="创建公司"),
-    BotCommand(command="company", description="我的公司"),
-    BotCommand(command="list_company", description="查看全服公司"),
-    BotCommand(command="rank_company", description="综合实力排行榜"),
-    BotCommand(command="battle", description="商战（回复+可选战术）"),
-    BotCommand(command="cooperate", description="合作（回复/all）"),
-    BotCommand(command="new_product", description="研发产品（名字 资金 人员）"),
-    BotCommand(command="member", description="员工管理（add/minus 数量）"),
-    BotCommand(command="dissolve", description="注销公司"),
-    BotCommand(command="quest", description="周任务清单"),
-    BotCommand(command="help", description="帮助信息"),
-    BotCommand(command="give_money", description="超管发放金币（回复+金额）"),
-    BotCommand(command="welfare", description="超管全服福利（每家100万）"),
+    BotCommand(command=CMD_START, description="开始游戏 / 创建公司"),
+    BotCommand(command=CMD_CREATE_COMPANY, description="创建公司"),
+    BotCommand(command=CMD_COMPANY, description="我的公司"),
+    BotCommand(command=CMD_LIST_COMPANY, description="查看全服公司"),
+    BotCommand(command=CMD_RANK_COMPANY, description="综合实力排行榜"),
+    BotCommand(command=CMD_BATTLE, description="商战（回复+可选战术）"),
+    BotCommand(command=CMD_COOPERATE, description="合作（回复/all）"),
+    BotCommand(command=CMD_NEW_PRODUCT, description="研发产品（名字 资金 人员）"),
+    BotCommand(command=CMD_MEMBER, description="员工管理（add/minus 数量）"),
+    BotCommand(command=CMD_DISSOLVE, description="注销公司"),
+    BotCommand(command=CMD_QUEST, description="周任务清单"),
+    BotCommand(command=CMD_HELP, description="帮助信息"),
+    BotCommand(command=CMD_GIVE_MONEY, description="超管发放金币（回复+金额）"),
+    BotCommand(command=CMD_WELFARE, description="超管全服福利（每家100万）"),
 ]
 
 HELP_TEXT = (
@@ -39,26 +56,26 @@ HELP_TEXT = (
     f"{'─' * 24}\n"
     "通过 科研→产品→利润 的路径经营虚拟公司\n\n"
     "📋 命令列表:\n\n"
-    "/start — 开始游戏（自动注册+创建公司）\n"
-    "/create_company — 创建公司\n"
+    "/company_start — 开始游戏（自动注册+创建公司）\n"
+    "/company_create — 创建公司\n"
     "/company — 查看和管理公司\n"
-    "/list_company — 全服公司列表\n"
-    "/rank_company — 综合实力排行\n\n"
-    "⚔️ /battle [战术] — 回复某人发起商战\n"
+    "/company_list — 全服公司列表\n"
+    "/company_rank — 综合实力排行\n\n"
+    "⚔️ /company_battle [战术] — 回复某人发起商战\n"
     "  战术: 稳扎稳打 / 激进营销 / 奇袭渗透\n"
-    "🤝 /cooperate — 回复某人/all 合作\n"
+    "🤝 /company_cooperate — 回复某人/all 合作\n"
     "  每次+5%，次日清空，上限50%(满级100%)\n\n"
-    "📦 /new_product <名字> <资金> <人员>\n"
+    "📦 /company_new <名字> <资金> <人员>\n"
     "  投入+人员决定收入，品质随机\n"
     "  完美品质(100分) 极稀有，收入翻倍\n\n"
-    "👷 /member add|minus <数量|max>\n"
-    "🗑 /dissolve — 注销公司(24h冷却)\n"
-    "/admin <密钥> — 管理员认证\n"
-    "/help — 显示此帮助\n"
+    "👷 /company_member add|minus <数量|max>\n"
+    "🗑 /company_dissolve — 注销公司(24h冷却)\n"
+    "/company_admin <密钥> — 管理员认证\n"
+    "/company_help — 显示此帮助\n"
 )
 
 
-@router.message(Command("start"))
+@router.message(Command(CMD_START))
 async def cmd_start(message: types.Message):
     tg_id = message.from_user.id
     tg_name = message.from_user.full_name or str(tg_id)
@@ -84,7 +101,7 @@ async def cmd_start(message: types.Message):
         )
 
 
-@router.message(Command("help"))
+@router.message(Command(CMD_HELP))
 async def cmd_help(message: types.Message):
     await message.answer(HELP_TEXT)
 
@@ -106,7 +123,7 @@ async def cb_menu_profile(callback: types.CallbackQuery):
         from services.user_service import get_user_by_tg_id
         user = await get_user_by_tg_id(session, tg_id)
         if not user:
-            await callback.answer("请先 /create_company 创建公司", show_alert=True)
+            await callback.answer("请先 /company_create 创建公司", show_alert=True)
             return
         companies = await get_companies_by_owner(session, user.id)
         traffic = user.traffic

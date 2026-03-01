@@ -9,6 +9,14 @@ class Settings(BaseSettings):
     # Telegram
     bot_token: str = ""
     proxy_url: str = ""  # HTTP代理，如 http://127.0.0.1:7890
+    run_mode: str = "polling"  # polling / webhook
+    use_uvloop: bool = True
+    app_timezone: str = "Asia/Shanghai"
+    webhook_base_url: str = ""  # 例如: https://example.com
+    webhook_path: str = "/telegram/webhook"
+    webhook_host: str = "0.0.0.0"
+    webhook_port: int = 8080
+    webhook_secret_token: str = ""
     # Comma-separated list of allowed chat_ids (group/subchannel) where commands work.
     # Empty means all groups are allowed.
     allowed_chat_ids: str = ""
@@ -29,6 +37,9 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
+    redis_stream_enabled: bool = True
+    redis_stream_key: str = "my_company:events"
+    redis_stream_maxlen: int = 20000
 
     # Game constants
     initial_traffic: int = 100000
@@ -59,10 +70,10 @@ class Settings(BaseSettings):
     reputation_per_dividend: int = 3
 
     # Settlement
-    settlement_hour: int = 0  # midnight UTC
+    settlement_hour: int = 0  # midnight Beijing time
     settlement_minute: int = 0
     backup_enabled: bool = True
-    backup_interval_minutes: int = 60
+    backup_interval_minutes: int = 180
     backup_keep_files: int = 72
     backup_notify_super_admin: bool = True
 

@@ -1,4 +1,4 @@
-"""Weekly quest handler — /quest command and inline panel."""
+"""Weekly quest handler — /company_quest command and inline panel."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from aiogram import F, Router, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from commands import CMD_QUEST
 from db.engine import async_session
 from services.quest_service import (
     get_or_create_weekly_tasks,
@@ -66,14 +67,14 @@ async def _build_quest_text(user_id: int, tasks) -> str:
     return "\n".join(lines)
 
 
-@router.message(Command("quest"))
+@router.message(Command(CMD_QUEST))
 async def cmd_quest(message: types.Message):
     tg_id = message.from_user.id
     async with async_session() as session:
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await message.answer("请先 /create_company 创建公司")
+                await message.answer("请先 /company_create 创建公司")
                 return
             tasks = await get_or_create_weekly_tasks(session, user.id)
 
@@ -88,7 +89,7 @@ async def cb_quest_menu(callback: types.CallbackQuery):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await callback.answer("请先 /create_company 创建公司", show_alert=True)
+                await callback.answer("请先 /company_create 创建公司", show_alert=True)
                 return
             tasks = await get_or_create_weekly_tasks(session, user.id)
 
@@ -109,7 +110,7 @@ async def cb_quest_claim(callback: types.CallbackQuery):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await callback.answer("请先 /create_company 创建公司", show_alert=True)
+                await callback.answer("请先 /company_create 创建公司", show_alert=True)
                 return
             ok, msg = await claim_quest_reward(session, user.id, quest_id)
 

@@ -74,6 +74,9 @@ def company_detail_kb(company_id: int, is_owner: bool, tg_id: int | None = None)
             InlineKeyboardButton(text="🤝 合作状态", callback_data=f"cooperation:init:{company_id}"),
         ])
         buttons.append([
+            InlineKeyboardButton(text="⚙️ 经营策略", callback_data=f"ops:menu:{company_id}"),
+        ])
+        buttons.append([
             InlineKeyboardButton(text="📢 广告", callback_data=f"ad:menu:{company_id}"),
             InlineKeyboardButton(text="🧪 AI研发", callback_data=f"aird:start:{company_id}"),
         ])
@@ -91,7 +94,7 @@ def company_detail_kb(company_id: int, is_owner: bool, tg_id: int | None = None)
         ])
     else:
         buttons.append([
-            InlineKeyboardButton(text="💵 投资", callback_data=f"shareholder:invest:{company_id}"),
+            InlineKeyboardButton(text="💵 注资", callback_data=f"shareholder:invest:{company_id}"),
         ])
     buttons.append([
         InlineKeyboardButton(text="📋 公司列表", callback_data="menu:company_list"),
@@ -105,12 +108,20 @@ def company_detail_kb(company_id: int, is_owner: bool, tg_id: int | None = None)
 def invest_kb(company_id: int, tg_id: int | None = None) -> InlineKeyboardMarkup:
     amounts = [500, 1000, 2000, 5000]
     buttons = [
-        [InlineKeyboardButton(text=f"投资 {a:,} 金币", callback_data=f"shareholder:doinvest:{company_id}:{a}")]
+        [InlineKeyboardButton(text=f"注资 {a:,} 金币", callback_data=f"shareholder:doinvest:{company_id}:{a}")]
         for a in amounts
     ]
     buttons.append([InlineKeyboardButton(text="✍️ 自定义金额（文本）", callback_data=f"shareholder:input:{company_id}")])
     buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")])
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    return tag_kb(kb, tg_id)
+
+
+def shareholder_list_kb(company_id: int, tg_id: int | None = None) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💵 去注资", callback_data=f"shareholder:invest:{company_id}")],
+        [InlineKeyboardButton(text="🔙 返回公司", callback_data=f"company:view:{company_id}")],
+    ])
     return tag_kb(kb, tg_id)
 
 
@@ -120,7 +131,7 @@ def tech_list_kb(techs: list[dict], company_id: int, tg_id: int | None = None) -
     from utils.formatters import fmt_duration
     buttons = [
         [InlineKeyboardButton(
-            text=f"{t['name']} ({t['cost']:,}💰 {fmt_duration(t.get('duration_seconds', 3600))})",
+            text=f"{t['name']} ({t['cost']:,}💰 {fmt_duration(t.get('effective_duration_seconds', t.get('duration_seconds', 3600)))})",
             callback_data=f"research:start:{company_id}:{t['tech_id']}",
         )]
         for t in techs

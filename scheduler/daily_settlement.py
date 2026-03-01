@@ -8,13 +8,16 @@ import json
 import logging
 from decimal import Decimal
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from config import settings
 from db.engine import async_session, engine
+from cache.redis_client import add_stream_event
 from services.settlement_service import format_daily_report, settle_all
+from utils.timezone import BJ_TZ, format_bj_now
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +59,8 @@ async def _create_db_backup() -> tuple[Path, dict[str, int]]:
     from db.models import Base
 
     _BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    now_utc = dt.datetime.now(dt.UTC)
-    file_path = _BACKUP_DIR / f"my_company_backup_{now_utc.strftime('%Y%m%dT%H%M%SZ')}.json.gz"
+    now_bj = dt.datetime.now(BJ_TZ)
+    file_path = _BACKUP_DIR / f"my_company_backup_{now_bj.strftime('%Y%m%dT%H%M%S%z')}.json.gz"
 
     table_data: dict[str, list[dict]] = {}
     table_counts: dict[str, int] = {}
@@ -73,7 +76,7 @@ async def _create_db_backup() -> tuple[Path, dict[str, int]]:
 
     payload = {
         "project": "my_company",
-        "created_at_utc": now_utc.isoformat(),
+        "created_at_bj": now_bj.isoformat(),
         "tables": table_data,
     }
     _write_backup_file(file_path, payload)
@@ -103,18 +106,23 @@ async def _backup_job():
         total_rows = sum(table_counts.values())
         summary = ", ".join(f"{name}:{count}" for name, count in sorted(table_counts.items()))
         logger.info("DB backup completed: %s rows=%d", file_path, total_rows)
+        await add_stream_event(
+            "backup_completed",
+            {"file": str(file_path), "rows": total_rows, "tables": table_counts},
+        )
         await _notify_backup_status(
             "🛡 my_company 自动备份完成\n"
-            f"⏰ UTC时间: {dt.datetime.now(dt.UTC).strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"⏰ 北京时间: {format_bj_now()}\n"
             f"📦 文件: {file_path}\n"
             f"🧾 总行数: {total_rows}\n"
             f"📚 分表: {summary}",
         )
     except Exception as exc:
         logger.exception("DB backup failed")
+        await add_stream_event("backup_failed", {"error": str(exc)})
         await _notify_backup_status(
             "❌ my_company 自动备份失败\n"
-            f"⏰ UTC时间: {dt.datetime.now(dt.UTC).strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"⏰ 北京时间: {format_bj_now()}\n"
             f"原因: {exc}",
         )
 
@@ -125,6 +133,7 @@ async def _daily_job():
         async with session.begin():
             reports = await settle_all(session)
     logger.info("Daily settlement completed: %d companies processed", len(reports))
+    await add_stream_event("daily_settlement_completed", {"companies": len(reports)})
 
     # Refresh black market deals for the new day
     try:
@@ -149,9 +158,44 @@ async def _daily_job():
                 logger.exception("Failed to notify owner of company %s", company.name)
 
 
+async def _research_realtime_job():
+    """Complete expired research every minute (near-real-time)."""
+    from db.models import Company, User
+    from services.research_service import check_and_complete_research
+
+    completed_total = 0
+    async with async_session() as session:
+        async with session.begin():
+            companies = (await session.execute(select(Company))).scalars().all()
+            for company in companies:
+                completed = await check_and_complete_research(session, company.id)
+                if not completed:
+                    continue
+                completed_total += len(completed)
+                await add_stream_event(
+                    "research_completed",
+                    {"company_id": company.id, "company_name": company.name, "techs": completed},
+                )
+                if _bot_ref:
+                    try:
+                        owner = await session.get(User, company.owner_id)
+                        if not owner:
+                            continue
+                        await _bot_ref.send_message(
+                            owner.tg_id,
+                            f"🔬 科研已完成：{', '.join(completed)}",
+                        )
+                    except Exception:
+                        # 通知失败不影响科研结算
+                        pass
+    if completed_total > 0:
+        logger.info("Realtime research settlement completed: %d tech(s)", completed_total)
+
+
 def start_scheduler():
     global _scheduler
-    _scheduler = AsyncIOScheduler()
+    tz = ZoneInfo(settings.app_timezone or "Asia/Shanghai")
+    _scheduler = AsyncIOScheduler(timezone=tz)
     _scheduler.add_job(
         _daily_job,
         "cron",
@@ -162,16 +206,28 @@ def start_scheduler():
     if settings.backup_enabled and settings.backup_interval_minutes > 0:
         _scheduler.add_job(
             _backup_job,
-            "interval",
-            minutes=settings.backup_interval_minutes,
+            "cron",
+            hour="*/3",
+            minute=0,
             id="db_backup",
         )
+    _scheduler.add_job(
+        _research_realtime_job,
+        "interval",
+        minutes=1,
+        id="research_realtime_settlement",
+    )
     _scheduler.start()
-    logger.info("Scheduler started: daily settlement at %02d:%02d UTC", settings.settlement_hour, settings.settlement_minute)
+    logger.info(
+        "Scheduler started: daily settlement at %02d:%02d (%s)",
+        settings.settlement_hour,
+        settings.settlement_minute,
+        settings.app_timezone,
+    )
     if settings.backup_enabled and settings.backup_interval_minutes > 0:
         logger.info(
-            "Scheduler started: DB backup every %d minutes (keep %d files)",
-            settings.backup_interval_minutes,
+            "Scheduler started: DB backup every 3 hours on the hour (%s, keep %d files)",
+            settings.app_timezone,
             settings.backup_keep_files,
         )
 

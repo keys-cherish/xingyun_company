@@ -10,8 +10,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from commands import CMD_CANCEL
 from db.engine import async_session
-from keyboards.menus import invest_kb
+from keyboards.menus import invest_kb, shareholder_list_kb
 from services.shareholder_service import get_shareholders, invest
 from utils.panel_owner import mark_panel
 from services.user_service import get_user_by_tg_id
@@ -36,12 +37,10 @@ async def _refresh_shareholder_list(callback: types.CallbackQuery, company_id: i
                 from db.models import User
                 user = await session.get(User, sh.user_id)
                 name = user.tg_name if user else "未知"
-                lines.append(f"• {name}: {fmt_shares(sh.shares)} (投资: {fmt_traffic(sh.invested_amount)})")
-
-        from keyboards.menus import company_detail_kb
+                lines.append(f"• {name}: {fmt_shares(sh.shares)} (注资: {fmt_traffic(sh.invested_amount)})")
         await callback.message.edit_text(
             "\n".join(lines),
-            reply_markup=company_detail_kb(company_id, False, tg_id=tg_id),
+            reply_markup=shareholder_list_kb(company_id, tg_id=tg_id),
         )
     except Exception:
         pass  # 消息未变化时edit会抛异常，忽略
@@ -58,12 +57,10 @@ async def cb_shareholders(callback: types.CallbackQuery):
             from db.models import User
             user = await session.get(User, sh.user_id)
             name = user.tg_name if user else "未知"
-            lines.append(f"• {name}: {fmt_shares(sh.shares)} (投资: {fmt_traffic(sh.invested_amount)})")
-
-    from keyboards.menus import company_detail_kb
+            lines.append(f"• {name}: {fmt_shares(sh.shares)} (注资: {fmt_traffic(sh.invested_amount)})")
     await callback.message.edit_text(
         "\n".join(lines),
-        reply_markup=company_detail_kb(company_id, False, tg_id=callback.from_user.id),
+        reply_markup=shareholder_list_kb(company_id, tg_id=callback.from_user.id),
     )
     await callback.answer()
 
@@ -71,7 +68,7 @@ async def cb_shareholders(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("shareholder:invest:"))
 async def cb_invest_menu(callback: types.CallbackQuery):
     company_id = int(callback.data.split(":")[2])
-    await callback.message.edit_text("选择投资金额:", reply_markup=invest_kb(company_id, tg_id=callback.from_user.id))
+    await callback.message.edit_text("选择注资金额:", reply_markup=invest_kb(company_id, tg_id=callback.from_user.id))
     await callback.answer()
 
 
@@ -88,7 +85,7 @@ async def cb_invest_input(callback: types.CallbackQuery, state: FSMContext):
     ])
     await callback.message.edit_text(
         "✍️ 自定义注资金额\n"
-        "请输入投资金额（整数，如 5000）\n"
+        "请输入注资金额（整数，如 5000）\n"
         f"⏳ {INVEST_INPUT_TIMEOUT_SECONDS // 60} 分钟内未输入将自动退出",
         reply_markup=kb,
     )
@@ -99,11 +96,11 @@ async def cb_invest_input(callback: types.CallbackQuery, state: FSMContext):
 async def cb_invest_input_cancel(callback: types.CallbackQuery, state: FSMContext):
     company_id = int(callback.data.split(":")[2])
     await state.clear()
-    await callback.message.edit_text("选择投资金额:", reply_markup=invest_kb(company_id))
+    await callback.message.edit_text("选择注资金额:", reply_markup=invest_kb(company_id, tg_id=callback.from_user.id))
     await callback.answer("已取消输入")
 
 
-@router.message(InvestState.waiting_custom_amount, Command("cancel"))
+@router.message(InvestState.waiting_custom_amount, Command(CMD_CANCEL))
 async def on_invest_input_cancel(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("已取消注资输入。")
@@ -150,7 +147,7 @@ async def on_custom_invest_amount(message: types.Message, state: FSMContext):
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
                 await state.clear()
-                await message.answer("请先 /create_company 创建公司")
+                await message.answer("请先 /company_create 创建公司")
                 return
             ok, msg = await invest(session, user.id, company_id, amount)
 
@@ -174,7 +171,7 @@ async def cb_do_invest(callback: types.CallbackQuery):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await callback.answer("请先 /create_company 创建公司", show_alert=True)
+                await callback.answer("请先 /company_create 创建公司", show_alert=True)
                 return
             ok, msg = await invest(session, user.id, company_id, amount)
 

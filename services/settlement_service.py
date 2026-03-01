@@ -16,6 +16,15 @@ from services.dividend_service import distribute_dividends
 from services.realestate_service import get_total_estate_income
 from services.random_events import roll_daily_events
 from services.research_service import check_and_complete_research
+from services.operations_service import (
+    calc_extra_operating_costs,
+    get_market_trend,
+    get_operation_multipliers,
+    get_or_create_profile,
+    maybe_regulation_fine,
+    save_recent_events,
+    settle_profile_daily,
+)
 from cache.redis_client import update_leaderboard
 from utils.formatters import reputation_buff_multiplier
 
@@ -34,9 +43,13 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
     # Recalculate daily revenue
     await update_daily_revenue(session, company.id)
     await session.refresh(company)
+    now_utc = dt.datetime.now(dt.UTC)
+    profile = await get_or_create_profile(session, company.id)
+    multipliers = get_operation_multipliers(profile, now_utc)
+    market = get_market_trend(company, now_utc)
 
     # 1. Product income
-    product_income = company.daily_revenue
+    product_income = int(company.daily_revenue * multipliers["income_mult"] * market["income_mult"])
 
     # 1a. Check rename penalty (当日营收降低)
     from cache.redis_client import get_redis
@@ -83,7 +96,16 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
     type_income = int(product_income * type_income_bonus)
 
     # Total gross
-    total_income = product_income + level_revenue_bonus + cooperation_bonus + realestate_income + reputation_buff_income + ad_boost_income + shop_buff_income + type_income
+    total_income = (
+        product_income
+        + level_revenue_bonus
+        + cooperation_bonus
+        + realestate_income
+        + reputation_buff_income
+        + ad_boost_income
+        + shop_buff_income
+        + type_income
+    )
 
     # Quest progress for daily_revenue and employee_count
     from services.quest_service import update_quest_progress
@@ -103,7 +125,26 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
     # Operating cost = base overhead + tax + salary + insurance, modified by type cost buff
     base_operating = int(total_income * settings.daily_operating_cost_pct) + salary_cost + social_insurance
     base_operating = int(base_operating * (1.0 + type_cost_bonus))  # cost_bonus < 0 means cheaper
-    operating_cost = base_operating + tax
+    extra_costs = calc_extra_operating_costs(
+        profile,
+        company.employee_count,
+        total_income,
+        salary_cost,
+        social_insurance,
+        now_utc,
+    )
+    fine = maybe_regulation_fine(profile, total_income, now_utc)
+    operating_cost = (
+        base_operating
+        + tax
+        + extra_costs["office_cost"]
+        + extra_costs["training_cost"]
+        + extra_costs["regulation_cost"]
+        + extra_costs["insurance_cost"]
+        + extra_costs["work_cost_adjust"]
+        + extra_costs["culture_maintenance"]
+        + fine
+    )
     profit = total_income - operating_cost
 
     # Apply net profit/loss to company funds.
@@ -125,6 +166,18 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
 
     # Roll random events
     event_messages = await roll_daily_events(session, company)
+    if market["income_mult"] > 1.0:
+        event_messages.append(
+            f"📈 行业景气加成：{market['label']}（营收+{(market['income_mult'] - 1.0) * 100:.0f}%）"
+        )
+    elif market["income_mult"] < 1.0:
+        event_messages.append(
+            f"📉 行业景气压制：{market['label']}（营收{(market['income_mult'] - 1.0) * 100:.0f}%）"
+        )
+    if fine > 0:
+        event_messages.append(f"⚖️ 合规罚款触发：-{fine:,} 金币")
+    await save_recent_events(company.id, event_messages)
+    await settle_profile_daily(session, profile, now_utc)
 
     # Generate report
     report = DailyReport(

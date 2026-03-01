@@ -256,7 +256,7 @@ async def cb_shop_select(callback: types.CallbackQuery):
     async with async_session() as session:
         user = await get_user_by_tg_id(session, tg_id)
         if not user:
-            await callback.answer("请先 /create_company 创建公司", show_alert=True)
+            await callback.answer("请先 /company_create 创建公司", show_alert=True)
             return
         companies = await get_companies_by_owner(session, user.id)
 
@@ -301,7 +301,7 @@ async def cb_shop_buy(callback: types.CallbackQuery):
             user = await get_user_by_tg_id(session, tg_id)
             company = await get_company_by_id(session, company_id)
             if not user:
-                await callback.answer("请先 /create_company 创建公司", show_alert=True)
+                await callback.answer("请先 /company_create 创建公司", show_alert=True)
                 return
             if not company or company.owner_id != user.id:
                 await callback.answer("无权操作", show_alert=True)
@@ -358,7 +358,7 @@ async def cb_blackmarket_select(callback: types.CallbackQuery):
     async with async_session() as session:
         user = await get_user_by_tg_id(session, tg_id)
         if not user:
-            await callback.answer("请先 /create_company 创建公司", show_alert=True)
+            await callback.answer("请先 /company_create 创建公司", show_alert=True)
             return
         companies = await get_companies_by_owner(session, user.id)
 
@@ -401,7 +401,7 @@ async def cb_blackmarket_buy(callback: types.CallbackQuery):
             user = await get_user_by_tg_id(session, tg_id)
             company = await get_company_by_id(session, company_id)
             if not user:
-                await callback.answer("请先 /create_company 创建公司", show_alert=True)
+                await callback.answer("请先 /company_create 创建公司", show_alert=True)
                 return
             if not company or company.owner_id != user.id:
                 await callback.answer("无权操作", show_alert=True)

@@ -63,6 +63,32 @@ class Company(Base):
     daily_reports: Mapped[list[DailyReport]] = relationship("DailyReport", back_populates="company")
 
 
+# ---------- Company Operations ----------
+
+class CompanyOperationProfile(Base):
+    __tablename__ = "company_operation_profiles"
+
+    company_id: Mapped[int] = mapped_column(
+        ForeignKey("companies.id"),
+        primary_key=True,
+        nullable=False,
+        index=True,
+    )
+    work_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=8)
+    office_level: Mapped[str] = mapped_column(String(16), nullable=False, default="standard")
+    training_level: Mapped[str] = mapped_column(String(16), nullable=False, default="none")
+    training_expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    insurance_level: Mapped[str] = mapped_column(String(16), nullable=False, default="basic")
+    culture: Mapped[int] = mapped_column(Integer, nullable=False, default=50)  # 0-100
+    ethics: Mapped[int] = mapped_column(Integer, nullable=False, default=60)  # 0-100
+    regulation_pressure: Mapped[int] = mapped_column(Integer, nullable=False, default=40)  # 0-100
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 # ---------- Shareholders ----------
 
 class Shareholder(Base):

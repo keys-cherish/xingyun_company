@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
-from aiogram import Router, types
+import logging
+from typing import Any, Awaitable, Callable
+
+from aiogram import BaseMiddleware, Router, types
 from aiogram.filters import BaseFilter
+from aiogram.types import TelegramObject
 
 from cache.redis_client import get_redis
 from config import settings
 
 router = Router()
+logger = logging.getLogger(__name__)
 SUPER_ADMIN_TG_ID = 5222591634
+CHANNEL_ONLY_HINT = "❌ 本 bot 仅在指定话题频道内提供服务。"
 
 # ---- 管理员认证 ----
 # 已认证管理员存Redis: admin_auth:{tg_id} = "1"
@@ -64,32 +70,74 @@ async def revoke_admin(tg_id: int):
 
 # ---- 过滤器 ----
 
+
+def is_allowed_group_chat(chat: types.Chat) -> bool:
+    """Whether this chat is one of the configured command groups."""
+    if chat.type not in ("group", "supergroup"):
+        return False
+
+    allowed_ids = settings.allowed_chat_id_set
+    allowed_usernames = settings.allowed_chat_username_set
+
+    # Backward compatible: if no restriction is configured, allow all groups.
+    if not allowed_ids and not allowed_usernames:
+        return True
+
+    if allowed_ids and chat.id in allowed_ids:
+        return True
+
+    username = (chat.username or "").lstrip("@").lower()
+    if allowed_usernames and username in allowed_usernames:
+        return True
+
+    return False
+
+
+def _extract_chat_and_thread(
+    event: types.Message | types.CallbackQuery,
+) -> tuple[types.Chat | None, int | None]:
+    if isinstance(event, types.CallbackQuery):
+        if not event.message:
+            return None, None
+        thread_id = getattr(event.message, "message_thread_id", None)
+        return event.message.chat, thread_id
+
+    return event.chat, event.message_thread_id
+
+
+def is_allowed_topic_thread(thread_id: int | None) -> bool:
+    """Whether the topic thread is allowed; empty config means unrestricted."""
+    allowed_topics = settings.allowed_topic_thread_id_set
+    if not allowed_topics:
+        return True
+    return thread_id in allowed_topics
+
+
+def is_allowed_scope(event: types.Message | types.CallbackQuery) -> bool:
+    """Check group/channel and topic scope together."""
+    chat, thread_id = _extract_chat_and_thread(event)
+    if chat is None:
+        return False
+    if not is_allowed_group_chat(chat):
+        return False
+    return is_allowed_topic_thread(thread_id)
+
+
+async def _notify_channel_only(event: types.Message | types.CallbackQuery):
+    try:
+        if isinstance(event, types.CallbackQuery):
+            await event.answer(CHANNEL_ONLY_HINT, show_alert=True)
+        else:
+            await event.answer(CHANNEL_ONLY_HINT)
+    except Exception:
+        # Keep filter behavior stable even if Telegram refuses late replies.
+        pass
+
 class GroupOnlyFilter(BaseFilter):
-    """只允许群组中使用，已认证管理员的私聊也放行。"""
+    """Only allow commands in configured group/topic scope."""
 
     async def __call__(self, event: types.Message | types.CallbackQuery) -> bool:
-        if isinstance(event, types.CallbackQuery):
-            chat = event.message.chat if event.message else None
-            tg_id = event.from_user.id
-        else:
-            chat = event.chat
-            tg_id = event.from_user.id
-
-        if chat is None:
-            return False
-
-        # 群组/超级群组：检查是否在允许列表
-        if chat.type in ("group", "supergroup"):
-            allowed = settings.allowed_chat_id_set
-            if allowed and chat.id not in allowed:
-                return False
-            return True
-
-        # 私聊：仅已认证管理员放行
-        if chat.type == "private":
-            return await is_admin_authenticated(tg_id)
-
-        return False
+        return is_allowed_scope(event)
 
 
 class AdminOnlyFilter(BaseFilter):
@@ -107,11 +155,35 @@ class SuperAdminOnlyFilter(BaseFilter):
         return is_super_admin(event.from_user.id)
 
 
+class GroupScopeMiddleware(BaseMiddleware):
+    """Hard-block all message/callback events outside configured scope."""
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: dict[str, Any],
+    ) -> Any:
+        if isinstance(event, (types.Message, types.CallbackQuery)):
+            if not is_allowed_scope(event):
+                chat, thread_id = _extract_chat_and_thread(event)
+                logger.info(
+                    "Blocked out-of-scope command: chat_id=%s username=%s thread_id=%s",
+                    getattr(chat, "id", None),
+                    getattr(chat, "username", None),
+                    thread_id,
+                )
+                await _notify_channel_only(event)
+                return None
+        return await handler(event, data)
+
+
 group_only = GroupOnlyFilter()
 admin_only = AdminOnlyFilter()
 super_admin_only = SuperAdminOnlyFilter()
+group_scope_middleware = GroupScopeMiddleware()
 
 
 async def reject_private(message: types.Message):
     """非管理员私聊时的拒绝提示。"""
-    await message.answer("此命令仅限在群组指定频道中使用。\n私聊仅支持 /create_company 和 /company 查看信息。")
+    await message.answer(CHANNEL_ONLY_HINT)

@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     # Comma-separated list of allowed chat_ids (group/subchannel) where commands work.
     # Empty means all groups are allowed.
     allowed_chat_ids: str = ""
+    # Comma-separated list of allowed chat usernames (without @).
+    # Example: "Anyincubation,my_company_group"
+    allowed_chat_usernames: str = ""
+    # Comma-separated list of allowed topic(thread) IDs in forum supergroups.
+    # Example: "18833,20001"
+    allowed_topic_thread_ids: str = ""
 
     # Database
     database_url: str = "postgresql+asyncpg://mycompany:mycompany@localhost:5432/mycompany"
@@ -90,6 +96,22 @@ class Settings(BaseSettings):
         if not self.allowed_chat_ids.strip():
             return set()
         return {int(x.strip()) for x in self.allowed_chat_ids.split(",") if x.strip()}
+
+    @property
+    def allowed_chat_username_set(self) -> set[str]:
+        if not self.allowed_chat_usernames.strip():
+            return set()
+        return {
+            x.strip().lstrip("@").lower()
+            for x in self.allowed_chat_usernames.split(",")
+            if x.strip()
+        }
+
+    @property
+    def allowed_topic_thread_id_set(self) -> set[int]:
+        if not self.allowed_topic_thread_ids.strip():
+            return set()
+        return {int(x.strip()) for x in self.allowed_topic_thread_ids.split(",") if x.strip()}
 
 
 settings = Settings()

@@ -1,4 +1,4 @@
-"""公司相关处理器。/company 在私聊和群组中均可使用。"""
+"""公司相关处理器。"""
 
 from __future__ import annotations
 
@@ -386,7 +386,7 @@ async def _refresh_company_view(callback: types.CallbackQuery, company_id: int):
         pass  # 消息未变化时edit会抛异常，忽略
 
 
-# /company - 私聊和群组均可使用
+# /company
 @router.message(Command("company"))
 async def cmd_company(message: types.Message):
     tg_id = message.from_user.id

@@ -52,61 +52,6 @@ def _register_routers(dp: Dispatcher):
     dp.include_router(battle_router)
     dp.include_router(quest_router)
 
-    # 私聊兜底：非管理员只允许/start和/company，管理员放行所有
-    from handlers.common import reject_private, is_admin_authenticated
-    from aiogram import F, Router
-    from aiogram.fsm.context import FSMContext
-    fallback = Router()
-
-    @fallback.message(F.chat.type == "private")
-    async def _private_fallback(message, state: FSMContext):
-        # 如果用户在FSM状态中（如合作输入公司ID），放行
-        current_state = await state.get_state()
-        if current_state is not None:
-            return
-        if message.text and message.text.startswith("/company"):
-            return
-        if message.text and message.text.startswith("/list_company"):
-            return
-        if message.text and message.text.startswith("/member"):
-            return
-        if message.text and message.text.startswith("/start"):
-            return
-        if message.text and message.text.startswith("/create_company"):
-            return
-        if message.text and message.text.startswith("/admin"):
-            return
-        if message.text and message.text.startswith("/help"):
-            return
-        if message.text and message.text.startswith("/battle"):
-            return
-        if message.text and message.text.startswith("/cooperate"):
-            return
-        if message.text and message.text.startswith("/new_product"):
-            return
-        if message.text and message.text.startswith("/dissolve"):
-            return
-        if message.text and message.text.startswith("/clear_product"):
-            return
-        if message.text and message.text.startswith("/rank_company"):
-            return
-        if message.text and message.text.startswith("/makeup"):
-            return
-        if message.text and message.text.startswith("/give_money"):
-            return
-        if message.text and message.text.startswith("/welfare"):
-            return
-        if message.text and message.text.startswith("/quest"):
-            return
-        if message.text and message.text.startswith("/cleanup"):
-            return
-        # 已认证管理员放行
-        if await is_admin_authenticated(message.from_user.id):
-            return
-        await reject_private(message)
-
-    dp.include_router(fallback)
-
 
 async def main():
     if not settings.bot_token:
@@ -119,6 +64,9 @@ async def main():
         default=DefaultBotProperties(parse_mode=None),
     )
     dp = Dispatcher(storage=MemoryStorage())
+    from handlers.common import group_scope_middleware
+    dp.message.middleware(group_scope_middleware)
+    dp.callback_query.middleware(group_scope_middleware)
 
     # 初始化数据库
     await init_db()

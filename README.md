@@ -67,6 +67,11 @@ uv run python bot.py
 
 所有游戏参数均可通过 `.env` 文件或管理员面板实时调整，详见 `.env.example`。
 
+若需要限制机器人只能在指定公司群使用，可配置以下任一项（或同时配置）：
+- `ALLOWED_CHAT_IDS=-100xxxxxxxxxx`
+- `ALLOWED_CHAT_USERNAMES=Anyincubation`
+- `ALLOWED_TOPIC_THREAD_IDS=18833`（仅允许指定话题）
+
 ## 项目结构
 
 ```

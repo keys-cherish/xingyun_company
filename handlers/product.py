@@ -9,6 +9,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from commands import CMD_CLEAR_PRODUCT, CMD_NEW_PRODUCT
 from db.engine import async_session
 from handlers.common import is_super_admin
 from keyboards.menus import product_detail_kb, product_template_kb, tag_kb
@@ -27,23 +28,23 @@ from db.models import Product as ProductModel
 router = Router()
 logger = logging.getLogger(__name__)
 
-# /new_product 参数：投入资金 -> 基础日收入的转化率
-INVEST_TO_INCOME_RATE = 0.03  # 每投入100金币 = 3金币/日
+# /company_new 参数：投入资金 -> 基础日收入的转化率
+INVEST_TO_INCOME_RATE = 0.03  # 每投入100积分 = 3积分/日
 EMPLOYEE_INCOME_BONUS = 0.10  # 每分配1名员工 +10% 收入
 PERFECT_QUALITY_THRESHOLD = 100  # 完美品质阈值
 PERFECT_QUALITY_BONUS = 1.0     # 完美品质额外+100%收入
 
 
-@router.message(Command("new_product"))
+@router.message(Command(CMD_NEW_PRODUCT))
 async def cmd_new_product(message: types.Message):
-    """Create a custom product: /new_product <name> <investment> <employees>."""
+    """Create a custom product: /company_new <name> <investment> <employees>."""
     tg_id = message.from_user.id
     args = (message.text or "").split()
 
     if len(args) < 4:
         await message.answer(
-            "📦 用法: /new_product <产品名> <投入资金> <分配人员>\n"
-            "例: /new_product 智能助手 10000 3\n\n"
+            "📦 用法: /company_new <产品名> <投入资金> <分配人员>\n"
+            "例: /company_new 智能助手 10000 3\n\n"
             "• 投入资金从公司扣除，决定产品基础日收入\n"
             "• 分配人员提供额外收入加成（每人+10%）\n"
             "• 分配人员仅用于本次研发，研发完成后自动释放"
@@ -59,10 +60,10 @@ async def cmd_new_product(message: types.Message):
         return
 
     if investment < 1000:
-        await message.answer("❌ 最低投入 1,000 金币")
+        await message.answer("❌ 最低投入 1,000 积分")
         return
     if investment > 500000:
-        await message.answer("❌ 单次最高投入 500,000 金币")
+        await message.answer("❌ 单次最高投入 500,000 积分")
         return
     if employees < 0 or employees > 50:
         await message.answer("❌ 分配人员数量 0-50")
@@ -75,7 +76,7 @@ async def cmd_new_product(message: types.Message):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await message.answer("请先 /create_company 创建公司")
+                await message.answer("请先 /company_create 创建公司")
                 return
             companies = await get_companies_by_owner(session, user.id)
             if not companies:
@@ -240,7 +241,7 @@ async def cb_product_menu(callback: types.CallbackQuery):
     async with async_session() as session:
         user = await get_user_by_tg_id(session, tg_id)
         if not user:
-            await callback.answer("请先 /create_company 创建公司", show_alert=True)
+            await callback.answer("请先 /company_create 创建公司", show_alert=True)
             return
         from services.company_service import get_companies_by_owner
         companies = await get_companies_by_owner(session, user.id)
@@ -275,7 +276,7 @@ async def cb_product_list(callback: types.CallbackQuery, company_id: int | None 
         user = await get_user_by_tg_id(session, tg_id)
         company = await get_company_by_id(session, company_id)
         if not user:
-            await callback.answer("请先 /create_company 创建公司", show_alert=True)
+            await callback.answer("请先 /company_create 创建公司", show_alert=True)
             return
         if not company or company.owner_id != user.id:
             await callback.answer("无权操作", show_alert=True)
@@ -312,7 +313,7 @@ async def cb_product_list(callback: types.CallbackQuery, company_id: int | None 
         lines.append("\n💡 完成科研可解锁产品模板")
 
     lines.append("\n📦 也可使用命令创建自定义产品:")
-    lines.append("  /new_product <名字> <资金> <人员>")
+    lines.append("  /company_new <名字> <资金> <人员>")
     text = "\n".join(lines)
     all_buttons = product_buttons + template_buttons
     all_buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")])
@@ -341,7 +342,7 @@ async def cb_create_product(callback: types.CallbackQuery):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await callback.answer("请先 /create_company 创建公司", show_alert=True)
+                await callback.answer("请先 /company_create 创建公司", show_alert=True)
                 return
             company = await get_company_by_id(session, company_id)
             if not company or company.owner_id != user.id:
@@ -370,7 +371,7 @@ async def cb_upgrade_product(callback: types.CallbackQuery):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await callback.answer("请先 /create_company 创建公司", show_alert=True)
+                await callback.answer("请先 /company_create 创建公司", show_alert=True)
                 return
             for i in range(count):
                 ok, msg = await upgrade_product(session, product_id, user.id)
@@ -395,7 +396,7 @@ async def cb_upgrade_product(callback: types.CallbackQuery):
     else:
         await callback.answer(
             f"产品「{product.name}」连续升级{upgraded}次! "
-            f"当前v{product.version}，日收入: {product.daily_income}MB",
+            f"当前v{product.version}，日收入: {product.daily_income}积分",
             show_alert=True,
         )
     await _refresh_product_list(callback, product.company_id)
@@ -413,7 +414,7 @@ async def cb_delete_product(callback: types.CallbackQuery):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await callback.answer("请先 /create_company 创建公司", show_alert=True)
+                await callback.answer("请先 /company_create 创建公司", show_alert=True)
                 return
             company = await get_company_by_id(session, company_id)
             if not company or company.owner_id != user.id:
@@ -432,10 +433,10 @@ async def cb_delete_product(callback: types.CallbackQuery):
     await _refresh_product_list(callback, company_id)
 
 
-# ---- /clear_product 管理员命令（限定 tg_id） ----
+# ---- /company_clear 管理员命令（限定 tg_id） ----
 
 
-@router.message(Command("clear_product"))
+@router.message(Command(CMD_CLEAR_PRODUCT))
 async def cmd_clear_product(message: types.Message):
     """管理员命令：回复某人消息，清除该用户所有产品。"""
     if not is_super_admin(message.from_user.id):
@@ -443,7 +444,7 @@ async def cmd_clear_product(message: types.Message):
         return
 
     if not message.reply_to_message:
-        await message.answer("用法: 回复某人消息并发送 /clear_product")
+        await message.answer("用法: 回复某人消息并发送 /company_clear")
         return
 
     target = message.reply_to_message.from_user

@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cache.redis_client import get_redis
 from config import settings
 from db.models import Company, Product, User
-from services.research_service import get_completed_techs
+from services.research_service import check_and_complete_research, get_completed_techs
 from services.user_service import add_points
 from utils.formatters import fmt_traffic
 
@@ -49,6 +49,7 @@ def _load_products() -> dict:
 
 async def get_available_product_templates(session: AsyncSession, company_id: int) -> list[dict]:
     """返回公司可创建的产品模板（基于已完成科研）。"""
+    await check_and_complete_research(session, company_id)
     completed = set(await get_completed_techs(session, company_id))
     templates = _load_products()
     available = []
@@ -89,6 +90,7 @@ async def create_product(
         return None, "用户不存在"
 
     # 检查前置科研
+    await check_and_complete_research(session, company_id)
     completed = set(await get_completed_techs(session, company_id))
     if tmpl["tech_id"] not in completed:
         return None, "需要先完成对应科研"

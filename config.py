@@ -9,6 +9,14 @@ class Settings(BaseSettings):
     # Telegram
     bot_token: str = ""
     proxy_url: str = ""  # HTTP代理，如 http://127.0.0.1:7890
+    run_mode: str = "polling"  # polling / webhook
+    use_uvloop: bool = True
+    app_timezone: str = "Asia/Shanghai"
+    webhook_base_url: str = ""  # 例如: https://example.com
+    webhook_path: str = "/telegram/webhook"
+    webhook_host: str = "0.0.0.0"
+    webhook_port: int = 8080
+    webhook_secret_token: str = ""
     # Comma-separated list of allowed chat_ids (group/subchannel) where commands work.
     # Empty means all groups are allowed.
     allowed_chat_ids: str = ""
@@ -29,6 +37,9 @@ class Settings(BaseSettings):
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
+    redis_stream_enabled: bool = True
+    redis_stream_key: str = "my_company:events"
+    redis_stream_maxlen: int = 20000
 
     # Game constants
     initial_traffic: int = 100000
@@ -59,10 +70,10 @@ class Settings(BaseSettings):
     reputation_per_dividend: int = 3
 
     # Settlement
-    settlement_hour: int = 0  # midnight UTC
+    settlement_hour: int = 0  # midnight Beijing time
     settlement_minute: int = 0
     backup_enabled: bool = True
-    backup_interval_minutes: int = 60
+    backup_interval_minutes: int = 180
     backup_keep_files: int = 72
     backup_notify_super_admin: bool = True
 
@@ -78,10 +89,22 @@ class Settings(BaseSettings):
     # Random events
     event_chance: float = 0.35  # 35% chance per company per day
 
-    # AI API (for future AI dialogue features)
+    # AI API（AI研发评审）
+    ai_enabled: bool = True
+    ai_provider: str = "openai_compatible"  # openai_compatible / deepseek / custom
     ai_api_key: str = ""
-    ai_api_base_url: str = ""
-    ai_model: str = ""
+    ai_api_base_url: str = "https://api.openai.com/v1"
+    ai_model: str = "gpt-4o-mini"
+    ai_timeout_seconds: int = 30
+    ai_max_retries: int = 2
+    ai_retry_backoff_seconds: float = 1.5
+    ai_temperature: float = 0.2
+    ai_top_p: float = 1.0
+    ai_max_tokens: int = 500
+    ai_system_prompt: str = ""
+    ai_chat_system_prompt: str = ""
+    # 额外请求头，JSON格式；例如 {"X-Api-Version":"2024-01-01"}
+    ai_extra_headers_json: str = ""
 
     # 流量来源接口（预置参数，后续接入外部API）
     traffic_api_url: str = ""  # 外部流量接口URL

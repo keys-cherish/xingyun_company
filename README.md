@@ -58,28 +58,29 @@ uv run python bot.py
 | 系统 | 说明 |
 |------|------|
 | 公司系统 | 8种公司类型（科技/金融/传媒/制造/地产/生物/游戏/咨询），各有专属Buff |
-| 股东系统 | 投资获取股份，老板最低持股保护，按股份分红 |
+| 股东系统 | 注资获取股份，老板最低持股保护，按股份分红 |
 | 科研系统 | 10级研发树，前置解锁，完成后解锁新产品 |
 | 产品系统 | 创建/升级/下架产品，每日产生收入 |
 | AI研发 | 提交产品方案 → AI评分 → 永久提升产品收入(1-100%) |
-| 路演系统 | 消耗金币路演，随机获得资源/声望/积分 |
+| 路演系统 | 消耗积分路演，随机获得资源/声望/积分 |
 | 合作系统 | 公司间合作提供营收加成 |
 | 地产系统 | 购买地产获取稳定被动收入 |
 | 广告系统 | 4档广告方案，临时提升营收 |
-| 交易所 | 金币/额度/积分互换，道具商城，黑市特惠 |
+| 交易所 | 积分/储备积分/荣誉点互换，道具商城，黑市特惠 |
 | 员工系统 | 招聘/裁员，薪资/社保成本 |
+| 经营策略 | 工时/办公/培训/保险/文化/道德/监管，动态影响营收与成本 |
 | 税务系统 | 每日营收纳税 |
 | 随机事件 | 员工离职/退休/市场波动/PR危机等20+事件 |
-| 积分系统 | 多途径获取积分，可兑换金币 |
+| 积分系统 | 多途径获取荣誉点，可兑换积分 |
 | 每日结算 | 自动计算收入/分红/生成日报 |
 
 ## 命令
 
 | 命令 | 范围 | 说明 |
 |------|------|------|
-| `/start` | 私聊+群组 | 注册/查看个人面板 |
+| `/company_start` | 私聊+群组 | 注册/查看个人面板 |
 | `/company` | 私聊+群组 | 查看/管理公司 |
-| `/admin <密钥>` | 私聊 | 管理员认证（需配置ID+密钥） |
+| `/company_admin <密钥>` | 私聊 | 管理员认证（需配置ID+密钥） |
 | 其他操作 | 私聊+群组 | 通过Inline键盘菜单操作 |
 
 ## 配置
@@ -90,6 +91,11 @@ uv run python bot.py
 - `BOT_TOKEN`：机器人 token
 - `DATABASE_URL`：数据库连接（生产建议 PostgreSQL）
 - `REDIS_URL`：Redis 连接
+- `RUN_MODE`：运行模式（`polling` / `webhook`）
+- `USE_UVLOOP`：是否启用 uvloop
+- `APP_TIMEZONE`：时区（默认 `Asia/Shanghai`，北京时间）
+- `WEBHOOK_BASE_URL` / `WEBHOOK_PATH` / `WEBHOOK_PORT`：Webhook 模式配置
+- `REDIS_STREAM_ENABLED` / `REDIS_STREAM_KEY`：Redis Stream 事件通道配置
 - `ADMIN_TG_IDS`：管理员 TG ID 列表（逗号分隔）
 - `SUPER_ADMIN_TG_ID` / `SUPER_ADMIN_TG_IDS`：超级管理员（支持单个或多个）
 - `ALLOWED_CHAT_IDS`：允许的群组 ID（逗号分隔）
@@ -97,13 +103,25 @@ uv run python bot.py
 - `ALLOWED_TOPIC_THREAD_IDS`：允许的话题 ID 列表（可选，逗号分隔）
 - `ALLOWED_TOPIC_THREAD_ID`：单话题兼容配置（旧版，保留可用）
 - `BACKUP_ENABLED`：是否启用自动备份
-- `BACKUP_INTERVAL_MINUTES`：自动备份间隔（分钟）
+- `BACKUP_INTERVAL_MINUTES`：兼容配置项（当前固定每 3 小时整点备份）
 - `BACKUP_KEEP_FILES`：本地保留的备份文件数量
 - `BACKUP_NOTIFY_SUPER_ADMIN`：备份结果是否私聊通知超管
+- `AI_ENABLED`：是否启用真实 AI 评审（关闭时走本地严格评分）
+- `AI_API_BASE_URL` / `AI_API_KEY` / `AI_MODEL`：AI服务地址、密钥与模型
+- `AI_TIMEOUT_SECONDS` / `AI_MAX_RETRIES` / `AI_RETRY_BACKOFF_SECONDS`：超时与重试策略
+- `AI_TEMPERATURE` / `AI_TOP_P` / `AI_MAX_TOKENS`：模型采样与输出长度
+- `AI_SYSTEM_PROMPT`：可覆盖默认评审系统提示词
+- `AI_EXTRA_HEADERS_JSON`：可选额外请求头（JSON）
 
 备份说明：
-- 备份文件写入项目根目录，文件名形如 `my_company_backup_YYYYMMDDTHHMMSSZ.json.gz`
+- 固定按北京时间每 3 小时整点执行（00/03/06/09/12/15/18/21）
+- 备份文件写入项目根目录，文件名形如 `my_company_backup_YYYYMMDDTHHMMSS+0800.json.gz`
 - 该备份是 `my_company` 项目独立文件，不使用 `dice_bot` 的 `backup.db`
+
+AI配置说明：
+- 所有 AI 密钥仅写入本地 `.env`，不要提交到 Git。
+- `AI_API_BASE_URL` 支持 OpenAI 兼容接口，默认使用 `.../v1/chat/completions`。
+- 若供应商需要额外请求头，可在 `AI_EXTRA_HEADERS_JSON` 中配置。
 
 ## 项目结构
 

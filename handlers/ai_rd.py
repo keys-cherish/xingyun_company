@@ -99,6 +99,7 @@ async def on_proposal(message: types.Message, state: FSMContext):
     score, feedback, special_effect = await evaluate_proposal_ai(proposal)
     await state.update_data(score=score, feedback=feedback, special_effect=special_effect)
     await state.set_state(AIRDState.waiting_staff)
+    special_preview = f"特殊效果: {special_effect}" if special_effect else "特殊效果: 无"
 
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
     buttons = [
@@ -112,7 +113,7 @@ async def on_proposal(message: types.Message, state: FSMContext):
     company_id = data["company_id"]
     buttons.append([InlineKeyboardButton(text="🔙 取消", callback_data=f"company:view:{company_id}")])
 
-    await message.answer(
+    sent = await message.answer(
         f"🧪 AI评估结果\n"
         f"{'─' * 24}\n"
         f"评分: {score}/100\n"
@@ -157,7 +158,7 @@ async def cb_aird_staff(callback: types.CallbackQuery, state: FSMContext):
             if staff_cost > 0:
                 ok = await add_funds(session, company_id, -staff_cost)
                 if not ok:
-                    await callback.answer(f"公司资金不足，需要 {staff_cost:,} 金币", show_alert=True)
+                    await callback.answer(f"公司资金不足，需要 {staff_cost:,} 积分", show_alert=True)
                     return
 
             ok, msg, income_increase = await apply_rd_result(

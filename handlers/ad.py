@@ -37,7 +37,7 @@ async def cb_ad_menu(callback: types.CallbackQuery):
         user = await get_user_by_tg_id(session, tg_id)
         company = await get_company_by_id(session, company_id)
         if not user:
-            await callback.answer("请先 /create_company 创建公司", show_alert=True)
+            await callback.answer("请先 /company_create 创建公司", show_alert=True)
             return
         if not company or company.owner_id != user.id:
             await callback.answer("无权操作", show_alert=True)
@@ -88,7 +88,7 @@ async def cb_buy_ad(callback: types.CallbackQuery):
             cost = tier["cost"]
             fund_ok = await add_funds(session, company_id, -cost)
             if not fund_ok:
-                await callback.answer(f"公司资金不足，需要 {cost:,} 金币", show_alert=True)
+                await callback.answer(f"公司资金不足，需要 {cost:,} 积分", show_alert=True)
                 return
 
             # 资金扣除成功后再购买广告

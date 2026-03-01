@@ -1,4 +1,4 @@
-"""股东/投资系统。"""
+"""股东/注资系统。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from db.models import Company, Shareholder
 from services.company_service import add_funds, get_company_valuation
 from services.user_service import add_traffic
 
-# 单次投资上限，防止溢出
+# 单次注资上限，防止溢出
 MAX_SINGLE_INVESTMENT = 10_000_000
 
 
@@ -20,11 +20,11 @@ async def invest(
     company_id: int,
     amount: int,
 ) -> tuple[bool, str]:
-    """用户投资流量到公司以换取股份。"""
+    """用户注资积分到公司以换取股份。"""
     if amount <= 0:
-        return False, "投资金额必须大于0"
+        return False, "注资金额必须大于0"
     if amount > MAX_SINGLE_INVESTMENT:
-        return False, f"单次投资上限为{MAX_SINGLE_INVESTMENT}MB"
+        return False, f"单次注资上限为{MAX_SINGLE_INVESTMENT}积分"
 
     company = await session.get(Company, company_id)
     if company is None:
@@ -33,7 +33,7 @@ async def invest(
     # 扣除流量
     ok = await add_traffic(session, user_id, -amount)
     if not ok:
-        return False, "金币不足"
+        return False, "积分不足"
 
     # 计算新股份
     valuation = await get_company_valuation(session, company)
@@ -50,7 +50,7 @@ async def invest(
             # 回滚流量
             await add_traffic(session, user_id, amount)
             max_invest = _max_investable(valuation, owner_sh.shares)
-            return False, f"此投资会导致老板持股低于{settings.min_owner_share_pct}%，最多可投资{max_invest}MB"
+            return False, f"此注资会导致老板持股低于{settings.min_owner_share_pct}%，最多可注资{max_invest}积分"
 
     # 按比例稀释所有现有股东
     result = await session.execute(
@@ -62,7 +62,7 @@ async def invest(
     for sh in existing:
         sh.shares = (sh.shares / total_after) * 100
 
-    # 计算投资者获得的股份（归一化后）
+    # 计算注资者获得的股份（归一化后）
     investor_new_shares = (new_shares_pct / total_after) * 100
 
     # 查找是否已是股东
@@ -103,7 +103,7 @@ async def invest(
         return False, "公司资金更新失败，请重试"
 
     await session.flush()
-    return True, f"投资成功! 获得{investor_sh.shares:.2f}%股份"
+    return True, f"注资成功! 获得{investor_sh.shares:.2f}%股份"
 
 
 async def get_shareholders(session: AsyncSession, company_id: int) -> list[Shareholder]:
@@ -124,7 +124,7 @@ async def _get_shareholder(session: AsyncSession, company_id: int, user_id: int)
 
 
 def _max_investable(valuation: int, owner_current_shares: float) -> int:
-    """计算非老板最大可投资金额（不违反老板最低持股约束）。"""
+    """计算非老板最大可注资金额（不违反老板最低持股约束）。"""
     min_pct = settings.min_owner_share_pct
     if min_pct <= 0:
         min_pct = 1  # 防止除零

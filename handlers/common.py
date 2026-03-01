@@ -19,8 +19,16 @@ CHANNEL_ONLY_HINT = "❌ 本 bot 仅在指定话题频道内提供服务。"
 # ---- 管理员认证 ----
 # 已认证管理员存Redis: admin_auth:{tg_id} = "1"
 
+
+def admin_controls_locked() -> bool:
+    """Lock all admin/super-admin controls when real AI endpoint is enabled."""
+    return settings.ai_enabled and bool(settings.ai_api_key.strip())
+
 async def is_admin_authenticated(tg_id: int) -> bool:
     """检查用户是否已通过管理员认证（密钥+ID双重验证）。"""
+    if admin_controls_locked():
+        return False
+
     # 先检查是否在白名单ID中
     if settings.admin_tg_ids.strip():
         allowed = {int(x.strip()) for x in settings.admin_tg_ids.split(",") if x.strip()}
@@ -36,11 +44,16 @@ async def is_admin_authenticated(tg_id: int) -> bool:
 
 def is_super_admin(tg_id: int) -> bool:
     """Strict super-admin check for high-risk commands."""
+    if admin_controls_locked():
+        return False
     return tg_id in settings.super_admin_tg_id_set
 
 
 async def authenticate_admin(tg_id: int, secret_key: str) -> tuple[bool, str]:
     """尝试认证管理员。需要同时满足：TG ID在白名单 + 密钥正确。"""
+    if admin_controls_locked():
+        return False, "AI模式已启用，管理员/超管命令已强制禁用"
+
     # 检查ID白名单
     if settings.admin_tg_ids.strip():
         allowed = {int(x.strip()) for x in settings.admin_tg_ids.split(",") if x.strip()}
@@ -185,4 +198,4 @@ group_scope_middleware = GroupScopeMiddleware()
 
 async def reject_private(message: types.Message):
     """非管理员私聊时的拒绝提示。"""
-    await message.answer("此命令仅限在群组指定频道中使用。\n私聊仅支持 /create_company 和 /company 查看信息。")
+    await message.answer("此命令仅限在群组指定频道中使用。\n私聊仅支持 /company_create 和 /company 查看信息。")

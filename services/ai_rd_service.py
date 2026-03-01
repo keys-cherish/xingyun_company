@@ -9,6 +9,7 @@ Features:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -59,6 +60,14 @@ HARUHIKAGE_MEME_LINES = (
 )
 
 HYPE_WORDS = ("颠覆", "革命性", "躺赚", "稳赚", "秒杀", "无敌", "爆款", "全网第一")
+DEFAULT_AI_BASE_URL = "https://api.openai.com/v1"
+
+
+def _default_system_prompt() -> str:
+    return (
+        "你是“严苛文案评审官”，只给基于证据的评分，不给安慰。"
+        "缺证据就扣分，空话套话直接批评。"
+    )
 
 
 def _contains_any(text: str, words: tuple[str, ...] | list[str]) -> bool:
@@ -276,17 +285,52 @@ def _strict_fallback_evaluate(proposal: str) -> tuple[int, str]:
     return score, feedback
 
 
+def _normalize_completion_url(base_url: str) -> str:
+    candidate = (base_url or "").strip() or DEFAULT_AI_BASE_URL
+    candidate = candidate.rstrip("/")
+    if candidate.endswith("/chat/completions"):
+        return candidate
+    return f"{candidate}/chat/completions"
+
+
+def _parse_extra_headers(raw_headers_json: str) -> dict[str, str]:
+    raw = (raw_headers_json or "").strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+        if not isinstance(parsed, dict):
+            return {}
+        return {str(k): str(v) for k, v in parsed.items()}
+    except Exception:
+        logger.warning("Invalid AI_EXTRA_HEADERS_JSON, ignored")
+        return {}
+
+
+def _extract_content_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        text_chunks: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                txt = item.get("text")
+                if isinstance(txt, str):
+                    text_chunks.append(txt)
+        return "\n".join(text_chunks)
+    return str(content)
+
+
 async def evaluate_proposal_ai(proposal: str) -> tuple[int, str, dict[str, Any] | None]:
     """Evaluate a proposal and return (score, feedback, special_effect)."""
-    if not settings.ai_api_key:
+    if not settings.ai_enabled or not settings.ai_api_key.strip():
         score, feedback = _strict_fallback_evaluate(proposal)
         return score, feedback, _build_haruhikage_effect(proposal, score)
 
     try:
         import httpx
 
-        prompt = (
-            "你是“严苛文案评审官”，只给基于证据的评分，不给安慰。\n"
+        user_prompt = (
             "请对下面方案做严格批判，按以下维度输出:\n"
             "1) 创新性(0-25)\n"
             "2) 市场可行性(0-25)\n"
@@ -301,23 +345,48 @@ async def evaluate_proposal_ai(proposal: str) -> tuple[int, str, dict[str, Any] 
             '"critique": ["..."], "suggestions": ["..."]}'
         )
 
+        system_prompt = (settings.ai_system_prompt or "").strip() or _default_system_prompt()
         headers = {
             "Authorization": f"Bearer {settings.ai_api_key}",
             "Content-Type": "application/json",
         }
+        headers.update(_parse_extra_headers(settings.ai_extra_headers_json))
+
+        temperature = max(0.0, min(2.0, float(settings.ai_temperature)))
+        top_p = max(0.0, min(1.0, float(settings.ai_top_p)))
+        max_tokens = max(128, int(settings.ai_max_tokens))
         payload = {
-            "model": settings.ai_model or "gpt-3.5-turbo",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.2,
-            "max_tokens": 500,
+            "model": (settings.ai_model or "").strip() or "gpt-4o-mini",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            "temperature": temperature,
+            "top_p": top_p,
+            "max_tokens": max_tokens,
         }
 
-        base_url = settings.ai_api_base_url or "https://api.openai.com/v1"
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-            content = data["choices"][0]["message"]["content"]
+        completion_url = _normalize_completion_url(settings.ai_api_base_url)
+        timeout = max(5, int(settings.ai_timeout_seconds))
+        retry_times = max(0, int(settings.ai_max_retries))
+        retry_backoff = max(0.2, float(settings.ai_retry_backoff_seconds))
+
+        data: dict[str, Any] = {}
+        for attempt in range(retry_times + 1):
+            try:
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    resp = await client.post(completion_url, json=payload, headers=headers)
+                    resp.raise_for_status()
+                    data = resp.json()
+                break
+            except Exception:
+                if attempt >= retry_times:
+                    raise
+                await asyncio.sleep(retry_backoff * (attempt + 1))
+
+        choice = (data.get("choices") or [{}])[0]
+        message = choice.get("message") or {}
+        content = _extract_content_text(message.get("content", ""))
 
         json_match = re.search(r"\{.*\}", content, re.S)
         if not json_match:

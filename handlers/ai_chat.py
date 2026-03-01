@@ -86,12 +86,21 @@ async def on_ai_bot_mention(message: types.Message):
 
     bot_user = await message.bot.get_me()
     bot_username = (bot_user.username or "").strip()
-    if not bot_username:
-        return
 
-    username = re.escape(bot_username)
-    mention_pattern = rf"(?<![A-Za-z0-9_])@{username}(?![A-Za-z0-9_])"
-    if not re.search(mention_pattern, text, flags=re.IGNORECASE):
+    mention_hit = False
+    if bot_username:
+        username = re.escape(bot_username)
+        mention_pattern = rf"(?<![A-Za-z0-9_])@{username}(?![A-Za-z0-9_])"
+        mention_hit = bool(re.search(mention_pattern, text, flags=re.IGNORECASE))
+
+    reply_to = message.reply_to_message
+    reply_to_bot = bool(
+        reply_to
+        and reply_to.from_user
+        and bot_user.id == reply_to.from_user.id
+    )
+
+    if not mention_hit and not reply_to_bot:
         return
 
     tg_id = message.from_user.id
@@ -105,7 +114,7 @@ async def on_ai_bot_mention(message: types.Message):
             await message.reply("⏳ 你调用太频繁了：每人每分钟最多 10 次。")
             return
 
-    prompt = _extract_prompt_without_mention(text, bot_username)
+    prompt = _extract_prompt_without_mention(text, bot_username) if bot_username else text
     if not prompt:
         await message.reply("请在 @我 后面加上问题内容。")
         return

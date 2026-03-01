@@ -9,7 +9,7 @@ from aiogram.types import BotCommand
 from cache.redis_client import get_leaderboard
 from config import settings
 from db.engine import async_session
-from keyboards.menus import main_menu_kb
+from keyboards.menus import main_menu_kb, tag_kb
 from services.company_service import get_companies_by_owner
 from services.user_service import get_or_create_user, get_points, get_quota_mb
 from utils.formatters import fmt_traffic, fmt_quota, compact_number
@@ -60,14 +60,28 @@ HELP_TEXT = (
 
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):
-    """引导入口：仅展示欢迎信息，引导用户使用 /create_company。"""
-    await message.answer(
-        "🏢 商业帝国 — 公司经营模拟游戏\n"
-        f"{'─' * 24}\n\n"
-        "👉 /create_company — 注册并创建你的公司\n"
-        "👉 /company — 查看你的公司\n"
-        "👉 /help — 查看完整帮助\n"
-    )
+    tg_id = message.from_user.id
+    tg_name = message.from_user.full_name or str(tg_id)
+
+    async with async_session() as session:
+        async with session.begin():
+            user, created = await get_or_create_user(session, tg_id, tg_name)
+            user_id = user.id
+            traffic = user.traffic
+            reputation = user.reputation
+
+    if created:
+        await message.answer(
+            f"欢迎加入 商业帝国!\n"
+            f"已发放初始资金: {fmt_traffic(settings.initial_traffic)}\n\n"
+            f"使用下方菜单开始游戏:",
+            reply_markup=main_menu_kb(tg_id=tg_id),
+        )
+    else:
+        await message.answer(
+            f"🏢 商业帝国 — 主菜单",
+            reply_markup=main_menu_kb(tg_id=tg_id),
+        )
 
 
 @router.message(Command("help"))
@@ -77,25 +91,10 @@ async def cmd_help(message: types.Message):
 
 @router.callback_query(F.data == "menu:main")
 async def cb_menu_main(callback: types.CallbackQuery):
-    """menu:main now redirects to company view."""
-    tg_id = callback.from_user.id
-    async with async_session() as session:
-        from services.user_service import get_user_by_tg_id
-        user = await get_user_by_tg_id(session, tg_id)
-        if not user:
-            await callback.answer("请先 /create_company 创建公司", show_alert=True)
-            return
-        companies = await get_companies_by_owner(session, user.id)
-
-    if companies:
-        from handlers.company import render_company_detail, _safe_edit_or_send
-        text, kb = await render_company_detail(companies[0].id, tg_id)
-        await _safe_edit_or_send(callback, text, kb)
-    else:
-        await callback.message.edit_text(
-            "你还没有公司，使用 /create_company 创建",
-            reply_markup=main_menu_kb(),
-        )
+    await callback.message.edit_text(
+        "🏢 商业帝国 — 主菜单",
+        reply_markup=main_menu_kb(tg_id=callback.from_user.id),
+    )
     await callback.answer()
 
 
@@ -133,7 +132,7 @@ async def cb_menu_profile(callback: types.CallbackQuery):
         f"🏢 公司: {company_names}\n"
     )
 
-    await callback.message.edit_text(text, reply_markup=main_menu_kb())
+    await callback.message.edit_text(text, reply_markup=main_menu_kb(tg_id=callback.from_user.id))
     await callback.answer()
 
 
@@ -185,6 +184,7 @@ async def _show_leaderboard(callback: types.CallbackQuery, board_type: str):
         cat_buttons,
         [InlineKeyboardButton(text="🔙 返回", callback_data="menu:company")],
     ])
+    kb = tag_kb(kb, callback.from_user.id)
     try:
         await callback.message.edit_text("\n".join(lines), reply_markup=kb)
     except Exception:

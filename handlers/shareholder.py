@@ -27,6 +27,7 @@ class InvestState(StatesGroup):
 
 async def _refresh_shareholder_list(callback: types.CallbackQuery, company_id: int):
     """操作后刷新股东列表消息。"""
+    tg_id = callback.from_user.id
     try:
         async with async_session() as session:
             shareholders = await get_shareholders(session, company_id)
@@ -40,7 +41,7 @@ async def _refresh_shareholder_list(callback: types.CallbackQuery, company_id: i
         from keyboards.menus import company_detail_kb
         await callback.message.edit_text(
             "\n".join(lines),
-            reply_markup=company_detail_kb(company_id, False),
+            reply_markup=company_detail_kb(company_id, False, tg_id=tg_id),
         )
     except Exception:
         pass  # 消息未变化时edit会抛异常，忽略
@@ -62,7 +63,7 @@ async def cb_shareholders(callback: types.CallbackQuery):
     from keyboards.menus import company_detail_kb
     await callback.message.edit_text(
         "\n".join(lines),
-        reply_markup=company_detail_kb(company_id, False),
+        reply_markup=company_detail_kb(company_id, False, tg_id=callback.from_user.id),
     )
     await callback.answer()
 
@@ -70,7 +71,7 @@ async def cb_shareholders(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("shareholder:invest:"))
 async def cb_invest_menu(callback: types.CallbackQuery):
     company_id = int(callback.data.split(":")[2])
-    await callback.message.edit_text("选择投资金额:", reply_markup=invest_kb(company_id))
+    await callback.message.edit_text("选择投资金额:", reply_markup=invest_kb(company_id, tg_id=callback.from_user.id))
     await callback.answer()
 
 

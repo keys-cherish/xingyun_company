@@ -52,6 +52,45 @@ def _register_routers(dp: Dispatcher):
     dp.include_router(battle_router)
     dp.include_router(quest_router)
 
+    # 私聊兜底：非管理员只允许常用命令，管理员放行
+    from handlers.common import reject_private, is_admin_authenticated
+    from aiogram import F, Router
+    from aiogram.fsm.context import FSMContext
+    fallback = Router()
+
+    @fallback.message(F.chat.type == "private")
+    async def _private_fallback(message, state: FSMContext):
+        current_state = await state.get_state()
+        if current_state is not None:
+            return
+        allowed_prefixes = (
+            "/company",
+            "/list_company",
+            "/member",
+            "/start",
+            "/create_company",
+            "/admin",
+            "/help",
+            "/battle",
+            "/cooperate",
+            "/new_product",
+            "/dissolve",
+            "/clear_product",
+            "/rank_company",
+            "/makeup",
+            "/give_money",
+            "/welfare",
+            "/quest",
+            "/cleanup",
+        )
+        if message.text and message.text.startswith(allowed_prefixes):
+            return
+        if await is_admin_authenticated(message.from_user.id):
+            return
+        await reject_private(message)
+
+    dp.include_router(fallback)
+
 
 async def main():
     if not settings.bot_token:
@@ -64,9 +103,6 @@ async def main():
         default=DefaultBotProperties(parse_mode=None),
     )
     dp = Dispatcher(storage=MemoryStorage())
-    from handlers.common import group_scope_middleware
-    dp.message.middleware(group_scope_middleware)
-    dp.callback_query.middleware(group_scope_middleware)
 
     # 初始化数据库
     await init_db()
@@ -77,12 +113,15 @@ async def main():
 
     # 注册限流中间件
     from utils.throttle import ThrottleMiddleware
+    from utils.topic_gate import TopicGateMiddleware
+    dp.message.middleware(TopicGateMiddleware())
+    dp.callback_query.middleware(TopicGateMiddleware())
     dp.message.middleware(ThrottleMiddleware())
     dp.callback_query.middleware(ThrottleMiddleware())
 
-    # 注册面板权限中间件（群组中禁止点击他人面板）
-    from utils.panel_owner import PanelOwnerMiddleware
-    dp.callback_query.middleware(PanelOwnerMiddleware())
+    # 注册面板权限中间件（outer，在路由匹配前执行）
+    from utils.panel_auth import PanelOwnerMiddleware
+    dp.callback_query.outer_middleware(PanelOwnerMiddleware())
 
     # 注册Bot命令列表（Telegram输入框命令提示）
     from handlers.start import BOT_COMMANDS

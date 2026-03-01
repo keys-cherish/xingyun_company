@@ -12,7 +12,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from config import settings as cfg
 from db.engine import async_session
 from handlers.common import is_super_admin
-from keyboards.menus import company_detail_kb, company_list_kb
+from keyboards.menus import company_detail_kb, company_list_kb, tag_kb
 from services.company_service import (
     add_funds,
     create_company,
@@ -317,6 +317,10 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
         )).scalar()
         estate_income = await get_total_estate_income(session, company_id)
 
+        # 获取进行中的科研
+        from services.research_service import get_in_progress_research, get_tech_tree_display
+        in_progress_research = await get_in_progress_research(session, company_id)
+
     type_info = get_company_type_info(company.company_type)
     type_display = f"{type_info['emoji']} {type_info['name']}" if type_info else company.company_type
 
@@ -359,6 +363,27 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
     else:
         upgrade_block = "🏆 已达最高等级!\n"
 
+    # 科研进度文本
+    research_block = ""
+    if in_progress_research:
+        import datetime as dt
+        from utils.formatters import fmt_duration
+        tree = {t["tech_id"]: t for t in get_tech_tree_display()}
+        now = dt.datetime.utcnow()
+        rlines = []
+        for rp in in_progress_research:
+            tech_info = tree.get(rp.tech_id, {})
+            name = tech_info.get("name", rp.tech_id)
+            duration_sec = tech_info.get("duration_seconds", 3600)
+            started = rp.started_at.replace(tzinfo=None) if rp.started_at.tzinfo else rp.started_at
+            elapsed = (now - started).total_seconds()
+            remaining = max(0, int(duration_sec - elapsed))
+            if remaining > 0:
+                rlines.append(f"  • {name} — 剩余 {fmt_duration(remaining)}")
+            else:
+                rlines.append(f"  • {name} — 即将完成")
+        research_block = "⏳ 研究中:\n" + "\n".join(rlines) + "\n"
+
     text = (
         f"🏢 {company.name} (ID: {company.id})\n"
         f"类型: {type_display}\n"
@@ -372,9 +397,10 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
         f"⭐ Lv.{company.level}「{level_name}」\n"
         f"👥 股东:{sh_count} | 👷 员工:{company.employee_count}/{max_employees} | 📦 产品:{prod_count} | 🔬 科技:{tech_count}\n"
         f"{'─' * 24}\n"
+        f"{research_block}"
         f"{upgrade_block}"
     )
-    return text, company_detail_kb(company_id, is_owner)
+    return text, company_detail_kb(company_id, is_owner, tg_id=tg_id)
 
 
 async def _refresh_company_view(callback: types.CallbackQuery, company_id: int):
@@ -400,7 +426,7 @@ async def cmd_company(message: types.Message):
     if not companies:
         await message.answer(
             "你还没有公司。",
-            reply_markup=company_list_kb([]),
+            reply_markup=company_list_kb([], tg_id=message.from_user.id),
         )
         return
 
@@ -412,8 +438,7 @@ async def cmd_company(message: types.Message):
         return
 
     items = [(c.id, c.name) for c in companies]
-    sent = await message.answer("🏢 你的公司列表:", reply_markup=company_list_kb(items))
-    await mark_panel(message.chat.id, sent.message_id, tg_id)
+    await message.answer("🏢 你的公司列表:", reply_markup=company_list_kb(items, tg_id=message.from_user.id))
 
 
 @router.callback_query(F.data == "menu:company")
@@ -434,7 +459,7 @@ async def cb_menu_company(callback: types.CallbackQuery):
         return
 
     items = [(c.id, c.name) for c in companies]
-    await _safe_edit_or_send(callback, "🏢 你的公司列表:", company_list_kb(items))
+    await _safe_edit_or_send(callback, "🏢 你的公司列表:", company_list_kb(items, tg_id=callback.from_user.id))
     await callback.answer()
 
 
@@ -450,7 +475,11 @@ async def cb_menu_company_list(callback: types.CallbackQuery):
         companies = await get_companies_by_owner(session, user.id)
 
     items = [(c.id, c.name) for c in companies]
-    await _safe_edit_or_send(callback, "🏢 你的公司列表:", company_list_kb(items))
+    await _safe_edit_or_send(
+        callback,
+        "🏢 你的公司列表:",
+        company_list_kb(items, tg_id=callback.from_user.id),
+    )
     await callback.answer()
 
 
@@ -517,7 +546,13 @@ async def _start_company_type_selection(message: types.Message, state: FSMContex
         "🏢 创建公司\n选择公司类型:\n\n" +
         "\n".join(f"{info['emoji']} {info['name']} — {info['description']}" for info in types_data.values())
     )
-    sent = await message.answer(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    sent = await message.answer(
+        text,
+        reply_markup=tag_kb(
+            InlineKeyboardMarkup(inline_keyboard=buttons),
+            message.from_user.id,
+        ),
+    )
     await mark_panel(message.chat.id, sent.message_id, message.from_user.id)
     await state.set_state(CreateCompanyState.waiting_type)
 
@@ -537,7 +572,7 @@ async def cb_company_create(callback: types.CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         "选择公司类型:\n\n" +
         "\n".join(f"{info['emoji']} {info['name']} — {info['description']}" for info in types_data.values()),
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        reply_markup=tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), callback.from_user.id),
     )
     await state.set_state(CreateCompanyState.waiting_type)
     await callback.answer()
@@ -578,9 +613,8 @@ async def on_company_name(message: types.Message, state: FSMContext):
     await state.clear()
 
     if company:
-        text, kb = await render_company_detail(company.id, message.from_user.id)
-        sent = await message.answer(text, reply_markup=kb)
-        await mark_panel(message.chat.id, sent.message_id, message.from_user.id)
+        from keyboards.menus import main_menu_kb
+        await message.answer("返回主菜单:", reply_markup=main_menu_kb(tg_id=message.from_user.id))
 
 
 # ---- 招聘/裁员 ----
@@ -728,6 +762,7 @@ async def cb_rename(callback: types.CallbackQuery, state: FSMContext):
             InlineKeyboardButton(text="❌ 取消", callback_data=f"company:view:{company_id}"),
         ],
     ])
+    kb = tag_kb(kb, callback.from_user.id)
     await callback.message.edit_text(
         f"✏️ 公司改名 — {company.name}\n"
         f"{'─' * 24}\n"
@@ -808,6 +843,8 @@ async def on_new_name(message: types.Message, state: FSMContext):
         f"📉 当日营收将降低 {int(RENAME_REVENUE_PENALTY * 100)}%，次日恢复"
     )
     await state.clear()
+    from keyboards.menus import main_menu_kb
+    await message.answer("返回主菜单:", reply_markup=main_menu_kb(tg_id=message.from_user.id))
 
     # 改名后刷新公司面板
     text, kb = await render_company_detail(company_id, message.from_user.id)

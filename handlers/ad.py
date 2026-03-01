@@ -5,7 +5,7 @@ from __future__ import annotations
 from aiogram import F, Router, types
 
 from db.engine import async_session
-from keyboards.menus import main_menu_kb
+from keyboards.menus import main_menu_kb, tag_kb
 from services.ad_service import get_active_ad_info, get_ad_tiers, buy_ad, cancel_ad
 from services.company_service import add_funds, get_company_by_id
 from services.user_service import get_user_by_tg_id
@@ -14,7 +14,7 @@ from handlers.company import _refresh_company_view
 router = Router()
 
 
-def _ad_menu_kb(company_id: int):
+def _ad_menu_kb(company_id: int, tg_id: int | None = None):
     from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
     tiers = get_ad_tiers()
     buttons = [
@@ -25,7 +25,7 @@ def _ad_menu_kb(company_id: int):
         for t in tiers
     ]
     buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    return tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), tg_id)
 
 
 @router.callback_query(F.data.startswith("ad:menu:"))
@@ -44,6 +44,7 @@ async def cb_ad_menu(callback: types.CallbackQuery):
             return
 
     ad_info = await get_active_ad_info(company_id)
+    tg_id = callback.from_user.id
     if ad_info:
         text = (
             f"📢 广告投放\n"
@@ -53,12 +54,12 @@ async def cb_ad_menu(callback: types.CallbackQuery):
             "当前已有活动广告，请等待结束后购买新广告。"
         )
         from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-        kb = InlineKeyboardMarkup(inline_keyboard=[
+        kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")]
-        ])
+        ]), tg_id)
         await callback.message.edit_text(text, reply_markup=kb)
     else:
-        await callback.message.edit_text("📢 选择广告方案:", reply_markup=_ad_menu_kb(company_id))
+        await callback.message.edit_text("📢 选择广告方案:", reply_markup=_ad_menu_kb(company_id, tg_id=tg_id))
     await callback.answer()
 
 

@@ -18,9 +18,14 @@ class Settings(BaseSettings):
     # Comma-separated list of allowed topic(thread) IDs in forum supergroups.
     # Example: "18833,20001"
     allowed_topic_thread_ids: str = ""
+    # 兼容旧配置：单个论坛话题ID（message_thread_id）。0 表示不限制。
+    allowed_topic_thread_id: int = 0
 
     # Database
     database_url: str = "postgresql+asyncpg://mycompany:mycompany@localhost:5432/mycompany"
+    postgres_db: str = ""
+    postgres_user: str = ""
+    postgres_password: str = ""
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
@@ -56,6 +61,10 @@ class Settings(BaseSettings):
     # Settlement
     settlement_hour: int = 0  # midnight UTC
     settlement_minute: int = 0
+    backup_enabled: bool = True
+    backup_interval_minutes: int = 60
+    backup_keep_files: int = 72
+    backup_notify_super_admin: bool = True
 
     # Tax system
     tax_rate: float = 0.06
@@ -82,6 +91,8 @@ class Settings(BaseSettings):
     traffic_exchange_rate: float = 1.0  # 外部积分兑换流量汇率
 
     # 管理员
+    super_admin_tg_id: int = 0  # 兼容旧配置：单个超级管理员TG ID（高危命令）
+    super_admin_tg_ids: str = ""  # 新配置：逗号分隔的超级管理员TG ID列表
     admin_tg_ids: str = ""  # 逗号分隔的管理员TG ID列表
     admin_secret_key: str = ""  # 管理员认证密钥
 
@@ -90,6 +101,15 @@ class Settings(BaseSettings):
         if not self.admin_tg_ids.strip():
             return set()
         return {int(x.strip()) for x in self.admin_tg_ids.split(",") if x.strip()}
+
+    @property
+    def super_admin_tg_id_set(self) -> set[int]:
+        ids: set[int] = set()
+        if self.super_admin_tg_ids.strip():
+            ids.update({int(x.strip()) for x in self.super_admin_tg_ids.split(",") if x.strip()})
+        if self.super_admin_tg_id > 0:
+            ids.add(self.super_admin_tg_id)
+        return ids
 
     @property
     def allowed_chat_id_set(self) -> set[int]:
@@ -109,9 +129,12 @@ class Settings(BaseSettings):
 
     @property
     def allowed_topic_thread_id_set(self) -> set[int]:
-        if not self.allowed_topic_thread_ids.strip():
-            return set()
-        return {int(x.strip()) for x in self.allowed_topic_thread_ids.split(",") if x.strip()}
+        ids: set[int] = set()
+        if self.allowed_topic_thread_ids.strip():
+            ids.update({int(x.strip()) for x in self.allowed_topic_thread_ids.split(",") if x.strip()})
+        if self.allowed_topic_thread_id > 0:
+            ids.add(self.allowed_topic_thread_id)
+        return ids
 
 
 settings = Settings()

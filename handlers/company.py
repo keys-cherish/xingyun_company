@@ -50,6 +50,7 @@ from services.operations_service import (
     get_market_trend,
     get_operation_multipliers,
     get_or_create_profile,
+    get_training_info,
     load_recent_events,
     reputation_rating,
     set_work_hours,
@@ -790,8 +791,17 @@ async def cb_hire(callback: types.CallbackQuery):
         if hire_count <= 0:
             await callback.answer("无可用名额", show_alert=True)
             return
+        profile = await get_or_create_profile(session, company_id)
 
+    # Ethics affects hiring cost
     hire_cost_per = cfg.employee_salary_base * 10
+    ethics_label = ""
+    if profile.ethics >= 70:
+        hire_cost_per = int(hire_cost_per * 0.80)
+        ethics_label = "（道德≥70，-20%）"
+    elif profile.ethics < 30:
+        hire_cost_per = int(hire_cost_per * 1.50)
+        ethics_label = "（道德<30，+50%）"
     total_cost = hire_count * hire_cost_per
     daily_salary = hire_count * cfg.employee_salary_base
 
@@ -799,7 +809,7 @@ async def cb_hire(callback: types.CallbackQuery):
         f"👷 招聘确认",
         f"{'─' * 24}",
         f"招聘人数：{hire_count}人",
-        f"单价：{fmt_traffic(hire_cost_per)}/人（一次性）",
+        f"单价：{fmt_traffic(hire_cost_per)}/人{ethics_label}",
         f"总费用：{fmt_traffic(total_cost)}",
         f"{'─' * 24}",
         f"👥 当前员工：{company.employee_count}/{max_emp}人",
@@ -853,7 +863,13 @@ async def cb_do_hire(callback: types.CallbackQuery):
                 await callback.answer("无可用名额", show_alert=True)
                 return
 
+            # Ethics affects hiring cost
+            profile = await get_or_create_profile(session, company_id)
             hire_cost_per = cfg.employee_salary_base * 10
+            if profile.ethics >= 70:
+                hire_cost_per = int(hire_cost_per * 0.80)
+            elif profile.ethics < 30:
+                hire_cost_per = int(hire_cost_per * 1.50)
             total_cost = hire_count * hire_cost_per
 
             ok = await add_funds(session, company_id, -total_cost)
@@ -937,7 +953,7 @@ async def cb_upgrade(callback: types.CallbackQuery):
 
 # ---- 经营策略（工时/办公/培训/保险/文化/道德/监管）----
 
-def _ops_menu_kb(company_id: int, tg_id: int) -> InlineKeyboardMarkup:
+def _ops_menu_kb(company_id: int, tg_id: int, training_active: bool = False) -> InlineKeyboardMarkup:
     rows = [
         [
             InlineKeyboardButton(text="6h 轻松", callback_data=f"ops:work:{company_id}:6"),
@@ -955,22 +971,31 @@ def _ops_menu_kb(company_id: int, tg_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="🛂 监管+8", callback_data=f"ops:cycle:{company_id}:regulation"),
         ],
         [
-            InlineKeyboardButton(text="🏅 基础培训(×1.12)", callback_data=f"ops:train:{company_id}:basic"),
-            InlineKeyboardButton(text="🏅 岗位实训(×1.30)", callback_data=f"ops:train:{company_id}:pro"),
+            InlineKeyboardButton(text="🏅 基础(×1.12)", callback_data=f"ops:train:{company_id}:basic"),
+            InlineKeyboardButton(text="🏅 实训(×1.30)", callback_data=f"ops:train:{company_id}:pro"),
+            InlineKeyboardButton(text="🏅 特训(×1.50)", callback_data=f"ops:train:{company_id}:elite"),
         ],
-        [
-            InlineKeyboardButton(text="🏅 精英特训(×1.50)", callback_data=f"ops:train:{company_id}:elite"),
-            InlineKeyboardButton(text="⛔ 停止培训", callback_data=f"ops:train:{company_id}:none"),
-        ],
-        [InlineKeyboardButton(text="🔙 返回公司", callback_data=f"company:view:{company_id}")],
     ]
+    if training_active:
+        rows.append([InlineKeyboardButton(text="⛔ 停止培训", callback_data=f"ops:train:{company_id}:none")])
+    rows.append([InlineKeyboardButton(text="🔙 返回公司", callback_data=f"company:view:{company_id}")])
     return tag_kb(InlineKeyboardMarkup(inline_keyboard=rows), tg_id)
+
+
+async def _check_training_active(company_id: int) -> bool:
+    """Check if training is currently active for a company."""
+    import datetime as dt
+    async with async_session() as session:
+        profile = await get_or_create_profile(session, company_id)
+        info = get_training_info(profile, dt.datetime.now(dt.UTC))
+        return info["active"]
 
 
 @router.callback_query(F.data.startswith("ops:menu:"))
 async def cb_ops_menu(callback: types.CallbackQuery):
     company_id = int(callback.data.split(":")[2])
     text, _ = await render_company_detail(company_id, callback.from_user.id)
+    training_active = await _check_training_active(company_id)
     header = (
         "⚙️ 经营策略中心\n"
         "工时、办公、培训、保险、文化、道德、监管会影响次日结算\n"
@@ -979,7 +1004,7 @@ async def cb_ops_menu(callback: types.CallbackQuery):
     await _safe_edit_or_send(
         callback,
         header + text,
-        _ops_menu_kb(company_id, callback.from_user.id),
+        _ops_menu_kb(company_id, callback.from_user.id, training_active),
     )
     await callback.answer()
 
@@ -1028,11 +1053,12 @@ async def cb_ops_do_work(callback: types.CallbackQuery):
             ok, msg = await set_work_hours(session, cid, user.id, hours)
     await callback.answer(msg, show_alert=True)
     if ok:
+        training_active = await _check_training_active(cid)
         text, _ = await render_company_detail(cid, callback.from_user.id)
         await _safe_edit_or_send(
             callback,
             "⚙️ 经营策略中心\n" + text,
-            _ops_menu_kb(cid, callback.from_user.id),
+            _ops_menu_kb(cid, callback.from_user.id, training_active),
         )
 
 
@@ -1108,8 +1134,12 @@ async def cb_ops_cycle(callback: types.CallbackQuery):
             f"当前道德：{profile.ethics}/100 ({ethics_rating(profile.ethics)})",
             f"整改后：{new_val}/100 ({ethics_rating(new_val)})",
             f"{'─' * 24}",
-            f"📉 道德<50时：罚款概率增加、负面事件增多",
-            f"📈 道德≥50时：降低罚款风险",
+            f"📉 道德<20时：员工可能愤而离职",
+            f"📉 道德<30时：招聘成本+50%，估值-20%",
+            f"🚫 道德<40时：无法发起合作",
+            f"📈 道德≥70时：招聘成本-20%，估值+15%",
+            f"📈 道德≥80时：合作buff翻倍",
+            f"📈 道德≥90时：触发专属好事件",
             f"💡 整改免费",
         ]
     elif field == "regulation":
@@ -1154,11 +1184,12 @@ async def cb_ops_do_cycle(callback: types.CallbackQuery):
             ok, msg = await cycle_option(session, cid, user.id, field)
     await callback.answer(msg, show_alert=True)
     if ok:
+        training_active = await _check_training_active(cid)
         text, _ = await render_company_detail(cid, callback.from_user.id)
         await _safe_edit_or_send(
             callback,
             "⚙️ 经营策略中心\n" + text,
-            _ops_menu_kb(cid, callback.from_user.id),
+            _ops_menu_kb(cid, callback.from_user.id, training_active),
         )
 
 
@@ -1184,7 +1215,7 @@ async def cb_ops_train(callback: types.CallbackQuery):
             await _safe_edit_or_send(
                 callback,
                 "⚙️ 经营策略中心\n" + text,
-                _ops_menu_kb(cid, callback.from_user.id),
+                _ops_menu_kb(cid, callback.from_user.id, training_active=False),
             )
         return
 
@@ -1194,6 +1225,10 @@ async def cb_ops_train(callback: types.CallbackQuery):
         if not company:
             await callback.answer("公司不存在", show_alert=True)
             return
+        profile = await get_or_create_profile(session, cid)
+
+    import datetime as dt
+    training_info = get_training_info(profile, dt.datetime.now(dt.UTC))
 
     total_cost = company.employee_count * info["hourly_cost"] * info["duration_hours"]
     lines = [
@@ -1202,13 +1237,19 @@ async def cb_ops_train(callback: types.CallbackQuery):
         f"营收倍率：×{info['income_mult']:.2f}",
         f"持续时间：{info['duration_hours']}小时",
         f"{'─' * 24}",
+    ]
+    if training_info["active"]:
+        cur_info = TRAINING_LEVELS.get(training_info["key"], TRAINING_LEVELS["none"])
+        lines.append(f"⚠️ 当前培训「{cur_info['name']}」将被覆盖")
+
+    lines.extend([
         f"👥 当前员工：{company.employee_count}人",
         f"💰 费用 = {company.employee_count}人 × {info['hourly_cost']}金/时 × {info['duration_hours']}h",
         f"💰 总计：{fmt_traffic(total_cost)}",
         f"🏦 公司资金：{fmt_traffic(company.total_funds)}",
         f"{'─' * 24}",
         f"🎭 开始培训额外+4文化值",
-    ]
+    ])
 
     if total_cost > company.total_funds:
         lines.append(f"❌ 资金不足！还差 {fmt_traffic(total_cost - company.total_funds)}")
@@ -1237,11 +1278,12 @@ async def cb_ops_do_train(callback: types.CallbackQuery):
             ok, msg = await start_training(session, cid, user.id, level)
     await callback.answer(msg, show_alert=True)
     if ok:
+        training_active = await _check_training_active(cid)
         text, _ = await render_company_detail(cid, callback.from_user.id)
         await _safe_edit_or_send(
             callback,
             "⚙️ 经营策略中心\n" + text,
-            _ops_menu_kb(cid, callback.from_user.id),
+            _ops_menu_kb(cid, callback.from_user.id, training_active),
         )
 
 

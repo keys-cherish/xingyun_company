@@ -65,6 +65,12 @@ async def create_cooperation(
     if not ca or not cb:
         return False, "公司不存在"
 
+    # Ethics gate: <40 blocks cooperation
+    from services.operations_service import get_or_create_profile
+    profile_a = await get_or_create_profile(session, company_a_id)
+    if profile_a.ethics < 40:
+        return False, f"道德值过低（{profile_a.ethics}/100），无法发起合作（需≥40）"
+
     # Check if already cooperating with this specific company today
     a_active = await get_active_cooperations(session, company_a_id)
     for c in a_active:
@@ -77,11 +83,18 @@ async def create_cooperation(
     if current_bonus >= COOP_BUFF_CAP:
         return False, f"合作Buff已达上限（{int(COOP_BUFF_CAP * 100)}%），今日无法继续合作"
 
+    # Ethics ≥80: double cooperation buff
+    bonus_mult = DEFAULT_BONUS_MULTIPLIER
+    ethics_note = ""
+    if profile_a.ethics >= 80:
+        bonus_mult = DEFAULT_BONUS_MULTIPLIER * 2
+        ethics_note = "（道德≥80，双倍加成）"
+
     expires_at = _next_settlement_time()
     coop = Cooperation(
         company_a_id=company_a_id,
         company_b_id=company_b_id,
-        bonus_multiplier=DEFAULT_BONUS_MULTIPLIER,
+        bonus_multiplier=bonus_mult,
         expires_at=expires_at,
     )
     session.add(coop)
@@ -98,9 +111,9 @@ async def create_cooperation(
     await update_quest_progress(session, ca.owner_id, "cooperation_count", increment=1)
     await update_quest_progress(session, cb.owner_id, "cooperation_count", increment=1)
 
-    new_total = min(current_bonus + DEFAULT_BONUS_MULTIPLIER, COOP_BUFF_CAP)
+    new_total = min(current_bonus + bonus_mult, COOP_BUFF_CAP)
     return True, (
-        f"「{ca.name}」与「{cb.name}」建立合作! 营收+{DEFAULT_BONUS_MULTIPLIER*100:.0f}%（今日有效）\n"
+        f"「{ca.name}」与「{cb.name}」建立合作! 营收+{bonus_mult*100:.0f}%{ethics_note}（今日有效）\n"
         f"当前合作Buff：+{new_total*100:.0f}%（上限{int(COOP_BUFF_CAP*100)}%）\n"
         f"双方各 +{COOP_REPUTATION_GAIN} 声望"
     )
@@ -118,12 +131,14 @@ async def cooperate_all(
     if not my_company:
         return 0, 0, ["公司不存在"]
 
+    # Ethics gate: <40 blocks cooperation
+    from services.operations_service import get_or_create_profile
+    profile = await get_or_create_profile(session, my_company_id)
+    if profile.ethics < 40:
+        return 0, len(all_companies), [f"道德值过低（{profile.ethics}/100），无法发起合作（需≥40）"]
+
     existing = await get_active_cooperations(session, my_company_id)
     current_bonus = sum(c.bonus_multiplier for c in existing)
-
-    # Already at cap
-    if current_bonus >= COOP_BUFF_CAP:
-        return 0, len(all_companies), [f"合作Buff已达上限（{int(COOP_BUFF_CAP * 100)}%），今日无法继续合作"]
 
     # Build set of already-cooperated company IDs
     already_partners = set()
@@ -131,16 +146,28 @@ async def cooperate_all(
         partner = c.company_b_id if c.company_a_id == my_company_id else c.company_a_id
         already_partners.add(partner)
 
+    # Already at cap
+    if current_bonus >= COOP_BUFF_CAP:
+        return 0, len(already_partners), [
+            f"合作Buff已达上限（{int(COOP_BUFF_CAP * 100)}%），今日无法继续合作",
+            f"当前已有 {len(already_partners)} 家合作伙伴",
+        ]
+
+    # Ethics ≥80: double cooperation buff
+    bonus_mult = DEFAULT_BONUS_MULTIPLIER
+    if profile.ethics >= 80:
+        bonus_mult = DEFAULT_BONUS_MULTIPLIER * 2
+
     success = 0
     skip = 0
+    cap_rest = 0
     msgs = []
 
     for target in all_companies:
         # Check cap
         if current_bonus >= COOP_BUFF_CAP:
-            skip += len(all_companies) - success - skip
-            msgs.append(f"合作Buff已达上限（{int(COOP_BUFF_CAP * 100)}%）")
-            break
+            cap_rest += 1
+            continue
 
         # Skip already cooperated
         if target.id in already_partners:
@@ -151,11 +178,11 @@ async def cooperate_all(
         coop = Cooperation(
             company_a_id=my_company_id,
             company_b_id=target.id,
-            bonus_multiplier=DEFAULT_BONUS_MULTIPLIER,
+            bonus_multiplier=bonus_mult,
             expires_at=expires_at,
         )
         session.add(coop)
-        current_bonus += DEFAULT_BONUS_MULTIPLIER
+        current_bonus += bonus_mult
         success += 1
 
         # Reputation & points
@@ -171,7 +198,10 @@ async def cooperate_all(
 
     if success > 0:
         capped = min(current_bonus, COOP_BUFF_CAP)
-        msgs.append(f"合作Buff：+{capped*100:.0f}%（上限{int(COOP_BUFF_CAP*100)}%），双方各+{COOP_REPUTATION_GAIN}声望")
+        ethics_note = "（道德≥80，双倍加成）" if profile.ethics >= 80 else ""
+        msgs.append(f"合作Buff：+{capped*100:.0f}%{ethics_note}（上限{int(COOP_BUFF_CAP*100)}%），双方各+{COOP_REPUTATION_GAIN}声望")
+    if cap_rest > 0:
+        msgs.append(f"Buff已满，{cap_rest}家因上限跳过")
 
     await session.flush()
     return success, skip, msgs

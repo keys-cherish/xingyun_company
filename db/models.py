@@ -50,7 +50,7 @@ class Company(Base):
     total_funds: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     daily_revenue: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     level: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    employee_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    employee_count: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, server_default=func.now())
 

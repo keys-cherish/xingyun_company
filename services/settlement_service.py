@@ -111,6 +111,11 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
     shop_buff_mult = await get_income_buff_multiplier(company.id)
     shop_buff_income = int(product_income * (shop_buff_mult - 1.0))
 
+    # 5c. Total war buff (totalwar_buff:{company_id}, set by total war feature)
+    totalwar_buff_str = await r.get(f"totalwar_buff:{company.id}")
+    totalwar_buff_rate = float(totalwar_buff_str) if totalwar_buff_str else 0.0
+    totalwar_buff_income = int(product_income * totalwar_buff_rate)
+
     # 6. Company type buff (收入加成)
     type_info = get_company_type_info(company.company_type)
     type_income_bonus = type_info.get("income_bonus", 0.0) if type_info else 0.0
@@ -125,6 +130,7 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
         + reputation_buff_income
         + ad_boost_income
         + shop_buff_income
+        + totalwar_buff_income
         + type_income
     )
 
@@ -202,8 +208,14 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
             f"🎭 路演翻车反噬：当日营收 -{int(roadshow_penalty_rate * 100)}% "
             f"(-{roadshow_penalty_amount:,})"
         )
+    if totalwar_buff_rate > 0:
+        event_messages.append(
+            f"⚔️ 全面商战Buff：营收+{int(totalwar_buff_rate * 100)}% "
+            f"(+{totalwar_buff_income:,})"
+        )
     await save_recent_events(company.id, event_messages)
-    await settle_profile_daily(session, profile, now_utc)
+    profile_msgs = await settle_profile_daily(session, profile, now_utc)
+    event_messages.extend(profile_msgs)
 
     # Generate report
     report = DailyReport(

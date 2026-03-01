@@ -189,6 +189,101 @@ async def cleanup_negative_funds(session: AsyncSession) -> list[str]:
     return msgs
 
 
+async def backfill_company_anomalies(session: AsyncSession) -> list[str]:
+    """Backfill and correct abnormal company core fields."""
+    from config import settings
+    from services.company_service import (
+        get_company_employee_limit,
+        get_max_level,
+        load_company_types,
+    )
+
+    msgs: list[str] = []
+    companies = list((await session.execute(select(Company))).scalars().all())
+    if not companies:
+        return msgs
+
+    valid_types = set(load_company_types().keys())
+    max_level = get_max_level()
+
+    revenue_rows = await session.execute(
+        select(
+            Product.company_id,
+            sqlfunc.coalesce(sqlfunc.sum(Product.daily_income), 0),
+        ).group_by(Product.company_id)
+    )
+    revenue_map = {int(cid): int(total or 0) for cid, total in revenue_rows.all()}
+
+    fixed_bad_type = 0
+    fixed_level = 0
+    fixed_emp_floor = 0
+    fixed_emp_cap = 0
+    fixed_funds = 0
+    fixed_version = 0
+    fixed_daily_revenue = 0
+
+    for company in companies:
+        if company.company_type not in valid_types:
+            company.company_type = "tech"
+            fixed_bad_type += 1
+
+        if company.level < 1:
+            company.level = 1
+            fixed_level += 1
+        elif company.level > max_level:
+            company.level = max_level
+            fixed_level += 1
+
+        max_emp = get_company_employee_limit(company.level, company.company_type)
+        if company.employee_count < settings.base_employee_limit:
+            company.employee_count = settings.base_employee_limit
+            fixed_emp_floor += 1
+        elif company.employee_count > max_emp:
+            company.employee_count = max_emp
+            fixed_emp_cap += 1
+
+        if company.total_funds < 0:
+            company.total_funds = 0
+            fixed_funds += 1
+
+        if company.version < 1:
+            company.version = 1
+            fixed_version += 1
+
+        expected_revenue = revenue_map.get(company.id, 0)
+        if company.daily_revenue != expected_revenue:
+            company.daily_revenue = expected_revenue
+            fixed_daily_revenue += 1
+
+    if any((
+        fixed_bad_type,
+        fixed_level,
+        fixed_emp_floor,
+        fixed_emp_cap,
+        fixed_funds,
+        fixed_version,
+        fixed_daily_revenue,
+    )):
+        await session.flush()
+
+    if fixed_bad_type:
+        msgs.append(f"公司类型异常回填: {fixed_bad_type} 条")
+    if fixed_level:
+        msgs.append(f"公司等级越界修正: {fixed_level} 条")
+    if fixed_emp_floor:
+        msgs.append(f"员工低于基线回填({settings.base_employee_limit}): {fixed_emp_floor} 条")
+    if fixed_emp_cap:
+        msgs.append(f"员工超上限回填: {fixed_emp_cap} 条")
+    if fixed_funds:
+        msgs.append(f"公司负资金修正: {fixed_funds} 条")
+    if fixed_version:
+        msgs.append(f"公司版本号修正: {fixed_version} 条")
+    if fixed_daily_revenue:
+        msgs.append(f"公司日营收回填(按产品汇总): {fixed_daily_revenue} 条")
+
+    return msgs
+
+
 async def run_all_checks(session: AsyncSession | None = None) -> list[str]:
     """Run all data integrity checks. Each check uses its own transaction."""
     from db.engine import async_session

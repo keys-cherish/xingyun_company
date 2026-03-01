@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 
 from aiogram import F, Router, types
@@ -10,9 +11,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from commands import CMD_CANCEL
+from commands import CMD_CANCEL, CMD_INVEST
 from db.engine import async_session
 from keyboards.menus import invest_kb, shareholder_list_kb
+from services.company_service import get_companies_by_owner
 from services.shareholder_service import get_shareholders, invest
 from utils.panel_owner import mark_panel
 from services.user_service import get_user_by_tg_id
@@ -20,13 +22,126 @@ from utils.formatters import fmt_shares, fmt_traffic
 
 router = Router()
 INVEST_INPUT_TIMEOUT_SECONDS = 5 * 60
+INVEST_KEYWORD = chr(0x6295) + chr(0x8D44)  # "投资"
+CN_COMMA = chr(0xFF0C)  # Chinese comma
+INVEST_SHORTCUT_RE = re.compile(rf"^\s*{INVEST_KEYWORD}\s*([0-9][0-9_,{CN_COMMA}]*)\s*$")
 
 
 class InvestState(StatesGroup):
     waiting_custom_amount = State()
 
 
+def _parse_amount(amount_text: str) -> int | None:
+    normalized = amount_text.replace(",", "").replace("_", "").replace(CN_COMMA, "").strip()
+    if not normalized:
+        return None
+    try:
+        amount = int(normalized)
+    except ValueError:
+        return None
+    if amount <= 0:
+        return None
+    return amount
+
+
+async def _handle_reply_invest(message: types.Message, amount: int):
+    if not message.reply_to_message or not message.reply_to_message.from_user:
+        await message.answer("Reply to a target user message first, then invest.")
+        return
+
+    investor_tg_id = message.from_user.id
+    target_user_tg = message.reply_to_message.from_user
+
+    if target_user_tg.is_bot:
+        await message.answer("You cannot invest in a bot.")
+        return
+    if target_user_tg.id == investor_tg_id:
+        await message.answer("You cannot invest by replying to yourself.")
+        return
+
+    async with async_session() as session:
+        async with session.begin():
+            investor_user = await get_user_by_tg_id(session, investor_tg_id)
+            if not investor_user:
+                await message.answer("Please register first: /company_start")
+                return
+
+            # Validate investor company quota before investing
+            investor_companies = await get_companies_by_owner(session, investor_user.id)
+            if not investor_companies:
+                await message.answer("You do not own a company, so investing is unavailable.")
+                return
+            investor_company = investor_companies[0]
+            investor_quota = int(investor_company.total_funds)
+            if amount > investor_quota:
+                await message.answer(
+                    f"Investment quota exceeded. Your company quota is {fmt_traffic(investor_quota)}."
+                )
+                return
+
+            target_user = await get_user_by_tg_id(session, target_user_tg.id)
+            if not target_user:
+                await message.answer("The target user is not registered yet.")
+                return
+
+            target_companies = await get_companies_by_owner(session, target_user.id)
+            if not target_companies:
+                await message.answer("The target user has no company.")
+                return
+
+            target_company = target_companies[0]
+            ok, invest_msg = await invest(session, investor_user.id, target_company.id, amount)
+
+    if ok:
+        await message.answer(f"{invest_msg}\nTarget company: {target_company.name}")
+        return
+    await message.answer(invest_msg)
+
+
+@router.message(Command(CMD_INVEST))
+async def cmd_reply_invest(message: types.Message):
+    """Reply to a user and invest in that user's company.
+
+    Usage:
+      - Reply someone: /company_invest <amount>
+    """
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer(
+            "Usage: reply target user and send /company_invest <amount>\n"
+            "Example: /company_invest 5000"
+        )
+        return
+
+    amount = _parse_amount(parts[1])
+    if amount is None:
+        await message.answer("Amount must be a positive integer.")
+        return
+
+    await _handle_reply_invest(message, amount)
+
+
+@router.message(F.text.startswith(INVEST_KEYWORD))
+async def msg_reply_invest_shortcut(message: types.Message, state: FSMContext):
+    """Reply shortcut: invest5000"""
+    if await state.get_state() is not None:
+        return
+
+    matched = INVEST_SHORTCUT_RE.match((message.text or "").strip())
+    if not matched:
+        return
+
+    amount = _parse_amount(matched.group(1))
+    if amount is None:
+        await message.answer("Invalid amount format. Use: invest5000")
+        return
+
+    await _handle_reply_invest(message, amount)
+
+
 async def _refresh_shareholder_list(callback: types.CallbackQuery, company_id: int):
+
+
     """操作后刷新股东列表消息。"""
     tg_id = callback.from_user.id
     try:

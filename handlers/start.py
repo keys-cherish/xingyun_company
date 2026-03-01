@@ -18,6 +18,7 @@ from commands import (
     CMD_HELP,
     CMD_LIST_COMPANY,
     CMD_MEMBER,
+    CMD_INVEST,
     CMD_NEW_PRODUCT,
     CMD_QUEST,
     CMD_RANK_COMPANY,
@@ -44,6 +45,7 @@ BOT_COMMANDS = [
     BotCommand(command=CMD_COOPERATE, description="合作（回复/all）"),
     BotCommand(command=CMD_NEW_PRODUCT, description="研发产品（名字 资金 [人员]）"),
     BotCommand(command=CMD_MEMBER, description="员工管理（add/minus 数量）"),
+    BotCommand(command=CMD_INVEST, description="Reply invest to user"),
     BotCommand(command=CMD_DISSOLVE, description="注销公司"),
     BotCommand(command=CMD_QUEST, description="周任务清单"),
     BotCommand(command=CMD_HELP, description="帮助信息"),
@@ -70,6 +72,8 @@ HELP_TEXT = (
     "  人员参数可省略；无人员时不吃人员加成\n"
     "  完美品质(100分) 极稀有，收入翻倍\n\n"
     "👷 /company_member add|minus <数量|max>\n"
+    "/company_invest <amount> - reply target user to invest and gain shares\n"
+    "Reply shortcut: invest5000 (must reply target message)\n"
     "🗑 /company_dissolve — 注销公司(24h冷却)\n"
     "/company_admin <密钥> — 管理员认证\n"
     "/company_help — 显示此帮助\n"

@@ -106,7 +106,7 @@ async def cmd_cooperate(message: types.Message):
                 f"新增合作: {success} 家",
             ]
             if skip > 0:
-                lines.append(f"跳过: {skip} 家（对方已合作或今日限制）")
+                lines.append(f"已合作跳过: {skip} 家")
             if msgs:
                 lines.extend(msgs)
             await message.answer("\n".join(lines))

@@ -195,7 +195,9 @@ async def settle_profile_daily(
     session: AsyncSession,
     profile: CompanyOperationProfile,
     now: dt.datetime,
-):
+) -> list[str]:
+    """Settle daily profile changes. Returns event messages."""
+    messages = []
     work = WORK_HOUR_OPTIONS.get(profile.work_hours, WORK_HOUR_OPTIONS[8])
     profile.ethics = _clamp(profile.ethics + int(work["ethics_delta"]), 0, 100)
     if profile.culture > 55:
@@ -203,7 +205,19 @@ async def settle_profile_daily(
     if profile.training_level != "none" and not _is_training_active(profile, now):
         profile.training_level = "none"
         profile.training_expires_at = None
+
+    # Ethics <20: chance of employee attrition
+    if profile.ethics < 20:
+        attrition_chance = (20 - profile.ethics) / 20 * 0.40  # max 40% at ethics 0
+        if random.random() < attrition_chance:
+            company = await session.get(Company, profile.company_id)
+            if company and company.employee_count > 1:
+                lost = min(max(1, company.employee_count // 20), 3)  # lose 1-3
+                company.employee_count = max(1, company.employee_count - lost)
+                messages.append(f"😤 道德过低，{lost}名员工愤而离职！（道德:{profile.ethics}/100）")
+
     await session.flush()
+    return messages
 
 
 async def set_work_hours(

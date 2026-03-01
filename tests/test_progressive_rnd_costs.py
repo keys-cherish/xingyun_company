@@ -129,7 +129,9 @@ class TestProgressiveRndCosts(AsyncDBTestCase):
 
             updated_company = await session.get(Company, company.id)
             # social_platform base cost = 3000; completed_count=1 => *1.2
-            self.assertEqual(updated_company.total_funds, funds_before - 3600)
+            # tech company focus discount applies => *0.9
+            expected_cost = int(3000 * 1.2 * 0.9)
+            self.assertEqual(updated_company.total_funds, funds_before - expected_cost)
 
             rp = (
                 await session.execute(

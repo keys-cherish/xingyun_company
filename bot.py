@@ -33,6 +33,7 @@ def _register_routers(dp: Dispatcher):
     from handlers.dividend import router as dividend_router
     from handlers.ad import router as ad_router
     from handlers.ai_rd import router as ai_rd_router
+    from handlers.total_war import router as total_war_router
     from handlers.ai_chat import router as ai_chat_router
     from handlers.admin import router as admin_router
     from handlers.exchange import router as exchange_router
@@ -51,6 +52,7 @@ def _register_routers(dp: Dispatcher):
     dp.include_router(dividend_router)
     dp.include_router(ad_router)
     dp.include_router(ai_rd_router)
+    dp.include_router(total_war_router)
     dp.include_router(ai_chat_router)
     dp.include_router(admin_router)
     dp.include_router(exchange_router)
@@ -73,6 +75,7 @@ def _register_routers(dp: Dispatcher):
             "/company",
             "/company_list",
             "/company_member",
+            "/company_invest",
             "/company_start",
             "/company_create",
             "/company_admin",

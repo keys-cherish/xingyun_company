@@ -11,8 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from db.models import Company, ResearchProgress, User
-from services.company_service import get_company_type_info
-from services.company_service import add_funds
+from services.company_service import (
+    add_funds,
+    get_company_type_info,
+    get_effective_employee_count_for_progress,
+)
 from services.user_service import add_reputation, add_points
 
 _tech_tree: dict | None = None
@@ -237,10 +240,11 @@ async def start_research(
     required_employees = int(
         tech.get("required_employees", max(1, 1 + completed_count * RESEARCH_EMPLOYEE_STEP))
     )
-    if company.employee_count < required_employees:
+    effective_employees = get_effective_employee_count_for_progress(company.employee_count)
+    if effective_employees < required_employees:
         return False, (
-            f"员工不足，科研「{tech['name']}」需要至少 {required_employees} 人，"
-            f"当前仅 {company.employee_count} 人"
+            f"\u5458\u5de5\u4e0d\u8db3\uff0c\u79d1\u7814\u300c{tech['name']}\u300d\u9700\u8981\u81f3\u5c11 {required_employees} \u4eba\uff0c"
+            f"\u5f53\u524d\u6709\u6548\u5458\u5de5 {effective_employees} \u4eba\uff08\u603b\u5458\u5de5 {company.employee_count}\uff09"
         )
 
     required_reputation = int(

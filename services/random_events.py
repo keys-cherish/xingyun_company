@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Company, Product
-from services.company_service import add_funds
+from services.company_service import add_funds, get_company_employee_limit
 from services.user_service import add_points, add_reputation
 
 
@@ -58,6 +58,21 @@ EVENTS: list[GameEvent] = [
     # Product events
     GameEvent("产品好评如潮", "用户反馈极好，产品口碑传播", "market", "product_quality", 3, 10),
     GameEvent("产品出现Bug", "线上出现严重Bug，紧急修复中", "market", "product_quality", -2, 12),
+]
+
+# Ethics-exclusive events
+HIGH_ETHICS_EVENTS: list[GameEvent] = [
+    GameEvent("政府补贴", "道德标杆企业获得政府专项补贴", "lucky", "flat_traffic", 3000, 15),
+    GameEvent("ESG大奖", "公司荣获ESG最佳实践奖，声望大增", "pr", "reputation", 15, 12),
+    GameEvent("人才慕名而来", "行业优秀人才被公司口碑吸引，主动加入", "employee", "employee", 2, 10),
+    GameEvent("绿色合作", "环保机构邀请合作，品牌价值提升", "pr", "reputation", 10, 10),
+]
+
+LOW_ETHICS_EVENTS: list[GameEvent] = [
+    GameEvent("内部举报", "员工向监管部门举报公司违规操作", "pr", "flat_traffic", -2000, 15),
+    GameEvent("消费者抵制", "网民发起抵制运动，产品口碑暴跌", "market", "product_quality", -5, 12),
+    GameEvent("监管调查", "监管部门对公司进行专项调查", "pr", "flat_traffic", -1500, 10),
+    GameEvent("人才流失潮", "优秀员工因公司风评离职", "employee", "employee", -2, 10),
 ]
 
 # Chance that any event fires during settlement (per company)
@@ -149,14 +164,22 @@ async def roll_daily_events(session: AsyncSession, company: Company) -> list[str
         culture_neg_reduce = (culture / 100) * 0.30
         # Low ethics increases negative event weight: up to +20%
         ethics_neg_boost = max(0, (50 - profile.ethics) / 50 * 0.20)
+
+        # Build event pool: base events + ethics-exclusive events
+        event_pool = list(EVENTS)
+        if profile.ethics >= 90:
+            event_pool.extend(HIGH_ETHICS_EVENTS)
+        elif profile.ethics < 30:
+            event_pool.extend(LOW_ETHICS_EVENTS)
+
         adjusted_weights = []
-        for e in EVENTS:
+        for e in event_pool:
             w = e.weight
             if e.effect_value < 0:
                 w = int(w * (1.0 - culture_neg_reduce + ethics_neg_boost))
                 w = max(1, w)
             adjusted_weights.append(w)
-        selected = list(random.choices(EVENTS, weights=adjusted_weights, k=num_events))
+        selected = list(random.choices(event_pool, weights=adjusted_weights, k=num_events))
 
     # Deduplicate by name
     seen = set()
@@ -208,8 +231,7 @@ async def _apply_event(session: AsyncSession, company: Company, event: GameEvent
     elif event.effect_type == "employee":
         change = int(event.effect_value)
         new_count = max(1, company.employee_count + change)
-        from config import settings as cfg
-        max_emp = cfg.base_employee_limit + cfg.employee_limit_per_level * (company.level - 1)
+        max_emp = get_company_employee_limit(company.level, company.company_type)
         new_count = min(new_count, max_emp)
         company.employee_count = new_count
         await session.flush()

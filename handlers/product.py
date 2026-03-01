@@ -31,7 +31,8 @@ logger = logging.getLogger(__name__)
 
 # /cp_new_product 参数：投入资金 -> 基础日收入的转化率
 INVEST_TO_INCOME_RATE = 0.03  # 每投入100积分 = 3积分/日
-EMPLOYEE_INCOME_BONUS = 0.10  # 每分配1名员工 +10% 收入
+EMPLOYEE_INCOME_BONUS = 0.03  # 每分配1名员工 +3% 收入
+EMPLOYEE_INCOME_BONUS_CAP = 0.60  # 员工加成最高 +60%
 PERFECT_QUALITY_THRESHOLD = 100  # 完美品质阈值
 PERFECT_QUALITY_BONUS = 1.0     # 完美品质额外+100%收入
 
@@ -49,7 +50,7 @@ async def cmd_new_product(message: types.Message):
             "例2: /cp_new_product 智能助手 10000 3\n\n"
             "• 投入资金从公司扣除，决定产品基础日收入\n"
             "• 分配人员可省略，省略时默认为 0（无人员加成）\n"
-            "• 分配人员提供额外收入加成（每人+10%）\n"
+            "• 分配人员提供额外收入加成（每人+3%，总加成上限+60%）\n"
             "• 分配人员仅用于本次研发，研发完成后自动释放"
         )
         return
@@ -135,7 +136,8 @@ async def cmd_new_product(message: types.Message):
             # Random factor: ±30% on base income
             income_luck = random.uniform(0.70, 1.30)
             base_income = max(1, int(base_income * income_luck))
-            employee_bonus = int(base_income * EMPLOYEE_INCOME_BONUS * employees)
+            employee_bonus_rate = min(EMPLOYEE_INCOME_BONUS_CAP, EMPLOYEE_INCOME_BONUS * employees)
+            employee_bonus = int(base_income * employee_bonus_rate)
             daily_income = base_income + employee_bonus
 
             # Quality: base from employees + heavy randomness

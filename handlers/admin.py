@@ -497,6 +497,15 @@ async def cmd_cleanup(message: types.Message):
     if orphan_count:
         cleaned.append(f"孤儿股份记录: {orphan_count} 条")
 
+    # 8. Database: backfill/correct abnormal company core fields
+    from services.integrity_service import backfill_company_anomalies
+    backfill_msgs: list[str] = []
+    async with async_session() as session:
+        async with session.begin():
+            backfill_msgs = await backfill_company_anomalies(session)
+    if backfill_msgs:
+        cleaned.extend(backfill_msgs)
+
     if cleaned:
         lines = ["🧹 数据清理完成:", "─" * 24] + [f"  • {c}" for c in cleaned]
     else:

@@ -67,6 +67,7 @@ async def create_company(
         company_type=company_type,
         owner_id=owner_id,
         total_funds=settings.company_creation_cost,
+        employee_count=settings.base_employee_limit,
     )
     session.add(company)
     await session.flush()
@@ -93,11 +94,19 @@ async def get_companies_by_owner(session: AsyncSession, owner_id: int) -> list[C
 
 
 async def get_company_valuation(session: AsyncSession, company: Company) -> int:
-    """Valuation = total_funds * coeff + daily_revenue * 30."""
-    return int(
+    """Valuation = (total_funds * coeff + daily_revenue * 30) modified by ethics."""
+    base = int(
         company.total_funds * settings.valuation_fund_coeff
         + company.daily_revenue * settings.valuation_income_days
     )
+    # Ethics modifier
+    from services.operations_service import get_or_create_profile
+    profile = await get_or_create_profile(session, company.id)
+    if profile.ethics > 70:
+        return int(base * 1.15)  # +15%
+    if profile.ethics < 30:
+        return int(base * 0.80)  # -20%
+    return base
 
 
 async def update_daily_revenue(session: AsyncSession, company_id: int) -> int:
@@ -175,6 +184,40 @@ def get_level_employee_bonus(level: int) -> int:
         if info:
             total += info.get("employee_limit_bonus", 0)
     return total
+
+
+def get_company_employee_limit(level: int, company_type: str | None = None) -> int:
+    """Calculate company employee limit with level curve and hard cap."""
+    max_level = max(1, get_max_level())
+    safe_level = max(1, min(level, max_level))
+
+    if max_level <= 1:
+        progress = 1.0
+    else:
+        progress = (safe_level - 1) / (max_level - 1)
+
+    curve_exp = max(1.0, float(settings.employee_limit_growth_exponent))
+    curved_progress = progress ** curve_exp
+    scaled_limit = int(
+        settings.base_employee_limit
+        + (settings.max_employee_limit - settings.base_employee_limit) * curved_progress
+    )
+
+    linear_legacy = settings.employee_limit_per_level * (safe_level - 1)
+    total = scaled_limit + linear_legacy + get_level_employee_bonus(safe_level)
+    if company_type:
+        type_info = get_company_type_info(company_type)
+        if type_info and type_info.get("extra_employee_limit"):
+            total += int(type_info["extra_employee_limit"])
+
+    return max(settings.base_employee_limit, min(total, settings.max_employee_limit))
+
+
+def get_effective_employee_count_for_progress(employee_count: int) -> int:
+    """Soft-cap effective workforce used by progression gates."""
+    if employee_count <= 0:
+        return 0
+    return min(employee_count, settings.employee_effective_cap_for_progress)
 
 
 async def upgrade_company(

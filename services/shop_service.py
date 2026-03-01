@@ -68,6 +68,14 @@ async def buy_item(
     if await has_buff(company_id, item_key):
         return False, f"{item['name']} 效果仍在生效中"
 
+    # Precision marketing: check roadshow cooldown
+    if item_key == "precision_marketing":
+        from services.roadshow_service import can_roadshow
+        can_do, remaining = await can_roadshow(company_id)
+        if not can_do:
+            mins = remaining // 60
+            return False, f"路演冷却中（剩余{mins}分钟），精准营销暂时无法购买"
+
     user = await get_user_by_tg_id(session, tg_id)
     if user is None:
         return False, "用户不存在"

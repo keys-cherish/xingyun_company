@@ -85,8 +85,11 @@ class Settings(BaseSettings):
     social_insurance_rate: float = 0.02
 
     # Employee system
-    base_employee_limit: int = 5  # starting max employees
-    employee_limit_per_level: int = 3  # +3 slots per company level
+    base_employee_limit: int = 10  # initial company employees / minimum limit
+    employee_limit_per_level: int = 3  # legacy linear growth term (kept for compatibility)
+    max_employee_limit: int = 10_000  # hard cap for any company
+    employee_limit_growth_exponent: float = 2.2  # level->employee limit curve
+    employee_effective_cap_for_progress: int = 600  # soft cap to avoid revenue inflation
     employee_salary_base: int = 80  # base daily salary per employee
 
     # Random events

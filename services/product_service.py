@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cache.redis_client import get_redis
 from config import settings
 from db.models import Company, Product, User
+from services.company_service import get_effective_employee_count_for_progress
 from services.research_service import check_and_complete_research, get_completed_techs
 from services.user_service import add_points
 from utils.formatters import fmt_traffic
@@ -126,10 +127,11 @@ async def create_product(
     )).scalar() or 0
 
     required_employees = max(1, 1 + existing_count * PRODUCT_CREATE_EMPLOYEE_STEP)
-    if company.employee_count < required_employees:
+    effective_employees = get_effective_employee_count_for_progress(company.employee_count)
+    if effective_employees < required_employees:
         return None, (
-            f"员工不足，创建该产品需要至少 {required_employees} 人，"
-            f"当前仅 {company.employee_count} 人"
+            f"\u5458\u5de5\u4e0d\u8db3\uff0c\u521b\u5efa\u8be5\u4ea7\u54c1\u9700\u8981\u81f3\u5c11 {required_employees} \u4eba\uff0c"
+            f"\u5f53\u524d\u6709\u6548\u5458\u5de5 {effective_employees} \u4eba\uff08\u603b\u5458\u5de5 {company.employee_count}\uff09"
         )
 
     required_reputation = max(0, existing_count * PRODUCT_CREATE_REPUTATION_STEP)
@@ -210,10 +212,11 @@ async def upgrade_product(
 
     target_version = product.version + 1
     required_employees = max(1, target_version * PRODUCT_UPGRADE_EMPLOYEE_STEP)
-    if company.employee_count < required_employees:
+    effective_employees = get_effective_employee_count_for_progress(company.employee_count)
+    if effective_employees < required_employees:
         return False, (
-            f"员工不足，升级到 v{target_version} 需要至少 {required_employees} 人，"
-            f"当前仅 {company.employee_count} 人"
+            f"\u5458\u5de5\u4e0d\u8db3\uff0c\u5347\u7ea7\u5230 v{target_version} \u9700\u8981\u81f3\u5c11 {required_employees} \u4eba\uff0c"
+            f"\u5f53\u524d\u6709\u6548\u5458\u5de5 {effective_employees} \u4eba\uff08\u603b\u5458\u5de5 {company.employee_count}\uff09"
         )
 
     required_reputation = max(0, (target_version - 1) * PRODUCT_UPGRADE_REPUTATION_STEP)

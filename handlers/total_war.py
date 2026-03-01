@@ -35,7 +35,27 @@ def _has_war_intent(text: str) -> bool:
     return has_war and has_all
 
 
-@router.message(F.text & ~F.text.startswith("/"))
+@router.message(
+    F.text
+    & ~F.text.startswith("/")
+    & (
+        F.text.contains("商战")
+        | F.text.contains("宣战")
+        | F.text.contains("开战")
+        | F.text.contains("打仗")
+        | F.text.contains("进攻")
+        | F.text.contains("出征")
+    )
+    & (
+        F.text.contains("所有")
+        | F.text.contains("全部")
+        | F.text.contains("all")
+        | F.text.contains("全面")
+        | F.text.contains("不计成本")
+        | F.text.contains("不择手段")
+        | F.text.contains("不遗余力")
+    )
+)
 async def on_total_war_mention(message: types.Message):
     """Detect @bot mention + war keywords → show confirmation panel."""
     if not message.from_user or message.from_user.is_bot:

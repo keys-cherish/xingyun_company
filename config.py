@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     postgres_password: str = ""
 
     # Redis
+    redis_password: str = ""
     redis_url: str = "redis://localhost:6379/0"
     redis_stream_enabled: bool = True
     redis_stream_key: str = "my_company:events"

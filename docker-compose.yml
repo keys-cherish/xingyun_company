@@ -1,0 +1,26 @@
+services:
+  redis:
+    image: redis:alpine
+    container_name: my_company_redis
+    command: redis-server --appendonly yes
+    restart: always
+    volumes:
+      - ./redis_data:/data
+
+  bot:
+    build: .
+    container_name: my_company_bot
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"

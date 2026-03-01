@@ -9,7 +9,7 @@ from aiogram.types import BotCommand
 from cache.redis_client import get_leaderboard
 from config import settings
 from db.engine import async_session
-from keyboards.menus import main_menu_kb, start_existing_user_kb, tag_kb
+from keyboards.menus import main_menu_kb, tag_kb
 from services.company_service import get_companies_by_owner
 from services.user_service import get_or_create_user, get_points, get_quota_mb
 from utils.formatters import fmt_traffic, fmt_quota, compact_number

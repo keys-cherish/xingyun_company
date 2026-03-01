@@ -6,7 +6,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
 def tag_kb(kb: InlineKeyboardMarkup, tg_id: int | None) -> InlineKeyboardMarkup:
-    """Tag all buttons in a keyboard with the user's tg_id for panel ownership."""
+    """Tag callbacks with panel owner tg_id for middleware auth."""
     if tg_id is None:
         return kb
     new_rows = []
@@ -24,35 +24,10 @@ def tag_kb(kb: InlineKeyboardMarkup, tg_id: int | None) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=new_rows)
 
 
-# ---- Start panel ----
-
-def start_existing_user_kb(tg_id: int | None = None) -> InlineKeyboardMarkup:
-    """Compact /start panel for users who already own at least one company."""
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="🏢 我的公司", callback_data="menu:company"),
-            InlineKeyboardButton(text="📊 个人面板", callback_data="menu:profile"),
-        ],
-    ])
-    return tag_kb(kb, tg_id)
-
-
-def start_company_type_kb(company_types: dict[str, dict], tg_id: int | None = None) -> InlineKeyboardMarkup:
-    """Company type selector shown on /start when user has no company yet."""
-    buttons = [
-        [InlineKeyboardButton(
-            text=f"{info['emoji']} {info['name']}",
-            callback_data=f"company:type:{key}",
-        )]
-        for key, info in company_types.items()
-    ]
-    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-    return tag_kb(kb, tg_id)
-
-
-# ---- Main menu ----
+# ---- Main menu (simplified: redirects to company view) ----
 
 def main_menu_kb(tg_id: int | None = None) -> InlineKeyboardMarkup:
+    """Simplified menu — goes to company view (the main hub now)."""
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="🏢 我的公司", callback_data="menu:company"),

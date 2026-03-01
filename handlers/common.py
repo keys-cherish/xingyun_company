@@ -9,7 +9,6 @@ from cache.redis_client import get_redis
 from config import settings
 
 router = Router()
-SUPER_ADMIN_TG_ID = 5222591634
 
 # ---- 管理员认证 ----
 # 已认证管理员存Redis: admin_auth:{tg_id} = "1"
@@ -31,7 +30,7 @@ async def is_admin_authenticated(tg_id: int) -> bool:
 
 def is_super_admin(tg_id: int) -> bool:
     """Strict super-admin check for high-risk commands."""
-    return tg_id == SUPER_ADMIN_TG_ID
+    return tg_id in settings.super_admin_tg_id_set
 
 
 async def authenticate_admin(tg_id: int, secret_key: str) -> tuple[bool, str]:

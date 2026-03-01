@@ -129,6 +129,9 @@ async def main():
 
     # 注册限流中间件
     from utils.throttle import ThrottleMiddleware
+    from utils.topic_gate import TopicGateMiddleware
+    dp.message.middleware(TopicGateMiddleware())
+    dp.callback_query.middleware(TopicGateMiddleware())
     dp.message.middleware(ThrottleMiddleware())
     dp.callback_query.middleware(ThrottleMiddleware())
 

@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     # Comma-separated list of allowed chat_ids (group/subchannel) where commands work.
     # Empty means all groups are allowed.
     allowed_chat_ids: str = ""
+    # 允许的论坛话题ID（message_thread_id）。0 表示不限制话题。
+    allowed_topic_thread_id: int = 0
 
     # Database
     database_url: str = "postgresql+asyncpg://mycompany:mycompany@localhost:5432/mycompany"
@@ -76,6 +78,8 @@ class Settings(BaseSettings):
     traffic_exchange_rate: float = 1.0  # 外部积分兑换流量汇率
 
     # 管理员
+    super_admin_tg_id: int = 0  # 兼容旧配置：单个超级管理员TG ID（高危命令）
+    super_admin_tg_ids: str = ""  # 新配置：逗号分隔的超级管理员TG ID列表
     admin_tg_ids: str = ""  # 逗号分隔的管理员TG ID列表
     admin_secret_key: str = ""  # 管理员认证密钥
 
@@ -84,6 +88,15 @@ class Settings(BaseSettings):
         if not self.admin_tg_ids.strip():
             return set()
         return {int(x.strip()) for x in self.admin_tg_ids.split(",") if x.strip()}
+
+    @property
+    def super_admin_tg_id_set(self) -> set[int]:
+        ids: set[int] = set()
+        if self.super_admin_tg_ids.strip():
+            ids.update({int(x.strip()) for x in self.super_admin_tg_ids.split(",") if x.strip()})
+        if self.super_admin_tg_id > 0:
+            ids.add(self.super_admin_tg_id)
+        return ids
 
     @property
     def allowed_chat_id_set(self) -> set[int]:

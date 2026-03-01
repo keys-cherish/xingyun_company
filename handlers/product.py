@@ -37,15 +37,17 @@ PERFECT_QUALITY_BONUS = 1.0     # 完美品质额外+100%收入
 
 @router.message(Command(CMD_NEW_PRODUCT))
 async def cmd_new_product(message: types.Message):
-    """Create a custom product: /company_new <name> <investment> <employees>."""
+    """Create a custom product: /company_new <name> <investment> [employees]."""
     tg_id = message.from_user.id
     args = (message.text or "").split()
 
-    if len(args) < 4:
+    if len(args) < 3:
         await message.answer(
-            "📦 用法: /company_new <产品名> <投入资金> <分配人员>\n"
-            "例: /company_new 智能助手 10000 3\n\n"
+            "📦 用法: /company_new <产品名> <投入资金> [分配人员]\n"
+            "例1: /company_new 智能助手 10000\n"
+            "例2: /company_new 智能助手 10000 3\n\n"
             "• 投入资金从公司扣除，决定产品基础日收入\n"
+            "• 分配人员可省略，省略时默认为 0（无人员加成）\n"
             "• 分配人员提供额外收入加成（每人+10%）\n"
             "• 分配人员仅用于本次研发，研发完成后自动释放"
         )
@@ -54,7 +56,7 @@ async def cmd_new_product(message: types.Message):
     product_name = args[1]
     try:
         investment = int(args[2])
-        employees = int(args[3])
+        employees = int(args[3]) if len(args) >= 4 else 0
     except ValueError:
         await message.answer("❌ 资金和人员必须是数字")
         return
@@ -313,7 +315,7 @@ async def cb_product_list(callback: types.CallbackQuery, company_id: int | None 
         lines.append("\n💡 完成科研可解锁产品模板")
 
     lines.append("\n📦 也可使用命令创建自定义产品:")
-    lines.append("  /company_new <名字> <资金> <人员>")
+    lines.append("  /company_new <名字> <资金> [人员]")
     text = "\n".join(lines)
     all_buttons = product_buttons + template_buttons
     all_buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")])

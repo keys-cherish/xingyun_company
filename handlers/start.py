@@ -42,7 +42,7 @@ BOT_COMMANDS = [
     BotCommand(command=CMD_RANK_COMPANY, description="综合实力排行榜"),
     BotCommand(command=CMD_BATTLE, description="商战（回复+可选战术）"),
     BotCommand(command=CMD_COOPERATE, description="合作（回复/all）"),
-    BotCommand(command=CMD_NEW_PRODUCT, description="研发产品（名字 资金 人员）"),
+    BotCommand(command=CMD_NEW_PRODUCT, description="研发产品（名字 资金 [人员]）"),
     BotCommand(command=CMD_MEMBER, description="员工管理（add/minus 数量）"),
     BotCommand(command=CMD_DISSOLVE, description="注销公司"),
     BotCommand(command=CMD_QUEST, description="周任务清单"),
@@ -64,9 +64,9 @@ HELP_TEXT = (
     "⚔️ /company_battle [战术] — 回复某人发起商战（每次消耗200积分）\n"
     "  战术: 稳扎稳打 / 激进营销 / 奇袭渗透\n"
     "🤝 /company_cooperate — 回复某人/all 合作\n"
-    "  每次+5%，次日清空，双方各+30声望，每天仅可合作一家\n\n"
-    "📦 /company_new <名字> <资金> <人员>\n"
-    "  投入+人员决定收入，品质随机\n"
+    "  每次+6%（含额外1%），次日清空，双方各+30声望，每天仅可合作一家\n\n"
+    "📦 /company_new <名字> <资金> [人员]\n"
+    "  人员参数可省略；无人员时不吃人员加成\n"
     "  完美品质(100分) 极稀有，收入翻倍\n\n"
     "👷 /company_member add|minus <数量|max>\n"
     "🗑 /company_dissolve — 注销公司(24h冷却)\n"

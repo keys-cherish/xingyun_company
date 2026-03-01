@@ -13,6 +13,7 @@ from utils.timezone import BJ_TZ
 
 DEFAULT_BONUS_MULTIPLIER = 0.05  # +5% per cooperation
 COOP_REPUTATION_GAIN = 30
+COOP_EXTRA_DAILY_BONUS_MULTIPLIER = 0.01  # +1% daily revenue per cooperation (resets after settlement)
 
 
 def _utc_now_naive() -> dt.datetime:
@@ -78,7 +79,7 @@ async def create_cooperation(
     coop = Cooperation(
         company_a_id=company_a_id,
         company_b_id=company_b_id,
-        bonus_multiplier=DEFAULT_BONUS_MULTIPLIER,
+        bonus_multiplier=DEFAULT_BONUS_MULTIPLIER + COOP_EXTRA_DAILY_BONUS_MULTIPLIER,
         expires_at=expires_at,
     )
     session.add(coop)
@@ -96,8 +97,8 @@ async def create_cooperation(
     await update_quest_progress(session, cb.owner_id, "cooperation_count", increment=1)
 
     return True, (
-        f"「{ca.name}」与「{cb.name}」建立合作! 营收+{DEFAULT_BONUS_MULTIPLIER*100:.0f}%（今日有效）\n"
-        f"双方各 +{COOP_REPUTATION_GAIN} 声望（今日首次合作）"
+        f"「{ca.name}」与「{cb.name}」建立合作! 营收+{(DEFAULT_BONUS_MULTIPLIER + COOP_EXTRA_DAILY_BONUS_MULTIPLIER)*100:.0f}%（今日有效）\n"
+        f"双方各 +{COOP_REPUTATION_GAIN} 声望（额外+1%营收为当日Buff，次日重置）"
     )
 
 
@@ -134,7 +135,7 @@ async def cooperate_all(
         coop = Cooperation(
             company_a_id=my_company_id,
             company_b_id=target.id,
-            bonus_multiplier=DEFAULT_BONUS_MULTIPLIER,
+            bonus_multiplier=DEFAULT_BONUS_MULTIPLIER + COOP_EXTRA_DAILY_BONUS_MULTIPLIER,
             expires_at=expires_at,
         )
         session.add(coop)
@@ -150,6 +151,7 @@ async def cooperate_all(
         from services.quest_service import update_quest_progress
         await update_quest_progress(session, my_company.owner_id, "cooperation_count", increment=1)
         await update_quest_progress(session, target.owner_id, "cooperation_count", increment=1)
+        msgs.append("双方各 +30 声望；合作额外+1%营收为当日Buff，次日重置")
         break
 
     await session.flush()

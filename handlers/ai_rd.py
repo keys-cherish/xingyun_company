@@ -81,8 +81,8 @@ async def cb_aird_select(callback: types.CallbackQuery, state: FSMContext):
         "• 说明商业模式和盈利方式\n"
         "• 分析技术可行性与合规风险\n"
         "• 给出可量化指标（转化、留存、ROI等）\n\n"
-        "AI将采用【严格文案批判标准】：\n"
-        "先指出硬伤，再给分项评分和改进建议。\n"
+        "AI将采用【专业评审标准】：\n"
+        "指出主要问题，并给分项评分与改进建议。\n"
         "评分越高，产品收入永久提升越多。"
     )
     await callback.answer()
@@ -113,7 +113,7 @@ async def on_proposal(message: types.Message, state: FSMContext):
     company_id = data["company_id"]
     buttons.append([InlineKeyboardButton(text="🔙 取消", callback_data=f"company:view:{company_id}")])
 
-    sent = await message.answer(
+    sent = await message.reply(
         f"🧪 AI评估结果\n"
         f"{'─' * 24}\n"
         f"评分: {score}/100\n"

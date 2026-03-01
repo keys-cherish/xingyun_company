@@ -1,7 +1,7 @@
-"""AI-assisted product R&D system with strict copywriting critique.
+"""AI-assisted product R&D system with practical copywriting critique.
 
 Features:
-1. Proposal evaluation (AI when configured, strict fallback otherwise)
+1. Proposal evaluation (AI when configured, balanced fallback otherwise)
 2. Permanent product income boost
 3. Optional extra R&D staff investment
 4. Keyword trigger for "春日影" themed special effects
@@ -65,8 +65,8 @@ DEFAULT_AI_BASE_URL = "https://api.openai.com/v1"
 
 def _default_system_prompt() -> str:
     return (
-        "你是“严苛文案评审官”，只给基于证据的评分，不给安慰。"
-        "缺证据就扣分，空话套话直接批评。"
+        "你是“产品方案评审官”，给出专业、可执行、不过度苛刻的评分。"
+        "在指出问题的同时，优先提供可落地改进建议。"
     )
 
 
@@ -163,7 +163,7 @@ def _format_strict_feedback(
     flaws = "；".join(critique[:4]) if critique else "未给出明确缺陷"
     tips = "；".join(suggestions[:3]) if suggestions else "请补充用户场景、指标与商业闭环。"
     return (
-        "【严格文案批判】\n"
+        "【AI方案评审】\n"
         f"结论: {verdict}\n"
         f"创新/市场/技术/商业: {innovation}/{market}/{tech}/{business}\n"
         f"主要缺陷: {flaws}\n"
@@ -176,7 +176,7 @@ def _strict_fallback_evaluate(proposal: str) -> tuple[int, str]:
     text = proposal.strip()
 
     if len(text) < 10:
-        return 8, "【严格文案批判】文本过短，无法判断可执行性。请补充用户、场景、指标与盈利路径。"
+        return 20, "【AI方案评审】文本过短，信息不足。请补充用户、场景、指标与盈利路径。"
 
     # 5 dimensions * 20 = 100
     problem = 0
@@ -264,14 +264,16 @@ def _strict_fallback_evaluate(proposal: str) -> tuple[int, str]:
         validation += 4
 
     score = problem + scenario + business + tech + validation
+    # Mild leniency: avoid overly harsh baseline for normal proposals.
+    score += 8
 
     hype_hits = _count_hits(text, HYPE_WORDS)
     if hype_hits > 0:
-        score -= min(15, hype_hits * 3)
+        score -= min(8, hype_hits * 2)
         flaws.append("营销口号偏多，实证信息偏少")
 
-    score = max(1, min(100, score))
-    verdict = "可推进" if score >= 70 else "需重做"
+    score = max(20, min(100, score))
+    verdict = "可推进" if score >= 62 else "需重做"
     feedback = _format_strict_feedback(
         score=score,
         innovation=min(25, int(problem * 0.7 + scenario * 0.3)),
@@ -321,6 +323,23 @@ def _extract_content_text(content: Any) -> str:
     return str(content)
 
 
+def _parse_sse_to_json(raw_text: str) -> dict[str, Any]:
+    for line in raw_text.splitlines():
+        ln = line.strip()
+        if not ln.startswith("data:"):
+            continue
+        payload = ln[5:].strip()
+        if not payload or payload == "[DONE]":
+            continue
+        try:
+            parsed = json.loads(payload)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            continue
+    return {}
+
+
 async def evaluate_proposal_ai(proposal: str) -> tuple[int, str, dict[str, Any] | None]:
     """Evaluate a proposal and return (score, feedback, special_effect)."""
     if not settings.ai_enabled or not settings.ai_api_key.strip():
@@ -331,13 +350,13 @@ async def evaluate_proposal_ai(proposal: str) -> tuple[int, str, dict[str, Any] 
         import httpx
 
         user_prompt = (
-            "请对下面方案做严格批判，按以下维度输出:\n"
+            "请对下面方案做专业评审，按以下维度输出:\n"
             "1) 创新性(0-25)\n"
             "2) 市场可行性(0-25)\n"
             "3) 技术可行性(0-25)\n"
             "4) 商业价值(0-25)\n"
             "并额外给出 verdict(可推进/需重做)、critique(3-5条硬伤)、suggestions(3条可执行改进)。\n"
-            "要求：缺证据就扣分，空话套话直接批评。\n\n"
+            "要求：基于证据评分，不过度苛刻；指出风险的同时给出可执行改进。\n\n"
             f"方案文本:\n{proposal}\n\n"
             "请只返回 JSON:\n"
             '{"score": 1-100, "innovation": 0-25, "market": 0-25, "tech": 0-25, '
@@ -357,6 +376,7 @@ async def evaluate_proposal_ai(proposal: str) -> tuple[int, str, dict[str, Any] 
         max_tokens = max(128, int(settings.ai_max_tokens))
         payload = {
             "model": (settings.ai_model or "").strip() or "gpt-4o-mini",
+            "stream": False,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -377,7 +397,10 @@ async def evaluate_proposal_ai(proposal: str) -> tuple[int, str, dict[str, Any] 
                 async with httpx.AsyncClient(timeout=timeout) as client:
                     resp = await client.post(completion_url, json=payload, headers=headers)
                     resp.raise_for_status()
-                    data = resp.json()
+                    try:
+                        data = resp.json()
+                    except Exception:
+                        data = _parse_sse_to_json(resp.text)
                 break
             except Exception:
                 if attempt >= retry_times:

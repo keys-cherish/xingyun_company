@@ -58,6 +58,23 @@ def _extract_content_text(content: Any) -> str:
     return str(content).strip()
 
 
+def _parse_sse_to_json(raw_text: str) -> dict[str, Any]:
+    for line in raw_text.splitlines():
+        ln = line.strip()
+        if not ln.startswith("data:"):
+            continue
+        payload = ln[5:].strip()
+        if not payload or payload == "[DONE]":
+            continue
+        try:
+            parsed = json.loads(payload)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            continue
+    return {}
+
+
 async def ask_ai_chat(prompt: str) -> str:
     """Call AI provider and return response text."""
     if not settings.ai_enabled or not settings.ai_api_key.strip():
@@ -88,6 +105,7 @@ async def ask_ai_chat(prompt: str) -> str:
 
         payload = {
             "model": model_name,
+            "stream": False,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt},
@@ -103,7 +121,10 @@ async def ask_ai_chat(prompt: str) -> str:
                 async with httpx.AsyncClient(timeout=timeout) as client:
                     resp = await client.post(completion_url, json=payload, headers=headers)
                     resp.raise_for_status()
-                    data = resp.json()
+                    try:
+                        data = resp.json()
+                    except Exception:
+                        data = _parse_sse_to_json(resp.text)
                 break
             except Exception:
                 if attempt >= retry_times:

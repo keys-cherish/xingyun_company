@@ -56,7 +56,9 @@ class TopicGateMiddleware(BaseMiddleware):
                 chat.username,
                 thread_id,
             ):
-                await event.answer("❌ 仅允许在指定话题频道使用本机器人。")
+                text = (event.text or "").strip()
+                if text.startswith("/"):
+                    await event.answer("❌ 仅允许在指定话题频道使用本机器人。")
                 return None
             return await handler(event, data)
 

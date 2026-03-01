@@ -10,9 +10,28 @@
 - **缓存**: Redis（热数据/分布式锁/排行榜/冷却计时/管理员认证/道具Buff）
 - **定时任务**: APScheduler（每日结算）
 - **配置**: pydantic-settings（类型安全）
-- **包管理**: uv
+- **部署**: Docker Compose（推荐）/ 本地 Python 运行
 
-## 快速开始
+## 快速开始（Docker，推荐）
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/keys-cherish/my_company.git
+cd my_company
+
+# 2. 配置环境变量
+cp .env.example .env
+# 编辑 .env 填入 BOT_TOKEN、管理员ID/超管ID、群组和话题限制等配置
+
+# 3. 启动（bot + postgres + redis）
+docker compose up -d --build
+
+# 4. 查看状态
+docker compose ps
+docker compose logs -f bot
+```
+
+## 快速开始（本地 Python）
 
 ```bash
 # 1. 克隆项目
@@ -66,6 +85,15 @@ uv run python bot.py
 ## 配置
 
 所有游戏参数均可通过 `.env` 文件或管理员面板实时调整，详见 `.env.example`。
+
+常用配置项：
+- `BOT_TOKEN`：机器人 token
+- `DATABASE_URL`：数据库连接（生产建议 PostgreSQL）
+- `REDIS_URL`：Redis 连接
+- `ADMIN_TG_IDS`：管理员 TG ID 列表（逗号分隔）
+- `SUPER_ADMIN_TG_ID` / `SUPER_ADMIN_TG_IDS`：超级管理员（支持单个或多个）
+- `ALLOWED_CHAT_IDS`：允许的群组 ID（逗号分隔）
+- `ALLOWED_TOPIC_THREAD_ID`：允许的话题频道 ID（forum topic）
 
 ## 项目结构
 

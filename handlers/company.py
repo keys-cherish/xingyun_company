@@ -27,10 +27,10 @@ from services.company_service import (
     create_company,
     get_companies_by_owner,
     get_company_by_id,
+    get_company_employee_limit,
     get_company_type_info,
     get_company_valuation,
     get_level_info,
-    get_level_employee_bonus,
     get_level_revenue_bonus,
     get_max_level,
     load_company_types,
@@ -244,10 +244,7 @@ async def cmd_member(message: types.Message):
                 return
             company = companies[0]
 
-            type_info = get_company_type_info(company.company_type)
-            max_emp = cfg.base_employee_limit + cfg.employee_limit_per_level * (company.level - 1) + get_level_employee_bonus(company.level)
-            if type_info and type_info.get("extra_employee_limit"):
-                max_emp += type_info["extra_employee_limit"]
+            max_emp = get_company_employee_limit(company.level, company.company_type)
 
             if action == "add":
                 available_slots = max_emp - company.employee_count
@@ -388,11 +385,7 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
     level_info = get_level_info(company.level)
     level_name = level_info["name"] if level_info else f"Lv.{company.level}"
     level_rev_bonus = get_level_revenue_bonus(company.level)
-    level_emp_bonus = get_level_employee_bonus(company.level)
-
-    max_employees = cfg.base_employee_limit + cfg.employee_limit_per_level * (company.level - 1) + level_emp_bonus
-    if type_info and type_info.get("extra_employee_limit"):
-        max_employees += type_info["extra_employee_limit"]
+    max_employees = get_company_employee_limit(company.level, company.company_type)
 
     now_utc = dt.datetime.now(dt.UTC)
     market = get_market_trend(company, now_utc)
@@ -772,6 +765,67 @@ async def on_company_name(message: types.Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith("company:hire:"))
 async def cb_hire(callback: types.CallbackQuery):
+    """Show hiring confirmation panel with cost breakdown."""
+    parts = callback.data.split(":")
+    company_id = int(parts[2])
+    count_str = parts[3] if len(parts) > 3 else "1"
+    tg_id = callback.from_user.id
+
+    async with async_session() as session:
+        user = await get_user_by_tg_id(session, tg_id)
+        company = await get_company_by_id(session, company_id)
+        if not company or not user or company.owner_id != user.id:
+            await callback.answer("无权操作", show_alert=True)
+            return
+        max_emp = get_company_employee_limit(company.level, company.company_type)
+        if company.employee_count >= max_emp:
+            await callback.answer(f"已达员工上限 ({max_emp}人)，升级公司可提升上限", show_alert=True)
+            return
+        available_slots = max_emp - company.employee_count
+        if count_str == "max":
+            desired = available_slots
+        else:
+            desired = int(count_str)
+        hire_count = min(desired, available_slots)
+        if hire_count <= 0:
+            await callback.answer("无可用名额", show_alert=True)
+            return
+
+    hire_cost_per = cfg.employee_salary_base * 10
+    total_cost = hire_count * hire_cost_per
+    daily_salary = hire_count * cfg.employee_salary_base
+
+    lines = [
+        f"👷 招聘确认",
+        f"{'─' * 24}",
+        f"招聘人数：{hire_count}人",
+        f"单价：{fmt_traffic(hire_cost_per)}/人（一次性）",
+        f"总费用：{fmt_traffic(total_cost)}",
+        f"{'─' * 24}",
+        f"👥 当前员工：{company.employee_count}/{max_emp}人",
+        f"📌 招聘后日薪增加：+{fmt_traffic(daily_salary)}/日",
+        f"🏦 公司资金：{fmt_traffic(company.total_funds)}",
+    ]
+    if total_cost > company.total_funds:
+        affordable = company.total_funds // hire_cost_per
+        lines.append(f"⚠️ 资金仅够招 {affordable} 人")
+
+    kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text=f"✅ 确认招聘{hire_count}人（{fmt_traffic(total_cost)}）",
+                callback_data=f"company:xhire:{company_id}:{count_str}",
+            ),
+            InlineKeyboardButton(text="🔙 取消", callback_data=f"company:view:{company_id}"),
+        ],
+    ]), tg_id)
+    await _safe_edit_or_send(callback, "\n".join(lines), kb)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("company:xhire:"))
+async def cb_do_hire(callback: types.CallbackQuery):
+    """Execute hiring after confirmation."""
     parts = callback.data.split(":")
     company_id = int(parts[2])
     count_str = parts[3] if len(parts) > 3 else "1"
@@ -784,12 +838,9 @@ async def cb_hire(callback: types.CallbackQuery):
             if not company or not user or company.owner_id != user.id:
                 await callback.answer("无权操作", show_alert=True)
                 return
-            type_info = get_company_type_info(company.company_type)
-            max_emp = cfg.base_employee_limit + cfg.employee_limit_per_level * (company.level - 1) + get_level_employee_bonus(company.level)
-            if type_info and type_info.get("extra_employee_limit"):
-                max_emp += type_info["extra_employee_limit"]
+            max_emp = get_company_employee_limit(company.level, company.company_type)
             if company.employee_count >= max_emp:
-                await callback.answer(f"已达员工上限 ({max_emp}人)，升级公司可提升上限", show_alert=True)
+                await callback.answer(f"已达员工上限 ({max_emp}人)", show_alert=True)
                 return
 
             available_slots = max_emp - company.employee_count
@@ -816,7 +867,7 @@ async def cb_hire(callback: types.CallbackQuery):
                     total_cost = hire_count * hire_cost_per
                     ok = await add_funds(session, company_id, -total_cost)
                     if not ok:
-                        await callback.answer(f"公司资金不足", show_alert=True)
+                        await callback.answer("公司资金不足", show_alert=True)
                         return
                 else:
                     await callback.answer(f"公司资金不足，招聘需要 {fmt_traffic(hire_cost_per)}", show_alert=True)
@@ -889,26 +940,28 @@ async def cb_upgrade(callback: types.CallbackQuery):
 def _ops_menu_kb(company_id: int, tg_id: int) -> InlineKeyboardMarkup:
     rows = [
         [
-            InlineKeyboardButton(text="工时 6h", callback_data=f"ops:work:{company_id}:6"),
-            InlineKeyboardButton(text="工时 8h", callback_data=f"ops:work:{company_id}:8"),
-            InlineKeyboardButton(text="工时 10h", callback_data=f"ops:work:{company_id}:10"),
-            InlineKeyboardButton(text="工时 12h", callback_data=f"ops:work:{company_id}:12"),
+            InlineKeyboardButton(text="6h 轻松", callback_data=f"ops:work:{company_id}:6"),
+            InlineKeyboardButton(text="8h 正常", callback_data=f"ops:work:{company_id}:8"),
+            InlineKeyboardButton(text="10h 冲刺", callback_data=f"ops:work:{company_id}:10"),
+            InlineKeyboardButton(text="12h 高压", callback_data=f"ops:work:{company_id}:12"),
         ],
         [
             InlineKeyboardButton(text="🏢 升级办公", callback_data=f"ops:cycle:{company_id}:office"),
-            InlineKeyboardButton(text="👑 切换保险", callback_data=f"ops:cycle:{company_id}:insurance"),
+            InlineKeyboardButton(text="👑 升级保险", callback_data=f"ops:cycle:{company_id}:insurance"),
         ],
         [
-            InlineKeyboardButton(text="🎭 文化建设", callback_data=f"ops:cycle:{company_id}:culture"),
-            InlineKeyboardButton(text="😐 道德整改", callback_data=f"ops:cycle:{company_id}:ethics"),
-            InlineKeyboardButton(text="🛂 强化监管", callback_data=f"ops:cycle:{company_id}:regulation"),
+            InlineKeyboardButton(text="🎭 文化+8", callback_data=f"ops:cycle:{company_id}:culture"),
+            InlineKeyboardButton(text="😐 道德+6", callback_data=f"ops:cycle:{company_id}:ethics"),
+            InlineKeyboardButton(text="🛂 监管+8", callback_data=f"ops:cycle:{company_id}:regulation"),
         ],
         [
-            InlineKeyboardButton(text="🏅 基础培训", callback_data=f"ops:train:{company_id}:basic"),
-            InlineKeyboardButton(text="🏅 岗位实训", callback_data=f"ops:train:{company_id}:pro"),
-            InlineKeyboardButton(text="🏅 精英特训", callback_data=f"ops:train:{company_id}:elite"),
+            InlineKeyboardButton(text="🏅 基础培训(×1.12)", callback_data=f"ops:train:{company_id}:basic"),
+            InlineKeyboardButton(text="🏅 岗位实训(×1.30)", callback_data=f"ops:train:{company_id}:pro"),
         ],
-        [InlineKeyboardButton(text="⛔ 停止培训", callback_data=f"ops:train:{company_id}:none")],
+        [
+            InlineKeyboardButton(text="🏅 精英特训(×1.50)", callback_data=f"ops:train:{company_id}:elite"),
+            InlineKeyboardButton(text="⛔ 停止培训", callback_data=f"ops:train:{company_id}:none"),
+        ],
         [InlineKeyboardButton(text="🔙 返回公司", callback_data=f"company:view:{company_id}")],
     ]
     return tag_kb(InlineKeyboardMarkup(inline_keyboard=rows), tg_id)
@@ -933,6 +986,36 @@ async def cb_ops_menu(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("ops:work:"))
 async def cb_ops_work(callback: types.CallbackQuery):
+    """Show work hours confirmation panel."""
+    _, _, company_id, hour = callback.data.split(":")
+    cid = int(company_id)
+    hours = int(hour)
+    tg_id = callback.from_user.id
+
+    info = WORK_HOUR_OPTIONS.get(hours, WORK_HOUR_OPTIONS[8])
+    lines = [
+        f"⏰ 切换工时确认",
+        f"{'─' * 24}",
+        f"目标工时：{hours}h（{info['label']}）",
+        f"营收倍率：×{info['income_mult']:.2f}",
+        f"成本倍率：×{info['cost_mult']:.2f}",
+        f"道德变动：{'+' if info['ethics_delta'] >= 0 else ''}{info['ethics_delta']}/日",
+        f"{'─' * 24}",
+        f"💡 工时调整免费，立即生效",
+    ]
+    kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ 确认切换", callback_data=f"ops:xwork:{cid}:{hours}"),
+            InlineKeyboardButton(text="🔙 取消", callback_data=f"ops:menu:{cid}"),
+        ],
+    ]), tg_id)
+    await _safe_edit_or_send(callback, "\n".join(lines), kb)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("ops:xwork:"))
+async def cb_ops_do_work(callback: types.CallbackQuery):
+    """Execute work hours change."""
     _, _, company_id, hour = callback.data.split(":")
     cid = int(company_id)
     hours = int(hour)
@@ -955,6 +1038,111 @@ async def cb_ops_work(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("ops:cycle:"))
 async def cb_ops_cycle(callback: types.CallbackQuery):
+    """Show cycle option confirmation panel with price/effect info."""
+    _, _, company_id, field = callback.data.split(":")
+    cid = int(company_id)
+    tg_id = callback.from_user.id
+
+    async with async_session() as session:
+        company = await get_company_by_id(session, cid)
+        if not company:
+            await callback.answer("公司不存在", show_alert=True)
+            return
+        profile = await get_or_create_profile(session, cid)
+
+    lines = []
+    if field == "office":
+        keys = list(OFFICE_LEVELS.keys())
+        idx = keys.index(profile.office_level) if profile.office_level in keys else 0
+        cur = OFFICE_LEVELS[keys[idx]]
+        if idx >= len(keys) - 1:
+            await callback.answer("已是顶级办公，无需继续升级", show_alert=True)
+            return
+        nxt = OFFICE_LEVELS[keys[idx + 1]]
+        lines = [
+            "🏢 办公升级确认",
+            f"{'─' * 24}",
+            f"当前：{cur['name']}（营收×{cur['income_mult']:.2f}，{cur['employee_cost']}金/人/日）",
+            f"升级为：{nxt['name']}（营收×{nxt['income_mult']:.2f}，{nxt['employee_cost']}金/人/日）",
+            f"{'─' * 24}",
+            f"📌 员工数 {company.employee_count} → 日增成本 +{(nxt['employee_cost'] - cur['employee_cost']) * company.employee_count}金",
+            f"💡 升级免费，增加的是每日运营成本",
+        ]
+    elif field == "insurance":
+        keys = list(INSURANCE_LEVELS.keys())
+        idx = keys.index(profile.insurance_level) if profile.insurance_level in keys else 0
+        cur = INSURANCE_LEVELS[keys[idx]]
+        if idx >= len(keys) - 1:
+            await callback.answer("已是最高保险方案，无需继续升级", show_alert=True)
+            return
+        nxt = INSURANCE_LEVELS[keys[idx + 1]]
+        lines = [
+            "👑 保险升级确认",
+            f"{'─' * 24}",
+            f"当前：{cur['name']}（罚款减免{int(cur['fine_reduction']*100)}%，费率{cur['cost_rate']*100:.1f}%）",
+            f"升级为：{nxt['name']}（罚款减免{int(nxt['fine_reduction']*100)}%，费率{nxt['cost_rate']*100:.1f}%）",
+            f"{'─' * 24}",
+            f"💡 升级免费，保险费按薪资比例每日扣除",
+        ]
+    elif field == "culture":
+        new_val = min(profile.culture + 8, 100)
+        inc_pct = new_val / 10
+        risk_pct = new_val * 0.3
+        maint_pct = new_val / 200
+        lines = [
+            "🎭 文化建设确认",
+            f"{'─' * 24}",
+            f"当前文化：{profile.culture}/100",
+            f"建设后：{new_val}/100",
+            f"{'─' * 24}",
+            f"📈 营收加成：+{inc_pct:.1f}%",
+            f"🛡 风险降低：-{risk_pct:.1f}%",
+            f"💰 日维护成本：营收的{maint_pct:.2f}%",
+            f"💡 建设免费，但文化越高日维护成本越高",
+        ]
+    elif field == "ethics":
+        new_val = min(profile.ethics + 6, 100)
+        lines = [
+            "😐 道德整改确认",
+            f"{'─' * 24}",
+            f"当前道德：{profile.ethics}/100 ({ethics_rating(profile.ethics)})",
+            f"整改后：{new_val}/100 ({ethics_rating(new_val)})",
+            f"{'─' * 24}",
+            f"📉 道德<50时：罚款概率增加、负面事件增多",
+            f"📈 道德≥50时：降低罚款风险",
+            f"💡 整改免费",
+        ]
+    elif field == "regulation":
+        new_val = min(profile.regulation_pressure + 8, 100)
+        reg_cost_cur = 1.0 + profile.regulation_pressure / 50
+        reg_cost_new = 1.0 + new_val / 50
+        lines = [
+            "🛂 强化监管确认",
+            f"{'─' * 24}",
+            f"当前监管：{profile.regulation_pressure}/100",
+            f"强化后：{new_val}/100",
+            f"{'─' * 24}",
+            f"💰 合规成本：营收的{reg_cost_cur:.1f}% → {reg_cost_new:.1f}%",
+            f"⚠️ 监管越高，罚款风险和事件概率越高",
+            f"💡 操作免费，但增加日运营成本",
+        ]
+    else:
+        await callback.answer("未知操作", show_alert=True)
+        return
+
+    kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ 确认", callback_data=f"ops:xcycle:{cid}:{field}"),
+            InlineKeyboardButton(text="🔙 取消", callback_data=f"ops:menu:{cid}"),
+        ],
+    ]), tg_id)
+    await _safe_edit_or_send(callback, "\n".join(lines), kb)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("ops:xcycle:"))
+async def cb_ops_do_cycle(callback: types.CallbackQuery):
+    """Execute cycle option after confirmation."""
     _, _, company_id, field = callback.data.split(":")
     cid = int(company_id)
     async with async_session() as session:
@@ -976,6 +1164,68 @@ async def cb_ops_cycle(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("ops:train:"))
 async def cb_ops_train(callback: types.CallbackQuery):
+    """Show training confirmation panel with cost breakdown."""
+    _, _, company_id, level = callback.data.split(":")
+    cid = int(company_id)
+    tg_id = callback.from_user.id
+
+    if level == "none":
+        # Stop training doesn't need confirmation
+        async with async_session() as session:
+            async with session.begin():
+                user = await get_user_by_tg_id(session, callback.from_user.id)
+                if not user:
+                    await callback.answer("请先 /company_create 创建公司", show_alert=True)
+                    return
+                ok, msg = await start_training(session, cid, user.id, "none")
+        await callback.answer(msg, show_alert=True)
+        if ok:
+            text, _ = await render_company_detail(cid, callback.from_user.id)
+            await _safe_edit_or_send(
+                callback,
+                "⚙️ 经营策略中心\n" + text,
+                _ops_menu_kb(cid, callback.from_user.id),
+            )
+        return
+
+    info = TRAINING_LEVELS.get(level, TRAINING_LEVELS["basic"])
+    async with async_session() as session:
+        company = await get_company_by_id(session, cid)
+        if not company:
+            await callback.answer("公司不存在", show_alert=True)
+            return
+
+    total_cost = company.employee_count * info["hourly_cost"] * info["duration_hours"]
+    lines = [
+        f"🏅 {info['name']}确认",
+        f"{'─' * 24}",
+        f"营收倍率：×{info['income_mult']:.2f}",
+        f"持续时间：{info['duration_hours']}小时",
+        f"{'─' * 24}",
+        f"👥 当前员工：{company.employee_count}人",
+        f"💰 费用 = {company.employee_count}人 × {info['hourly_cost']}金/时 × {info['duration_hours']}h",
+        f"💰 总计：{fmt_traffic(total_cost)}",
+        f"🏦 公司资金：{fmt_traffic(company.total_funds)}",
+        f"{'─' * 24}",
+        f"🎭 开始培训额外+4文化值",
+    ]
+
+    if total_cost > company.total_funds:
+        lines.append(f"❌ 资金不足！还差 {fmt_traffic(total_cost - company.total_funds)}")
+
+    kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text=f"✅ 确认培训（{fmt_traffic(total_cost)}）", callback_data=f"ops:xtrain:{cid}:{level}"),
+            InlineKeyboardButton(text="🔙 取消", callback_data=f"ops:menu:{cid}"),
+        ],
+    ]), tg_id)
+    await _safe_edit_or_send(callback, "\n".join(lines), kb)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("ops:xtrain:"))
+async def cb_ops_do_train(callback: types.CallbackQuery):
+    """Execute training after confirmation."""
     _, _, company_id, level = callback.data.split(":")
     cid = int(company_id)
     async with async_session() as session:

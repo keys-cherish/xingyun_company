@@ -77,13 +77,13 @@ def company_detail_kb(company_id: int, is_owner: bool, tg_id: int | None = None)
             InlineKeyboardButton(text="⚙️ 经营策略", callback_data=f"ops:menu:{company_id}"),
         ])
         buttons.append([
-            InlineKeyboardButton(text="Hire +1", callback_data=f"company:hire:{company_id}:1"),
-            InlineKeyboardButton(text="Hire +5", callback_data=f"company:hire:{company_id}:5"),
-            InlineKeyboardButton(text="Hire Max", callback_data=f"company:hire:{company_id}:max"),
+            InlineKeyboardButton(text="👷+1 (800金)", callback_data=f"company:hire:{company_id}:1"),
+            InlineKeyboardButton(text="👷+5 (4000金)", callback_data=f"company:hire:{company_id}:5"),
+            InlineKeyboardButton(text="👷+Max", callback_data=f"company:hire:{company_id}:max"),
         ])
         buttons.append([
-            InlineKeyboardButton(text="Fire -1", callback_data=f"company:fire:{company_id}:1"),
-            InlineKeyboardButton(text="Fire -5", callback_data=f"company:fire:{company_id}:5"),
+            InlineKeyboardButton(text="裁员-1", callback_data=f"company:fire:{company_id}:1"),
+            InlineKeyboardButton(text="裁员-5", callback_data=f"company:fire:{company_id}:5"),
         ])
         buttons.append([
             InlineKeyboardButton(text="📢 广告", callback_data=f"ad:menu:{company_id}"),

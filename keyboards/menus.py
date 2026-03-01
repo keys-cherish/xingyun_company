@@ -5,11 +5,30 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
+def tag_kb(kb: InlineKeyboardMarkup, tg_id: int | None) -> InlineKeyboardMarkup:
+    """Tag callbacks with panel owner tg_id for middleware auth."""
+    if tg_id is None:
+        return kb
+    new_rows = []
+    for row in kb.inline_keyboard:
+        new_row = []
+        for btn in row:
+            if btn.callback_data:
+                new_row.append(InlineKeyboardButton(
+                    text=btn.text,
+                    callback_data=f"{btn.callback_data}|{tg_id}",
+                ))
+            else:
+                new_row.append(btn)
+        new_rows.append(new_row)
+    return InlineKeyboardMarkup(inline_keyboard=new_rows)
+
+
 # ---- Main menu (simplified: redirects to company view) ----
 
-def main_menu_kb() -> InlineKeyboardMarkup:
+def main_menu_kb(tg_id: int | None = None) -> InlineKeyboardMarkup:
     """Simplified menu — goes to company view (the main hub now)."""
-    return InlineKeyboardMarkup(inline_keyboard=[
+    kb = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="🏢 我的公司", callback_data="menu:company"),
             InlineKeyboardButton(text="📊 个人面板", callback_data="menu:profile"),
@@ -19,20 +38,23 @@ def main_menu_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="🎯 周任务", callback_data="menu:quest"),
         ],
     ])
+    return tag_kb(kb, tg_id)
 
 
 # ---- Company ----
 
-def company_list_kb(companies: list[tuple[int, str]]) -> InlineKeyboardMarkup:
+def company_list_kb(companies: list[tuple[int, str]], tg_id: int | None = None) -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton(text=name, callback_data=f"company:view:{cid}")]
         for cid, name in companies
     ]
     buttons.append([InlineKeyboardButton(text="➕ 创建公司", callback_data="company:create")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:main")])
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    return tag_kb(kb, tg_id)
 
 
-def company_detail_kb(company_id: int, is_owner: bool) -> InlineKeyboardMarkup:
+def company_detail_kb(company_id: int, is_owner: bool, tg_id: int | None = None) -> InlineKeyboardMarkup:
     buttons = [
         [
             InlineKeyboardButton(text="👥 股东", callback_data=f"shareholder:list:{company_id}"),
@@ -49,7 +71,7 @@ def company_detail_kb(company_id: int, is_owner: bool) -> InlineKeyboardMarkup:
         ])
         buttons.append([
             InlineKeyboardButton(text="🎤 路演", callback_data=f"roadshow:do:{company_id}"),
-            InlineKeyboardButton(text="🤝 发起合作", callback_data=f"cooperation:init:{company_id}"),
+            InlineKeyboardButton(text="🤝 合作状态", callback_data=f"cooperation:init:{company_id}"),
         ])
         buttons.append([
             InlineKeyboardButton(text="📢 广告", callback_data=f"ad:menu:{company_id}"),
@@ -74,12 +96,13 @@ def company_detail_kb(company_id: int, is_owner: bool) -> InlineKeyboardMarkup:
     buttons.append([
         InlineKeyboardButton(text="📋 公司列表", callback_data="menu:company_list"),
     ])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    return tag_kb(kb, tg_id)
 
 
 # ---- Shareholders ----
 
-def invest_kb(company_id: int) -> InlineKeyboardMarkup:
+def invest_kb(company_id: int, tg_id: int | None = None) -> InlineKeyboardMarkup:
     amounts = [500, 1000, 2000, 5000]
     buttons = [
         [InlineKeyboardButton(text=f"投资 {a:,} 金币", callback_data=f"shareholder:doinvest:{company_id}:{a}")]
@@ -87,12 +110,13 @@ def invest_kb(company_id: int) -> InlineKeyboardMarkup:
     ]
     buttons.append([InlineKeyboardButton(text="✍️ 自定义金额（文本）", callback_data=f"shareholder:input:{company_id}")])
     buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    return tag_kb(kb, tg_id)
 
 
 # ---- Research ----
 
-def tech_list_kb(techs: list[dict], company_id: int) -> InlineKeyboardMarkup:
+def tech_list_kb(techs: list[dict], company_id: int, tg_id: int | None = None) -> InlineKeyboardMarkup:
     from utils.formatters import fmt_duration
     buttons = [
         [InlineKeyboardButton(
@@ -102,12 +126,13 @@ def tech_list_kb(techs: list[dict], company_id: int) -> InlineKeyboardMarkup:
         for t in techs
     ]
     buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    return tag_kb(kb, tg_id)
 
 
 # ---- Products ----
 
-def product_template_kb(templates: list[dict], company_id: int) -> InlineKeyboardMarkup:
+def product_template_kb(templates: list[dict], company_id: int, tg_id: int | None = None) -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton(
             text=f"{t['name']} (💰{t['base_daily_income']:,}/日)",
@@ -116,22 +141,24 @@ def product_template_kb(templates: list[dict], company_id: int) -> InlineKeyboar
         for t in templates
     ]
     buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    return tag_kb(kb, tg_id)
 
 
-def product_detail_kb(product_id: int, company_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+def product_detail_kb(product_id: int, company_id: int, tg_id: int | None = None) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="⬆️ 升级x1", callback_data=f"product:upgrade:{product_id}:1"),
             InlineKeyboardButton(text="⬆️⬆️ 升级x5", callback_data=f"product:upgrade:{product_id}:5"),
         ],
         [InlineKeyboardButton(text="🔙 返回", callback_data=f"product:list:{company_id}")],
     ])
+    return tag_kb(kb, tg_id)
 
 
 # ---- Real Estate ----
 
-def building_list_kb(buildings: list[dict], company_id: int) -> InlineKeyboardMarkup:
+def building_list_kb(buildings: list[dict], company_id: int, tg_id: int | None = None) -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton(
             text=f"{b['name']} (💰{b['purchase_price']:,} → {b['daily_dividend']:,}/日)",
@@ -140,12 +167,13 @@ def building_list_kb(buildings: list[dict], company_id: int) -> InlineKeyboardMa
         for b in buildings
     ]
     buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    return tag_kb(kb, tg_id)
 
 
 # ---- Exchange ----
 
-def exchange_kb(rate_per_mb: int | None = None) -> InlineKeyboardMarkup:
+def exchange_kb(rate_per_mb: int | None = None, tg_id: int | None = None) -> InlineKeyboardMarkup:
     spend_amounts = [1_000, 3_000, 8_000, 15_000]
     safe_rate = max(1, rate_per_mb or 120)
     buttons = [
@@ -155,8 +183,9 @@ def exchange_kb(rate_per_mb: int | None = None) -> InlineKeyboardMarkup:
         )]
         for amount in spend_amounts
     ]
-    buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:company")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:main")])
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    return tag_kb(kb, tg_id)
 
 
 # ---- Pagination helper ----
@@ -166,6 +195,7 @@ def paginated_kb(
     page: int,
     total_pages: int,
     prefix: str,
+    tg_id: int | None = None,
 ) -> InlineKeyboardMarkup:
     rows = [[btn] for btn in items]
     nav = []
@@ -175,16 +205,18 @@ def paginated_kb(
         nav.append(InlineKeyboardButton(text="➡️ 下一页", callback_data=f"{prefix}:page:{page + 1}"))
     if nav:
         rows.append(nav)
-    rows.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:company")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+    rows.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:main")])
+    kb = InlineKeyboardMarkup(inline_keyboard=rows)
+    return tag_kb(kb, tg_id)
 
 
 # ---- Confirm ----
 
-def confirm_kb(action: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+def confirm_kb(action: str, tg_id: int | None = None) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="✅ 确认", callback_data=f"confirm:{action}"),
             InlineKeyboardButton(text="❌ 取消", callback_data="cancel"),
         ],
     ])
+    return tag_kb(kb, tg_id)

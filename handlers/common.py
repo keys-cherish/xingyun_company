@@ -14,7 +14,6 @@ from config import settings
 
 router = Router()
 logger = logging.getLogger(__name__)
-SUPER_ADMIN_TG_ID = 5222591634
 CHANNEL_ONLY_HINT = "❌ 本 bot 仅在指定话题频道内提供服务。"
 
 # ---- 管理员认证 ----
@@ -37,7 +36,7 @@ async def is_admin_authenticated(tg_id: int) -> bool:
 
 def is_super_admin(tg_id: int) -> bool:
     """Strict super-admin check for high-risk commands."""
-    return tg_id == SUPER_ADMIN_TG_ID
+    return tg_id in settings.super_admin_tg_id_set
 
 
 async def authenticate_admin(tg_id: int, secret_key: str) -> tuple[bool, str]:
@@ -186,4 +185,4 @@ group_scope_middleware = GroupScopeMiddleware()
 
 async def reject_private(message: types.Message):
     """非管理员私聊时的拒绝提示。"""
-    await message.answer(CHANNEL_ONLY_HINT)
+    await message.answer("此命令仅限在群组指定频道中使用。\n私聊仅支持 /create_company 和 /company 查看信息。")

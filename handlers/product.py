@@ -11,7 +11,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from db.engine import async_session
 from handlers.common import is_super_admin
-from keyboards.menus import product_detail_kb, product_template_kb
+from keyboards.menus import product_detail_kb, product_template_kb, tag_kb
 from services.company_service import get_company_by_id, get_companies_by_owner, update_daily_revenue, add_funds
 from services.product_service import (
     create_product,
@@ -191,6 +191,7 @@ async def cmd_new_product(message: types.Message):
 
 async def _refresh_product_list(callback: types.CallbackQuery, company_id: int):
     """操作后刷新产品列表消息。"""
+    tg_id = callback.from_user.id
     try:
         async with async_session() as session:
             company = await get_company_by_id(session, company_id)
@@ -225,7 +226,7 @@ async def _refresh_product_list(callback: types.CallbackQuery, company_id: int):
         ]
         all_buttons = product_buttons + template_buttons
         all_buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")])
-        kb = InlineKeyboardMarkup(inline_keyboard=all_buttons)
+        kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=all_buttons), tg_id)
 
         await callback.message.edit_text(text, reply_markup=kb)
     except Exception:
@@ -259,7 +260,7 @@ async def cb_product_menu(callback: types.CallbackQuery):
     buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:company")])
     await callback.message.edit_text(
         "📦 选择公司查看产品:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        reply_markup=tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), callback.from_user.id),
     )
     await callback.answer()
 
@@ -315,7 +316,7 @@ async def cb_product_list(callback: types.CallbackQuery, company_id: int | None 
     text = "\n".join(lines)
     all_buttons = product_buttons + template_buttons
     all_buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")])
-    kb = InlineKeyboardMarkup(inline_keyboard=all_buttons)
+    kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=all_buttons), callback.from_user.id)
 
     try:
         await callback.message.edit_text(text, reply_markup=kb)

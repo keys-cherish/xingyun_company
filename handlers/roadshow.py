@@ -5,7 +5,7 @@ from __future__ import annotations
 from aiogram import F, Router, types
 
 from db.engine import async_session
-from keyboards.menus import main_menu_kb
+from keyboards.menus import main_menu_kb, tag_kb
 from services.company_service import get_companies_by_owner, get_company_by_id
 from services.roadshow_service import do_roadshow
 from services.user_service import get_user_by_tg_id
@@ -40,7 +40,7 @@ async def cb_roadshow_menu(callback: types.CallbackQuery):
     buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:company")])
     await callback.message.edit_text(
         "🎤 选择公司发起路演:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+        reply_markup=tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), callback.from_user.id),
     )
     await callback.answer()
 
@@ -64,7 +64,11 @@ async def cb_do_roadshow(callback: types.CallbackQuery, company_id: int | None =
             ok, msg = await do_roadshow(session, company_id, user.id)
 
     if ok:
-        await callback.message.edit_text(f"🎤 路演结果\n\n{msg}", reply_markup=main_menu_kb())
+        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+        result_kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 返回公司", callback_data=f"company:view:{company_id}")],
+        ]), callback.from_user.id)
+        await callback.message.edit_text(f"🎤 路演结果\n\n{msg}", reply_markup=result_kb)
         await callback.answer()
     else:
         await callback.answer(msg, show_alert=True)

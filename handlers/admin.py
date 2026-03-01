@@ -20,7 +20,7 @@ from handlers.common import (
     is_super_admin,
     super_admin_only,
 )
-from keyboards.menus import main_menu_kb
+from keyboards.menus import main_menu_kb, tag_kb
 from services.ad_service import get_active_ad_info
 from services.company_service import (
     add_funds,
@@ -118,7 +118,7 @@ async def cb_buff_list(callback: types.CallbackQuery):
     from keyboards.menus import company_detail_kb
     await callback.message.edit_text(
         "\n".join(lines),
-        reply_markup=company_detail_kb(company_id, True),
+        reply_markup=company_detail_kb(company_id, True, tg_id=callback.from_user.id),
     )
     await callback.answer()
 
@@ -146,7 +146,7 @@ async def cmd_admin(message: types.Message):
                     pass
             await message.answer(
                 "⚙️ 管理员配置面板\n当前参数可实时修改:",
-                reply_markup=_admin_menu_kb(),
+                reply_markup=_admin_menu_kb(tg_id=tg_id),
             )
             return
         await message.answer("用法: /admin <密钥>")
@@ -164,7 +164,7 @@ async def cmd_admin(message: types.Message):
     if ok:
         await message.answer(
             f"✅ {msg}\n\n⚙️ 管理员配置面板:",
-            reply_markup=_admin_menu_kb(),
+            reply_markup=_admin_menu_kb(tg_id=tg_id),
         )
     else:
         await message.answer(f"❌ 认证失败: {msg}")
@@ -283,8 +283,8 @@ class AdminConfigState(StatesGroup):
     waiting_param_value = State()
 
 
-def _admin_menu_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+def _admin_menu_kb(tg_id: int | None = None) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="初始金币", callback_data="admin:cfg:initial_traffic")],
         [InlineKeyboardButton(text="创建公司费用", callback_data="admin:cfg:company_creation_cost")],
         [InlineKeyboardButton(text="最低老板持股%", callback_data="admin:cfg:min_owner_share_pct")],
@@ -298,6 +298,7 @@ def _admin_menu_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="退出管理员模式", callback_data="admin:logout")],
         [InlineKeyboardButton(text="🔙 关闭", callback_data="admin:close")],
     ])
+    return tag_kb(kb, tg_id)
 
 
 @router.callback_query(F.data.startswith("admin:cfg:"), super_admin_only)
@@ -336,7 +337,7 @@ async def on_admin_param_value(message: types.Message, state: FSMContext):
         setattr(settings, param, new_value)
         await message.answer(
             f"✅ 参数 {param} 已更新为: {new_value}",
-            reply_markup=_admin_menu_kb(),
+            reply_markup=_admin_menu_kb(tg_id=message.from_user.id),
         )
     except (ValueError, TypeError):
         await message.answer(f"无效的值，需要 {type(current).__name__} 类型，请重新输入:")
@@ -369,13 +370,13 @@ async def cb_admin_settle(callback: types.CallbackQuery):
             await callback.bot.send_message(
                 callback.from_user.id,
                 text,
-                reply_markup=_admin_menu_kb(),
+                reply_markup=_admin_menu_kb(tg_id=callback.from_user.id),
             )
             await callback.message.edit_text("✅ 结算完成，结果已私聊发送。")
         except Exception:
             await callback.message.edit_text("结算完成，但无法私聊发送结果，请先私聊bot一次。")
     else:
-        await callback.message.edit_text(text, reply_markup=_admin_menu_kb())
+        await callback.message.edit_text(text, reply_markup=_admin_menu_kb(tg_id=callback.from_user.id))
 
 
 @router.callback_query(F.data == "admin:logout", super_admin_only)

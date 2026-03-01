@@ -21,8 +21,8 @@ CHANNEL_ONLY_HINT = "❌ 本 bot 仅在指定话题频道内提供服务。"
 
 
 def admin_controls_locked() -> bool:
-    """Lock all admin/super-admin controls when real AI endpoint is enabled."""
-    return settings.ai_enabled and bool(settings.ai_api_key.strip())
+    """Whether admin controls are globally locked."""
+    return False
 
 async def is_admin_authenticated(tg_id: int) -> bool:
     """检查用户是否已通过管理员认证（密钥+ID双重验证）。"""

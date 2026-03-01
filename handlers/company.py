@@ -538,6 +538,7 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
         f"👑 保险：{insurance_info['name']}（罚款-{int(insurance_info['fine_reduction'] * 100)}%）\n"
         f"🎭 文化：{profile.culture}/100（营收+{profile.culture/10:.1f}%，风险-{profile.culture * 0.3:.1f}%）\n"
         f"🛂 监管：{profile.regulation_pressure}/100\n"
+        f"🤝 合作Buff：+{coop_bonus_rate*100:.0f}%（当日）\n"
         f"⚔️ 商战Debuff：-{battle_debuff_rate*100:.0f}%\n"
         f"🏷 估值：{fmt_quota(valuation)}\n"
         f"👥 股东:{sh_count} | 📦 产品:{prod_count} | 🔬 科技:{tech_count}\n"

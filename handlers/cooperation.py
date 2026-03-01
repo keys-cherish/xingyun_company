@@ -79,7 +79,7 @@ async def cmd_cooperate(message: types.Message):
             "🤝 合作命令:\n"
             "  回复某人消息 + 发送「合作」— 直接合作\n"
             "  /company_cooperate all — 一键与所有公司合作\n"
-            "合作加成每次+5%，次日结算后清空需重新合作\n"
+            "合作加成每次+6%（含额外1%），次日结算后清空需重新合作\n"
             "双方各 +30 声望\n"
             "每天每家公司仅可合作一家"
         )
@@ -196,6 +196,9 @@ async def cb_init_coop(callback: types.CallbackQuery):
     lines.append(f"\n💡 合作方式:")
     lines.append(f"  • 回复某人消息 + 发送「合作」")
     lines.append(f"  • /company_cooperate all — 一键全部合作")
+    lines.append(f"\n🎁 合作收益:")
+    lines.append(f"  • 当日合作Buff：每次 +6% 营收（其中额外+1%，到结算失效）")
+    lines.append(f"  • 成功合作双方各 +30 声望")
 
     kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")],

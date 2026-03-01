@@ -99,11 +99,7 @@ def _is_training_active(profile: CompanyOperationProfile, now: dt.datetime) -> b
 
 
 def get_market_trend(company: Company, now: dt.datetime | None = None) -> dict:
-    """7-day market trend cycle with industry offset.
-
-    - Every 7 days switch to next trend.
-    - Different industries are offset in the cycle.
-    """
+    """7-day market trend cycle with per-industry weekly randomness."""
     if now is None:
         now = dt.datetime.now(BJ_TZ)
     elif now.tzinfo is None:
@@ -112,9 +108,14 @@ def get_market_trend(company: Company, now: dt.datetime | None = None) -> dict:
         now = now.astimezone(BJ_TZ)
 
     cycle_week = ((now.date() - _MARKET_CYCLE_ANCHOR).days // 7)
-    industry_offset = sum(ord(ch) for ch in (company.company_type or "tech")) % len(MARKET_TRENDS)
-    idx = (cycle_week + industry_offset) % len(MARKET_TRENDS)
-    return MARKET_TRENDS[idx]
+    industry_key = company.company_type or "tech"
+    rng = random.Random(f"{industry_key}:{cycle_week}")
+    # 平稳概率略高，繁荣/衰退次之；每周每行业固定，下一周自动变化。
+    return rng.choices(
+        MARKET_TRENDS,
+        weights=[28, 44, 28],
+        k=1,
+    )[0]
 
 
 def get_training_info(profile: CompanyOperationProfile, now: dt.datetime) -> dict:
@@ -240,7 +241,9 @@ async def cycle_option(
     if field == "office":
         keys = list(OFFICE_LEVELS.keys())
         idx = keys.index(profile.office_level) if profile.office_level in keys else 0
-        profile.office_level = keys[(idx + 1) % len(keys)]
+        if idx >= len(keys) - 1:
+            return True, "已是顶级办公，无需继续升级"
+        profile.office_level = keys[idx + 1]
         await session.flush()
         return True, f"办公升级为：{OFFICE_LEVELS[profile.office_level]['name']}"
 
@@ -297,12 +300,12 @@ async def start_training(
     ok = await add_funds(session, company_id, -total_cost)
     if not ok:
         return False, f"公司资金不足，培训需要 {total_cost:,} 金币"
-    now = dt.datetime.now(dt.UTC)
+    now = dt.datetime.utcnow()
     profile.training_level = level
     profile.training_expires_at = now + dt.timedelta(hours=info["duration_hours"])
     profile.culture = _clamp(profile.culture + 4, 0, 100)
     await session.flush()
-    end_bj = profile.training_expires_at.astimezone(BJ_TZ).strftime("%m-%d %H:%M")
+    end_bj = profile.training_expires_at.replace(tzinfo=dt.UTC).astimezone(BJ_TZ).strftime("%m-%d %H:%M")
     return True, f"培训已启动：{info['name']}，到期时间（北京时间）{end_bj}"
 
 

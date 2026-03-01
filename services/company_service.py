@@ -59,7 +59,7 @@ async def create_company(
     ok = await add_traffic(session, owner_id, -settings.company_creation_cost)
     if not ok:
         from utils.formatters import fmt_traffic
-        return None, f"金币不足，创建公司需要 {fmt_traffic(settings.company_creation_cost)}"
+        return None, f"积分不足，创建公司需要 {fmt_traffic(settings.company_creation_cost)}"
 
     type_info = types[company_type]
     company = Company(

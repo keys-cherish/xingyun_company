@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-CURRENCY_NAME = "金币"
+CURRENCY_NAME = "积分"
 
 
 def fmt_currency(amount: int) -> str:
@@ -11,12 +11,8 @@ def fmt_currency(amount: int) -> str:
 
 
 def fmt_quota(amount_mb: int) -> str:
-    """Format quota amount with MB/GB/TB units (1024 based)."""
-    if amount_mb >= 1024 * 1024:  # >= 1TB
-        return f"{amount_mb / (1024 * 1024):.2f}TB ({amount_mb:,}MB)"
-    if amount_mb >= 1024:  # >= 1GB
-        return f"{amount_mb / 1024:.2f}GB ({amount_mb:,}MB)"
-    return f"{amount_mb:,}MB"
+    """Display quota/currency uniformly in points (no MB/GB conversion)."""
+    return f"{amount_mb:,} {CURRENCY_NAME}"
 
 
 def fmt_traffic(amount: int) -> str:

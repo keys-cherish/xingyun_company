@@ -87,16 +87,16 @@ async def add_points(tg_id_or_user_id: int, amount: int, *, session: AsyncSessio
     return await r.incrby(f"points:{tg_id}", amount)
 
 
-# ---------- Quota exchange (currency -> MB) ----------
+# ---------- Reserve exchange (currency -> reserve points) ----------
 
-BASE_CREDIT_TO_QUOTA_RATE = 120  # 120 金币 = 1MB quota (base)
+BASE_CREDIT_TO_QUOTA_RATE = 120  # 120 积分 = 1 储备积分 (base)
 RATE_VOLATILITY = 0.20  # +/-20% hourly fluctuation
 STREAK_BONUS_EVERY = 3  # every 3 successful exchanges per day
 STREAK_BONUS_MB = 1
 
 
 def get_credit_to_quota_rate(tg_id: int) -> int:
-    """Get hourly dynamic rate: how many 金币 are needed for 1MB quota."""
+    """Get hourly dynamic rate: how many points are needed for 1 reserve point."""
     hour_tag = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d%H")
     seed = f"{tg_id}:{hour_tag}".encode("utf-8")
     digest = hashlib.sha256(seed).digest()
@@ -106,7 +106,7 @@ def get_credit_to_quota_rate(tg_id: int) -> int:
 
 
 async def get_quota_mb(tg_id: int) -> int:
-    """Current user quota balance (MB), stored in Redis."""
+    """Current user reserve points balance, stored in Redis."""
     r = await get_redis()
     val = await r.get(f"quota:{tg_id}")
     return int(val) if val else 0
@@ -138,7 +138,7 @@ async def exchange_credits_for_quota(
     tg_id: int,
     credits_amount: int,
 ) -> tuple[bool, str]:
-    """Exchange currency to quota with dynamic rates and streak rewards."""
+    """Exchange points to reserve points with dynamic rates and streak rewards."""
     if credits_amount <= 0:
         return False, "兑换数量必须大于 0"
 
@@ -149,7 +149,7 @@ async def exchange_credits_for_quota(
     rate = get_credit_to_quota_rate(tg_id)
     quota_gained = credits_amount // rate
     if quota_gained <= 0:
-        return False, f"当前汇率下，至少需要 {rate} {CURRENCY_NAME} 才能兑换 1MB 额度"
+        return False, f"当前汇率下，至少需要 {rate} {CURRENCY_NAME} 才能兑换 1 储备积分"
 
     actual_cost = quota_gained * rate
     ok = await add_traffic(session, user.id, -actual_cost)
@@ -163,7 +163,7 @@ async def exchange_credits_for_quota(
     if bonus_mb > 0:
         return True, (
             f"兑换成功！消耗 {fmt_currency(actual_cost)}，获得 {fmt_quota(quota_gained)}，"
-            f"连兑奖励 +{bonus_mb}MB，合计 {fmt_quota(total_quota)}。"
+            f"连兑奖励 +{bonus_mb} 储备积分，合计 {fmt_quota(total_quota)}。"
         )
     return True, f"兑换成功！消耗 {fmt_currency(actual_cost)}，获得 {fmt_quota(total_quota)}。"
 
@@ -184,7 +184,7 @@ return redis.call('DECRBY', key, amount)
 
 
 async def exchange_points_for_traffic(session: AsyncSession, tg_id: int, points_amount: int) -> tuple[bool, str]:
-    """Exchanges points to currency."""
+    """Exchanges honor points to points currency."""
     if points_amount <= 0:
         return False, "兑换积分数必须大于 0"
 
@@ -209,7 +209,7 @@ async def exchange_points_for_traffic(session: AsyncSession, tg_id: int, points_
     return True, f"兑换成功！消耗 {actual_points_used} 积分，获得 {credits_gained:,} {CURRENCY_NAME}"
 
 
-# ---------- Reverse exchange: quota -> currency ----------
+# ---------- Reverse exchange: reserve points -> currency ----------
 
 REVERSE_EXCHANGE_PENALTY = 0.20  # 20% loss on reverse exchange
 
@@ -229,9 +229,9 @@ async def exchange_quota_for_credits(
     tg_id: int,
     quota_mb: int,
 ) -> tuple[bool, str]:
-    """Exchange quota (MB) back to currency at a 20% penalty."""
+    """Exchange reserve points back to currency at a 20% penalty."""
     if quota_mb <= 0:
-        return False, "兑换额度必须大于 0"
+        return False, "兑换储备积分必须大于 0"
 
     user = await get_user_by_tg_id(session, tg_id)
     if user is None:
@@ -247,7 +247,7 @@ async def exchange_quota_for_credits(
     r = await get_redis()
     result = await r.eval(_DEDUCT_QUOTA_LUA, 1, f"quota:{tg_id}", quota_mb)
     if result == -1:
-        return False, f"额度不足，当前 {fmt_quota(await get_quota_mb(tg_id))}"
+        return False, f"储备积分不足，当前 {fmt_quota(await get_quota_mb(tg_id))}"
 
     ok = await add_traffic(session, user.id, credits_gained)
     if not ok:

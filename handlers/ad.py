@@ -88,7 +88,7 @@ async def cb_buy_ad(callback: types.CallbackQuery):
             cost = tier["cost"]
             fund_ok = await add_funds(session, company_id, -cost)
             if not fund_ok:
-                await callback.answer(f"公司资金不足，需要 {cost:,} 金币", show_alert=True)
+                await callback.answer(f"公司资金不足，需要 {cost:,} 积分", show_alert=True)
                 return
 
             # 资金扣除成功后再购买广告

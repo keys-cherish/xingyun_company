@@ -17,11 +17,11 @@ from utils.formatters import fmt_traffic
 ROADSHOW_TYPES = ["技术展会", "投资峰会", "媒体发布会", "行业论坛"]
 
 REWARD_TABLE = [
-    {"weight": 30, "type": "traffic", "min": 200, "max": 800, "desc": "获得金币奖励"},
+    {"weight": 30, "type": "traffic", "min": 200, "max": 800, "desc": "获得积分奖励"},
     {"weight": 25, "type": "reputation", "min": 3, "max": 15, "desc": "声望提升"},
-    {"weight": 20, "type": "traffic", "min": 500, "max": 2000, "desc": "大额金币奖励"},
+    {"weight": 20, "type": "traffic", "min": 500, "max": 2000, "desc": "大额积分奖励"},
     {"weight": 15, "type": "points", "min": 10, "max": 50, "desc": "获得积分"},
-    {"weight": 10, "type": "jackpot", "min": 2000, "max": 5000, "desc": "路演大成功! 巨额金币"},
+    {"weight": 10, "type": "jackpot", "min": 2000, "max": 5000, "desc": "路演大成功! 巨额积分"},
 ]
 
 # ---- Narrative flavor text ----

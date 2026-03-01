@@ -62,16 +62,16 @@ uv run python bot.py
 | 科研系统 | 10级研发树，前置解锁，完成后解锁新产品 |
 | 产品系统 | 创建/升级/下架产品，每日产生收入 |
 | AI研发 | 提交产品方案 → AI评分 → 永久提升产品收入(1-100%) |
-| 路演系统 | 消耗金币路演，随机获得资源/声望/积分 |
+| 路演系统 | 消耗积分路演，随机获得资源/声望/积分 |
 | 合作系统 | 公司间合作提供营收加成 |
 | 地产系统 | 购买地产获取稳定被动收入 |
 | 广告系统 | 4档广告方案，临时提升营收 |
-| 交易所 | 金币/额度/积分互换，道具商城，黑市特惠 |
+| 交易所 | 积分/储备积分/荣誉点互换，道具商城，黑市特惠 |
 | 员工系统 | 招聘/裁员，薪资/社保成本 |
 | 经营策略 | 工时/办公/培训/保险/文化/道德/监管，动态影响营收与成本 |
 | 税务系统 | 每日营收纳税 |
 | 随机事件 | 员工离职/退休/市场波动/PR危机等20+事件 |
-| 积分系统 | 多途径获取积分，可兑换金币 |
+| 积分系统 | 多途径获取荣誉点，可兑换积分 |
 | 每日结算 | 自动计算收入/分红/生成日报 |
 
 ## 命令
@@ -106,11 +106,22 @@ uv run python bot.py
 - `BACKUP_INTERVAL_MINUTES`：兼容配置项（当前固定每 3 小时整点备份）
 - `BACKUP_KEEP_FILES`：本地保留的备份文件数量
 - `BACKUP_NOTIFY_SUPER_ADMIN`：备份结果是否私聊通知超管
+- `AI_ENABLED`：是否启用真实 AI 评审（关闭时走本地严格评分）
+- `AI_API_BASE_URL` / `AI_API_KEY` / `AI_MODEL`：AI服务地址、密钥与模型
+- `AI_TIMEOUT_SECONDS` / `AI_MAX_RETRIES` / `AI_RETRY_BACKOFF_SECONDS`：超时与重试策略
+- `AI_TEMPERATURE` / `AI_TOP_P` / `AI_MAX_TOKENS`：模型采样与输出长度
+- `AI_SYSTEM_PROMPT`：可覆盖默认评审系统提示词
+- `AI_EXTRA_HEADERS_JSON`：可选额外请求头（JSON）
 
 备份说明：
 - 固定按北京时间每 3 小时整点执行（00/03/06/09/12/15/18/21）
 - 备份文件写入项目根目录，文件名形如 `my_company_backup_YYYYMMDDTHHMMSS+0800.json.gz`
 - 该备份是 `my_company` 项目独立文件，不使用 `dice_bot` 的 `backup.db`
+
+AI配置说明：
+- 所有 AI 密钥仅写入本地 `.env`，不要提交到 Git。
+- `AI_API_BASE_URL` 支持 OpenAI 兼容接口，默认使用 `.../v1/chat/completions`。
+- 若供应商需要额外请求头，可在 `AI_EXTRA_HEADERS_JSON` 中配置。
 
 ## 项目结构
 

@@ -98,7 +98,7 @@ async def cb_buff_list(callback: types.CallbackQuery):
         "",
         "【路演Buff】(通过路演随机获得)",
         "  声望提升 → 影响声望Buff",
-        "  直接金币/积分奖励",
+        "  直接积分/荣誉点奖励",
         "",
         f"【公司类型Buff】({type_info['name'] if type_info else '未知'})",
         f"  收入加成: {'+' if type_income_buff >= 0 else ''}{type_income_buff:.0f}%",
@@ -173,7 +173,7 @@ async def cmd_admin(message: types.Message):
 
 @router.message(Command(CMD_GIVE_MONEY))
 async def cmd_give_money(message: types.Message):
-    """超管命令：回复某人并发放金币，同时奖励积分。"""
+    """超管命令：回复某人并发放积分，同时奖励荣誉点。"""
     if not is_super_admin(message.from_user.id):
         await message.answer("❌ 无权使用此命令")
         return
@@ -248,7 +248,7 @@ WELFARE_AMOUNT = 1_000_000
 
 @router.message(Command(CMD_WELFARE))
 async def cmd_welfare(message: types.Message):
-    """超管命令：给全部公司发放固定金币。"""
+    """超管命令：给全部公司发放固定积分。"""
     if not is_super_admin(message.from_user.id):
         await message.answer("❌ 无权使用此命令")
         return
@@ -286,7 +286,7 @@ class AdminConfigState(StatesGroup):
 
 def _admin_menu_kb(tg_id: int | None = None) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="初始金币", callback_data="admin:cfg:initial_traffic")],
+        [InlineKeyboardButton(text="初始积分", callback_data="admin:cfg:initial_traffic")],
         [InlineKeyboardButton(text="创建公司费用", callback_data="admin:cfg:company_creation_cost")],
         [InlineKeyboardButton(text="最低老板持股%", callback_data="admin:cfg:min_owner_share_pct")],
         [InlineKeyboardButton(text="税率", callback_data="admin:cfg:tax_rate")],

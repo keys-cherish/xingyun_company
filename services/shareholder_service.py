@@ -20,11 +20,11 @@ async def invest(
     company_id: int,
     amount: int,
 ) -> tuple[bool, str]:
-    """用户注资流量到公司以换取股份。"""
+    """用户注资积分到公司以换取股份。"""
     if amount <= 0:
         return False, "注资金额必须大于0"
     if amount > MAX_SINGLE_INVESTMENT:
-        return False, f"单次注资上限为{MAX_SINGLE_INVESTMENT}MB"
+        return False, f"单次注资上限为{MAX_SINGLE_INVESTMENT}积分"
 
     company = await session.get(Company, company_id)
     if company is None:
@@ -33,7 +33,7 @@ async def invest(
     # 扣除流量
     ok = await add_traffic(session, user_id, -amount)
     if not ok:
-        return False, "金币不足"
+        return False, "积分不足"
 
     # 计算新股份
     valuation = await get_company_valuation(session, company)
@@ -50,7 +50,7 @@ async def invest(
             # 回滚流量
             await add_traffic(session, user_id, amount)
             max_invest = _max_investable(valuation, owner_sh.shares)
-            return False, f"此注资会导致老板持股低于{settings.min_owner_share_pct}%，最多可注资{max_invest}MB"
+            return False, f"此注资会导致老板持股低于{settings.min_owner_share_pct}%，最多可注资{max_invest}积分"
 
     # 按比例稀释所有现有股东
     result = await session.execute(

@@ -16,6 +16,7 @@ from services.dividend_service import distribute_dividends
 from services.realestate_service import get_total_estate_income
 from services.random_events import roll_daily_events
 from services.research_service import check_and_complete_research
+from services.battle_service import get_company_revenue_debuff
 from services.operations_service import (
     calc_extra_operating_costs,
     get_market_trend,
@@ -62,7 +63,13 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
         # Delete the key so it only applies once
         await r.delete(f"rename_penalty:{company.id}")
 
-    # 1b. Company level revenue bonus (permanent)
+    # 1b. Battle debuff (until next settlement)
+    battle_debuff_rate = await get_company_revenue_debuff(company.id)
+    if battle_debuff_rate > 0:
+        battle_debuff_amount = int(product_income * battle_debuff_rate)
+        product_income = max(0, product_income - battle_debuff_amount)
+
+    # 1c. Company level revenue bonus (permanent)
     from services.company_service import get_level_revenue_bonus
     level_revenue_bonus = get_level_revenue_bonus(company.level)
 
@@ -175,7 +182,7 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
             f"📉 行业景气压制：{market['label']}（营收{(market['income_mult'] - 1.0) * 100:.0f}%）"
         )
     if fine > 0:
-        event_messages.append(f"⚖️ 合规罚款触发：-{fine:,} 金币")
+        event_messages.append(f"⚖️ 合规罚款触发：-{fine:,} 积分")
     await save_recent_events(company.id, event_messages)
     await settle_profile_daily(session, profile, now_utc)
 

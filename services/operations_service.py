@@ -299,7 +299,7 @@ async def start_training(
     total_cost = int(company.employee_count * info["hourly_cost"] * info["duration_hours"])
     ok = await add_funds(session, company_id, -total_cost)
     if not ok:
-        return False, f"公司资金不足，培训需要 {total_cost:,} 金币"
+        return False, f"公司资金不足，培训需要 {total_cost:,} 积分"
     now = dt.datetime.utcnow()
     profile.training_level = level
     profile.training_expires_at = now + dt.timedelta(hours=info["duration_hours"])

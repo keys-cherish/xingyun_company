@@ -80,7 +80,8 @@ async def cmd_cooperate(message: types.Message):
             "  回复某人消息 + 发送「合作」— 直接合作\n"
             "  /company_cooperate all — 一键与所有公司合作\n"
             "合作加成每次+5%，次日结算后清空需重新合作\n"
-            "普通公司上限50%，满级公司上限100%"
+            "双方各 +30 声望\n"
+            "每天每家公司仅可合作一家"
         )
         return
 
@@ -105,7 +106,7 @@ async def cmd_cooperate(message: types.Message):
                 f"新增合作: {success} 家",
             ]
             if skip > 0:
-                lines.append(f"跳过: {skip} 家（已合作或达上限）")
+                lines.append(f"跳过: {skip} 家（对方已合作或今日限制）")
             if msgs:
                 lines.extend(msgs)
             await message.answer("\n".join(lines))
@@ -179,7 +180,6 @@ async def cb_init_coop(callback: types.CallbackQuery):
         if not company or company.owner_id != user.id:
             await callback.answer("只有公司老板才能查看合作", show_alert=True)
             return
-        text = await _build_coop_overview_text(session, company_id)
 
         coops = await get_active_cooperations(session, company_id)
         current_total = sum(c.bonus_multiplier for c in coops)

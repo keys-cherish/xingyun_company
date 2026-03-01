@@ -89,10 +89,22 @@ class Settings(BaseSettings):
     # Random events
     event_chance: float = 0.35  # 35% chance per company per day
 
-    # AI API (for future AI dialogue features)
+    # AI API（AI研发评审）
+    ai_enabled: bool = True
+    ai_provider: str = "openai_compatible"  # openai_compatible / deepseek / custom
     ai_api_key: str = ""
-    ai_api_base_url: str = ""
-    ai_model: str = ""
+    ai_api_base_url: str = "https://api.openai.com/v1"
+    ai_model: str = "gpt-4o-mini"
+    ai_timeout_seconds: int = 30
+    ai_max_retries: int = 2
+    ai_retry_backoff_seconds: float = 1.5
+    ai_temperature: float = 0.2
+    ai_top_p: float = 1.0
+    ai_max_tokens: int = 500
+    ai_system_prompt: str = ""
+    ai_chat_system_prompt: str = ""
+    # 额外请求头，JSON格式；例如 {"X-Api-Version":"2024-01-01"}
+    ai_extra_headers_json: str = ""
 
     # 流量来源接口（预置参数，后续接入外部API）
     traffic_api_url: str = ""  # 外部流量接口URL

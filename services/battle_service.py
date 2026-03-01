@@ -12,10 +12,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cache.redis_client import get_redis
 from db.models import Company, Product, ResearchProgress, User
 from services.company_service import add_funds
+from services.operations_service import get_or_create_profile
 from utils.formatters import fmt_traffic
 
 # Cooldown base: 1 battle per user every 30 minutes
 BATTLE_COOLDOWN_SECONDS = 1800
+BATTLE_POINT_COST = 200
+BATTLE_WIN_DEBUFF_RATE = 0.12   # winner applies to loser revenue
+BATTLE_BACKFIRE_DEBUFF_RATE = 0.10
+BATTLE_BACKFIRE_ETHICS_LOSS = 8
 
 # Base loot settings
 BASE_LOOT_RATE = 0.05
@@ -136,6 +141,58 @@ def _calc_base_power(company: Company, product_count: int, tech_count: int) -> f
         + product_count * 1500
         + company.level * 3000,
     )
+
+
+def _next_settlement_time() -> dt.datetime:
+    from utils.timezone import BJ_TZ
+
+    now_bj = dt.datetime.now(BJ_TZ)
+    next_bj = (now_bj + dt.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return next_bj.astimezone(dt.UTC).replace(tzinfo=None)
+
+
+async def _consume_battle_points(tg_id: int, amount: int) -> bool:
+    if amount <= 0:
+        return True
+    lua = """
+local key = KEYS[1]
+local amount = tonumber(ARGV[1])
+local current = tonumber(redis.call('GET', key) or '0')
+if current < amount then
+    return 0
+end
+redis.call('DECRBY', key, amount)
+return 1
+"""
+    r = await get_redis()
+    ok = await r.eval(lua, 1, f"points:{tg_id}", amount)
+    return int(ok) == 1
+
+
+async def _set_revenue_debuff(company_id: int, rate: float) -> float:
+    """Set/merge daily revenue debuff. Returns latest debuff rate."""
+    if rate <= 0:
+        return 0.0
+    r = await get_redis()
+    key = f"battle:debuff:company:{company_id}"
+    existing = await r.get(key)
+    current = float(existing) if existing else 0.0
+    merged = max(current, rate)
+    ttl = int(max(60, (_next_settlement_time() - dt.datetime.now(dt.UTC).replace(tzinfo=None)).total_seconds()))
+    await r.set(key, f"{merged:.4f}", ex=ttl)
+    return merged
+
+
+async def get_company_revenue_debuff(company_id: int) -> float:
+    r = await get_redis()
+    key = f"battle:debuff:company:{company_id}"
+    val = await r.get(key)
+    if not val:
+        return 0.0
+    try:
+        return max(0.0, min(0.8, float(val)))
+    except ValueError:
+        return 0.0
 
 
 def _roll_power(base_power: float, strategy: BattleStrategy) -> float:
@@ -400,6 +457,9 @@ async def do_battle(
     )
     a_rep_loss = await _apply_reputation_loss(session, attacker_company.owner_id, a_rep_loss_raw)
     d_rep_loss = await _apply_reputation_loss(session, defender_company.owner_id, d_rep_loss_raw)
+    winner_debuff_rate = 0.0
+    backlash_debuff_rate = 0.0
+    backlash_ethics_loss = 0
 
     # Loot transfer after battle damage.
     winner_base = attacker_base if attacker_won else defender_base
@@ -416,6 +476,15 @@ async def do_battle(
             await add_funds(session, winner.id, loot)
         else:
             loot = 0
+
+    if attacker_won:
+        winner_debuff_rate = await _set_revenue_debuff(defender_company.id, BATTLE_WIN_DEBUFF_RATE)
+    else:
+        backlash_debuff_rate = await _set_revenue_debuff(attacker_company.id, BATTLE_BACKFIRE_DEBUFF_RATE)
+        attacker_profile = await get_or_create_profile(session, attacker_company.id)
+        attacker_profile.ethics = max(0, attacker_profile.ethics - BATTLE_BACKFIRE_ETHICS_LOSS)
+        backlash_ethics_loss = BATTLE_BACKFIRE_ETHICS_LOSS
+        await session.flush()
 
     cooldown_seconds = _calc_cooldown_seconds(
         attacker_base, defender_base, attacker_won, attacker_strategy
@@ -445,10 +514,26 @@ async def do_battle(
         "🩸 双边战损",
         f"• {attacker_company.name}: 资金-{fmt_traffic(a_fund_loss)} | 员工-{a_emp_loss} | 声望-{a_rep_loss}",
         f"• {defender_company.name}: 资金-{fmt_traffic(d_fund_loss)} | 员工-{d_emp_loss} | 声望-{d_rep_loss}",
+        "",
+        "🧨 商战后遗症",
         f"⏳ 你的下次商战冷却: {mins}分{secs}秒",
         "",
         f"💬 {_pick_taunt(winner.name, loser.name)}",
     ]
+    if winner_debuff_rate > 0:
+        lines.insert(
+            -3,
+            f"• {defender_company.name} 营收Debuff: -{winner_debuff_rate*100:.0f}%（至次日结算）",
+        )
+    if backlash_debuff_rate > 0:
+        lines.insert(
+            -3,
+            f"• 反噬触发：{attacker_company.name} 营收Debuff -{backlash_debuff_rate*100:.0f}%（至次日结算）",
+        )
+        lines.insert(
+            -3,
+            f"• 反噬触发：{attacker_company.name} 道德 -{backlash_ethics_loss}",
+        )
     return "\n".join(lines), attacker_won, cooldown_seconds
 
 
@@ -490,6 +575,11 @@ async def battle(
     if not d_companies:
         return False, "❌ 对方没有公司，无法商战"
 
+    # Cost points to launch battle
+    consumed = await _consume_battle_points(attacker_tg_id, BATTLE_POINT_COST)
+    if not consumed:
+        return False, f"❌ 积分不足，发起商战需要 {BATTLE_POINT_COST} 积分"
+
     # Use first company for both.
     a_company = a_companies[0]
     d_company = d_companies[0]
@@ -504,4 +594,4 @@ async def battle(
     winner_owner = attacker_user.id if _attacker_won else defender_user.id
     await update_quest_progress(session, winner_owner, "battle_win_count", increment=1)
 
-    return True, msg
+    return True, f"🎯 发起商战已扣除 {BATTLE_POINT_COST} 积分\n{msg}"

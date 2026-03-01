@@ -274,7 +274,7 @@ async def start_research(
     duration_str = fmt_duration(duration_sec)
     return True, (
         f"开始研究「{tech['name']}」，预计{duration_str}完成 "
-        f"(本次投入: {cost:,} 金币)"
+        f"(本次投入: {cost:,} 积分)"
     )
 
 

@@ -29,7 +29,7 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 # /company_new 参数：投入资金 -> 基础日收入的转化率
-INVEST_TO_INCOME_RATE = 0.03  # 每投入100金币 = 3金币/日
+INVEST_TO_INCOME_RATE = 0.03  # 每投入100积分 = 3积分/日
 EMPLOYEE_INCOME_BONUS = 0.10  # 每分配1名员工 +10% 收入
 PERFECT_QUALITY_THRESHOLD = 100  # 完美品质阈值
 PERFECT_QUALITY_BONUS = 1.0     # 完美品质额外+100%收入
@@ -60,10 +60,10 @@ async def cmd_new_product(message: types.Message):
         return
 
     if investment < 1000:
-        await message.answer("❌ 最低投入 1,000 金币")
+        await message.answer("❌ 最低投入 1,000 积分")
         return
     if investment > 500000:
-        await message.answer("❌ 单次最高投入 500,000 金币")
+        await message.answer("❌ 单次最高投入 500,000 积分")
         return
     if employees < 0 or employees > 50:
         await message.answer("❌ 分配人员数量 0-50")
@@ -396,7 +396,7 @@ async def cb_upgrade_product(callback: types.CallbackQuery):
     else:
         await callback.answer(
             f"产品「{product.name}」连续升级{upgraded}次! "
-            f"当前v{product.version}，日收入: {product.daily_income}MB",
+            f"当前v{product.version}，日收入: {product.daily_income}积分",
             show_alert=True,
         )
     await _refresh_product_list(callback, product.company_id)

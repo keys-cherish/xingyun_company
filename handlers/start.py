@@ -47,7 +47,7 @@ BOT_COMMANDS = [
     BotCommand(command=CMD_DISSOLVE, description="注销公司"),
     BotCommand(command=CMD_QUEST, description="周任务清单"),
     BotCommand(command=CMD_HELP, description="帮助信息"),
-    BotCommand(command=CMD_GIVE_MONEY, description="超管发放金币（回复+金额）"),
+    BotCommand(command=CMD_GIVE_MONEY, description="超管发放积分（回复+金额）"),
     BotCommand(command=CMD_WELFARE, description="超管全服福利（每家100万）"),
 ]
 
@@ -61,10 +61,10 @@ HELP_TEXT = (
     "/company — 查看和管理公司\n"
     "/company_list — 全服公司列表\n"
     "/company_rank — 综合实力排行\n\n"
-    "⚔️ /company_battle [战术] — 回复某人发起商战\n"
+    "⚔️ /company_battle [战术] — 回复某人发起商战（每次消耗200积分）\n"
     "  战术: 稳扎稳打 / 激进营销 / 奇袭渗透\n"
     "🤝 /company_cooperate — 回复某人/all 合作\n"
-    "  每次+5%，次日清空，上限50%(满级100%)\n\n"
+    "  每次+5%，次日清空，双方各+30声望，每天仅可合作一家\n\n"
     "📦 /company_new <名字> <资金> <人员>\n"
     "  投入+人员决定收入，品质随机\n"
     "  完美品质(100分) 极稀有，收入翻倍\n\n"
@@ -72,6 +72,8 @@ HELP_TEXT = (
     "🗑 /company_dissolve — 注销公司(24h冷却)\n"
     "/company_admin <密钥> — 管理员认证\n"
     "/company_help — 显示此帮助\n"
+    "\n🤖 AI对话: 任意消息带 @机器人用户名 即可调用\n"
+    "普通用户每分钟最多 10 次，管理员/超管不限制\n"
 )
 
 
@@ -141,10 +143,10 @@ async def cb_menu_profile(callback: types.CallbackQuery):
     text = (
         f"📊 个人面板 — {callback.from_user.full_name}\n"
         f"{'─' * 24}\n"
-        f"💰 金币: {fmt_traffic(traffic)}\n"
+        f"💰 积分: {fmt_traffic(traffic)}\n"
         f"⭐ 声望: {reputation}\n"
-        f"🎁 积分: {points:,}\n"
-        f"📦 额度: {fmt_quota(quota)}\n"
+        f"🎁 荣誉点: {points:,}\n"
+        f"📦 储备积分: {fmt_quota(quota)}\n"
         f"🏅 称号: {title_str}\n"
         f"🏢 公司: {company_names}\n"
     )

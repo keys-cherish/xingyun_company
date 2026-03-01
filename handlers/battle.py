@@ -28,7 +28,8 @@ async def cmd_battle(message: types.Message):
     if not message.reply_to_message:
         await message.answer(
             "⚔️ 使用方法: 回复某人的消息并发送 /company_battle [战术]\n"
-            "战术可选: 稳扎稳打 / 激进营销 / 奇袭渗透"
+            "战术可选: 稳扎稳打 / 激进营销 / 奇袭渗透\n"
+            "每次发起消耗 200 积分，商战可能触发收益Debuff/反噬"
         )
         return
 

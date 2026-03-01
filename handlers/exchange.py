@@ -35,11 +35,11 @@ router = Router()
 def _exchange_menu_kb(tg_id: int | None = None) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="💱 金币→额度", callback_data="exchange:c2q"),
-            InlineKeyboardButton(text="💱 额度→金币", callback_data="exchange:q2c"),
+            InlineKeyboardButton(text="💱 积分→储备", callback_data="exchange:c2q"),
+            InlineKeyboardButton(text="💱 储备→积分", callback_data="exchange:q2c"),
         ],
         [
-            InlineKeyboardButton(text="🎁 积分→金币", callback_data="exchange:p2c"),
+            InlineKeyboardButton(text="🎁 荣誉点→积分", callback_data="exchange:p2c"),
         ],
         [
             InlineKeyboardButton(text="🛒 道具商城", callback_data="shop:list"),
@@ -66,7 +66,7 @@ async def cb_exchange_menu(callback: types.CallbackQuery):
     text = (
         f"🏦 商业交易所\n"
         f"{'─' * 24}\n"
-        f"💱 当前汇率: 1额度 = {rate} 金币 ({arrow}{sign}{pct:.0f}%)\n"
+        f"💱 当前汇率: 1储备积分 = {rate} 积分 ({arrow}{sign}{pct:.0f}%)\n"
     )
     await callback.message.edit_text(text, reply_markup=_exchange_menu_kb(tg_id=callback.from_user.id))
     await callback.answer()
@@ -78,7 +78,7 @@ def _c2q_amounts_kb(rate: int, tg_id: int | None = None) -> InlineKeyboardMarkup
     amounts = [1_000, 3_000, 8_000, 15_000]
     buttons = [
         [InlineKeyboardButton(
-            text=f"花费 {a:,} 金币 (~{max(1, a // rate)}MB)",
+            text=f"花费 {a:,} 积分 (~{max(1, a // rate)}储备积分)",
             callback_data=f"exchange:c2q:{a}",
         )]
         for a in amounts
@@ -91,7 +91,7 @@ def _c2q_amounts_kb(rate: int, tg_id: int | None = None) -> InlineKeyboardMarkup
 async def cb_c2q_menu(callback: types.CallbackQuery):
     rate = get_credit_to_quota_rate(callback.from_user.id)
     await callback.message.edit_text(
-        f"💱 金币 → 额度\n当前汇率: {rate} 金币 = 1MB\n\n选择兑换金额:",
+        f"💱 积分 → 储备积分\n当前汇率: {rate} 积分 = 1 储备积分\n\n选择兑换金额:",
         reply_markup=_c2q_amounts_kb(rate, tg_id=callback.from_user.id),
     )
     await callback.answer()
@@ -117,7 +117,7 @@ async def cb_c2q_do(callback: types.CallbackQuery):
         text = (
             f"🏦 商业交易所\n"
             f"{'─' * 24}\n"
-            f"💱 当前汇率: 1额度 = {rate} 金币 ({arrow}{sign}{pct:.0f}%)\n"
+            f"💱 当前汇率: 1储备积分 = {rate} 积分 ({arrow}{sign}{pct:.0f}%)\n"
         )
         try:
             await callback.message.edit_text(text, reply_markup=_exchange_menu_kb(tg_id=tg_id))
@@ -131,7 +131,7 @@ def _q2c_amounts_kb(tg_id: int | None = None) -> InlineKeyboardMarkup:
     amounts = [10, 50, 100, 500]
     buttons = [
         [InlineKeyboardButton(
-            text=f"兑出 {a}MB 额度",
+            text=f"兑出 {a} 储备积分",
             callback_data=f"exchange:q2c:{a}",
         )]
         for a in amounts
@@ -148,10 +148,10 @@ async def cb_q2c_menu(callback: types.CallbackQuery):
     reverse_rate = int(rate * 0.8)  # 20% penalty
 
     await callback.message.edit_text(
-        f"💱 额度 → 金币 (有损兑换)\n"
-        f"反向汇率: 1MB = {reverse_rate} 金币 (正向的80%)\n"
-        f"当前额度: {fmt_quota(quota)}\n\n"
-        f"选择兑出额度:",
+        f"💱 储备积分 → 积分 (有损兑换)\n"
+        f"反向汇率: 1储备积分 = {reverse_rate} 积分 (正向的80%)\n"
+        f"当前储备: {fmt_quota(quota)}\n\n"
+        f"选择兑出数量:",
         reply_markup=_q2c_amounts_kb(tg_id=tg_id),
     )
     await callback.answer()
@@ -175,7 +175,7 @@ def _p2c_amounts_kb(tg_id: int | None = None) -> InlineKeyboardMarkup:
     amounts = [100, 500, 1000, 5000]
     buttons = [
         [InlineKeyboardButton(
-            text=f"兑换 {a} 积分 → {a // 10} 金币",
+            text=f"兑换 {a} 荣誉点 → {a // 10} 积分",
             callback_data=f"exchange:p2c:{a}",
         )]
         for a in amounts
@@ -189,9 +189,9 @@ async def cb_p2c_menu(callback: types.CallbackQuery):
     tg_id = callback.from_user.id
     points = await get_points(tg_id)
     await callback.message.edit_text(
-        f"🎁 积分 → 金币\n"
-        f"汇率: 10 积分 = 1 金币\n"
-        f"当前积分: {points:,}\n\n"
+        f"🎁 荣誉点 → 积分\n"
+        f"汇率: 10 荣誉点 = 1 积分\n"
+        f"当前荣誉点: {points:,}\n\n"
         f"选择兑换数量:",
         reply_markup=_p2c_amounts_kb(tg_id=tg_id),
     )
@@ -222,7 +222,7 @@ async def cb_shop_list(callback: types.CallbackQuery):
     ]
     buttons = []
     for key, item in items.items():
-        lines.append(f"{item['name']} — {item['price']:,} 金币")
+        lines.append(f"{item['name']} — {item['price']:,} 积分")
         lines.append(f"  {item['description']}")
         lines.append("")
         buttons.append([InlineKeyboardButton(
@@ -325,7 +325,7 @@ async def cb_blackmarket_list(callback: types.CallbackQuery):
     for i, deal in enumerate(deals):
         stock_text = f"库存: {deal['stock']}" if deal['stock'] > 0 else "已售罄"
         lines.append(
-            f"{deal['name']} — {deal['price']:,} 金币 "
+            f"{deal['name']} — {deal['price']:,} 积分 "
             f"(原价 {deal['original_price']:,}, 省{deal['discount_pct']}%)"
         )
         lines.append(f"  {deal['description']} [{stock_text}]")

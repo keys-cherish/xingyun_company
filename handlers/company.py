@@ -37,6 +37,7 @@ from services.company_service import (
     upgrade_company,
 )
 from services.cooperation_service import get_cooperation_bonus
+from services.battle_service import get_company_revenue_debuff
 from services.operations_service import (
     INSURANCE_LEVELS,
     OFFICE_LEVELS,
@@ -351,6 +352,7 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
         )).scalar()
         estate_income = await get_total_estate_income(session, company_id)
         coop_bonus_rate = await get_cooperation_bonus(session, company_id)
+        battle_debuff_rate = await get_company_revenue_debuff(company_id)
         ad_boost_rate = await get_ad_boost(company_id)
         shop_buff_mult = await get_income_buff_multiplier(company_id)
         profile = await get_or_create_profile(session, company_id)
@@ -391,6 +393,8 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
     market = get_market_trend(company, now_utc)
     multipliers = get_operation_multipliers(profile, now_utc)
     product_income = int(company.daily_revenue * multipliers["income_mult"] * market["income_mult"])
+    if battle_debuff_rate > 0:
+        product_income = max(0, int(product_income * (1.0 - battle_debuff_rate)))
     cooperation_bonus = int(product_income * coop_bonus_rate)
     rep_multiplier = reputation_buff_multiplier(owner.reputation) if owner else 1.0
     reputation_buff_income = int(product_income * (rep_multiplier - 1.0))
@@ -509,6 +513,7 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
         f"👑 保险：{insurance_info['name']}（罚款-{int(insurance_info['fine_reduction'] * 100)}%）\n"
         f"🎭 文化：{profile.culture}/100（营收+{profile.culture/10:.1f}%，风险-{profile.culture * 0.3:.1f}%）\n"
         f"🛂 监管：{profile.regulation_pressure}/100\n"
+        f"⚔️ 商战Debuff：-{battle_debuff_rate*100:.0f}%\n"
         f"🏷 估值：{fmt_quota(valuation)}\n"
         f"👥 股东:{sh_count} | 📦 产品:{prod_count} | 🔬 科技:{tech_count}\n"
         f"{'─' * 24}\n"

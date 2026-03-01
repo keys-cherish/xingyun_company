@@ -377,6 +377,10 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
         await check_and_complete_research(session, company_id)
         in_progress_research = await get_in_progress_research(session, company_id)
 
+        # 获取进行中的科研
+        from services.research_service import get_in_progress_research, get_tech_tree_display
+        in_progress_research = await get_in_progress_research(session, company_id)
+
     type_info = get_company_type_info(company.company_type)
     type_display = f"{type_info['emoji']} {type_info['name']}" if type_info else company.company_type
 
@@ -493,6 +497,27 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
         market_effect = f"（景气减成 {(market['income_mult'] - 1.0) * 100:.0f}%）"
     else:
         market_effect = "（景气无加成）"
+
+    # 科研进度文本
+    research_block = ""
+    if in_progress_research:
+        import datetime as dt
+        from utils.formatters import fmt_duration
+        tree = {t["tech_id"]: t for t in get_tech_tree_display()}
+        now = dt.datetime.utcnow()
+        rlines = []
+        for rp in in_progress_research:
+            tech_info = tree.get(rp.tech_id, {})
+            name = tech_info.get("name", rp.tech_id)
+            duration_sec = tech_info.get("duration_seconds", 3600)
+            started = rp.started_at.replace(tzinfo=None) if rp.started_at.tzinfo else rp.started_at
+            elapsed = (now - started).total_seconds()
+            remaining = max(0, int(duration_sec - elapsed))
+            if remaining > 0:
+                rlines.append(f"  • {name} — 剩余 {fmt_duration(remaining)}")
+            else:
+                rlines.append(f"  • {name} — 即将完成")
+        research_block = "⏳ 研究中:\n" + "\n".join(rlines) + "\n"
 
     text = (
         f"🏢 {company.name}\n\n"

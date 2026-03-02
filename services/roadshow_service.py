@@ -187,7 +187,7 @@ async def do_roadshow(
 
     ok = await add_funds(session, company_id, -settings.roadshow_cost)
     if not ok:
-        return False, f"公司资金不足，路演需要 {fmt_traffic(settings.roadshow_cost)}"
+        return False, f"公司积分不足，路演需要 {fmt_traffic(settings.roadshow_cost)}"
 
     rs_type = random.choice(ROADSHOW_TYPES)
     satire_chance = _clamp_rate(settings.roadshow_satire_chance)
@@ -224,7 +224,7 @@ async def do_roadshow(
         if reward["type"] in {"traffic", "jackpot"}:
             await add_funds(session, company_id, amount)
             bonus = amount
-            reward_line = f"💵 资金 +{fmt_traffic(amount)}"
+            reward_line = f"💵 积分 +{fmt_traffic(amount)}"
         elif reward["type"] == "reputation":
             await add_reputation(session, owner_user_id, amount)
             rep_gained = amount

@@ -12,70 +12,69 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from commands import CMD_CLEAR_PRODUCT, CMD_NEW_PRODUCT
 from db.engine import async_session
 from handlers.common import is_super_admin
-from keyboards.menus import product_detail_kb, product_template_kb, tag_kb
-from services.company_service import get_company_by_id, get_companies_by_owner, update_daily_revenue, add_funds
+from keyboards.menus import tag_kb
+from services.company_service import get_company_by_id, get_companies_by_owner, update_daily_revenue
 from services.product_service import (
     create_product,
     get_available_product_templates,
     get_company_products,
     upgrade_product,
 )
-from services.user_service import get_user_by_tg_id, add_points
+from services.user_service import get_user_by_tg_id
 from utils.formatters import fmt_traffic
 from utils.panel_owner import mark_panel
-from utils.validators import validate_name
 from db.models import Product as ProductModel
 
 router = Router()
 logger = logging.getLogger(__name__)
 
-# /cp_new_product 参数：投入资金 -> 基础日收入的转化率
-INVEST_TO_INCOME_RATE = 0.03  # 每投入100积分 = 3积分/日
-EMPLOYEE_INCOME_BONUS = 0.03  # 每分配1名员工 +3% 收入
-EMPLOYEE_INCOME_BONUS_CAP = 0.60  # 员工加成最高 +60%
-PERFECT_QUALITY_THRESHOLD = 100  # 完美品质阈值
-PERFECT_QUALITY_BONUS = 1.0     # 完美品质额外+100%收入
+def _format_new_product_usage(templates: list[dict]) -> str:
+    lines = [
+        "📦 用法: /cp_new_product <模板key> [自定义产品名]",
+        "例1: /cp_new_product social_app",
+        "例2: /cp_new_product social_app 超能社交",
+        "",
+    ]
+    if templates:
+        lines.append("🆕 当前可用模板:")
+        for t in templates:
+            lines.append(
+                f"  - {t['product_key']}: {t['name']} "
+                f"(基础日收入 {fmt_traffic(t['base_daily_income'])})"
+            )
+    else:
+        lines.append("💡 暂无可用模板，请先在【科研】中完成前置科技。")
+    return "\n".join(lines)
+
+
+def _resolve_template_choice(raw_choice: str, templates: list[dict]) -> tuple[dict | None, list[dict]]:
+    key = raw_choice.strip().lower()
+    if not key:
+        return None, []
+
+    exact = [
+        t for t in templates
+        if t["product_key"].lower() == key or str(t["name"]).strip().lower() == key
+    ]
+    if exact:
+        return exact[0], []
+
+    candidates = [
+        t for t in templates
+        if t["product_key"].lower().startswith(key) or str(t["name"]).strip().lower().startswith(key)
+    ]
+    if len(candidates) == 1:
+        return candidates[0], []
+    return None, candidates
 
 
 @router.message(Command(CMD_NEW_PRODUCT))
 async def cmd_new_product(message: types.Message):
-    """Create a custom product: /cp_new_product <name> <investment> [employees]."""
+    """Create a product from unlocked templates: /cp_new_product <template_key> [custom_name]."""
     tg_id = message.from_user.id
-    args = (message.text or "").split()
-
-    if len(args) < 3:
-        await message.answer(
-            "📦 用法: /cp_new_product <产品名> <投入资金> [分配人员]\n"
-            "例1: /cp_new_product 智能助手 10000\n"
-            "例2: /cp_new_product 智能助手 10000 3\n\n"
-            "• 投入资金从公司扣除，决定产品基础日收入\n"
-            "• 分配人员可省略，省略时默认为 0（无人员加成）\n"
-            "• 分配人员提供额外收入加成（每人+3%，总加成上限+60%）\n"
-            "• 分配人员仅用于本次研发，研发完成后自动释放"
-        )
-        return
-
-    product_name = args[1]
-    try:
-        investment = int(args[2])
-        employees = int(args[3]) if len(args) >= 4 else 0
-    except ValueError:
-        await message.answer("❌ 资金和人员必须是数字")
-        return
-
-    if investment < 1000:
-        await message.answer("❌ 最低投入 1,000 积分")
-        return
-    if investment > 500000:
-        await message.answer("❌ 单次最高投入 500,000 积分")
-        return
-    if employees < 0 or employees > 50:
-        await message.answer("❌ 分配人员数量 0-50")
-        return
-    name_err = validate_name(product_name, min_len=1, max_len=32)
-    if name_err:
-        await message.answer(f"❌ {name_err}")
-        return
+    parts = (message.text or "").split(maxsplit=2)
+    template_choice = parts[1].strip() if len(parts) >= 2 else ""
+    custom_name = parts[2].strip() if len(parts) >= 3 else ""
 
     async with async_session() as session:
         async with session.begin():
@@ -88,112 +87,51 @@ async def cmd_new_product(message: types.Message):
                 await message.answer("你还没有公司")
                 return
             company = companies[0]
+            templates = await get_available_product_templates(session, company.id)
 
-            # 分配人员只用于本次研发，不做长期占用
-            if employees > company.employee_count:
+            if not templates:
                 await message.answer(
-                    f"❌ 可用员工不足\n"
-                    f"总员工: {company.employee_count} | 本次需要: {employees}"
+                    "❌ 当前没有可创建的产品模板。\n"
+                    "请先前往【科研】完成前置科技后再创建产品。"
                 )
                 return
 
-            # 每日创建上限
-            import datetime as dt
-            from sqlalchemy import select, func as sqlfunc
-            from services.product_service import MAX_DAILY_PRODUCT_CREATE
-            today_start = dt.datetime.now(dt.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
-            today_count = (await session.execute(
-                select(sqlfunc.coalesce(sqlfunc.count(ProductModel.id), 0)).where(
-                    ProductModel.company_id == company.id,
-                    ProductModel.created_at >= today_start,
-                )
-            )).scalar() or 0
-            if today_count >= MAX_DAILY_PRODUCT_CREATE:
-                await message.answer(f"❌ 每日最多创建{MAX_DAILY_PRODUCT_CREATE}个产品")
+            if not template_choice:
+                await message.answer(_format_new_product_usage(templates))
                 return
 
-            # Deduct investment from company funds
-            ok = await add_funds(session, company.id, -investment)
-            if not ok:
-                await message.answer(f"❌ 公司资金不足，需要 {fmt_traffic(investment)}")
+            selected_template, candidates = _resolve_template_choice(template_choice, templates)
+            if selected_template is None and candidates:
+                options = "\n".join(
+                    f"  - {t['product_key']}: {t['name']}" for t in candidates
+                )
+                await message.answer(
+                    "❌ 模板匹配到多个候选，请使用更完整的模板key：\n"
+                    f"{options}"
+                )
                 return
 
-            # Check duplicate name
-            existing = await session.execute(
-                select(ProductModel).where(
-                    ProductModel.company_id == company.id,
-                    ProductModel.name == product_name,
+            if selected_template is None:
+                await message.answer(
+                    "❌ 未找到可用模板。\n"
+                    f"{_format_new_product_usage(templates)}"
                 )
+                return
+
+            product, msg = await create_product(
+                session,
+                company.id,
+                user.id,
+                selected_template["product_key"],
+                custom_name=custom_name,
             )
-            if existing.scalar_one_or_none():
-                await add_funds(session, company.id, investment)
-                await message.answer(f"❌ 已存在同名产品「{product_name}」")
+            if product:
+                await update_daily_revenue(session, company.id)
+                extra = f"\n模板: {selected_template['product_key']} ({selected_template['name']})"
+                await message.answer(f"{msg}{extra}")
                 return
 
-            # Calculate daily income with randomness
-            import random
-            base_income = int(investment * INVEST_TO_INCOME_RATE)
-            # Random factor: ±30% on base income
-            income_luck = random.uniform(0.70, 1.30)
-            base_income = max(1, int(base_income * income_luck))
-            employee_bonus_rate = min(EMPLOYEE_INCOME_BONUS_CAP, EMPLOYEE_INCOME_BONUS * employees)
-            employee_bonus = int(base_income * employee_bonus_rate)
-            daily_income = base_income + employee_bonus
-
-            # Quality: base from employees + heavy randomness
-            # Base: 5~30 from employees, random: ±20, very rare to hit 100
-            base_quality = min(5 + employees * 2, 40)
-            quality_roll = random.gauss(base_quality, 15)  # Normal distribution
-            quality = max(1, min(100, int(quality_roll)))
-
-            # Perfect quality (100) is extremely rare
-            # Check if company already has a perfect product (max 1 per company)
-            if quality >= PERFECT_QUALITY_THRESHOLD:
-                from sqlalchemy import select as sql_select
-                existing_perfect = (await session.execute(
-                    sql_select(sqlfunc.count()).where(
-                        ProductModel.company_id == company.id,
-                        ProductModel.quality >= PERFECT_QUALITY_THRESHOLD,
-                    )
-                )).scalar() or 0
-                if existing_perfect > 0:
-                    quality = 99  # Downgrade, company already has a perfect product
-
-            # Perfect quality doubles income permanently
-            perfect_msg = ""
-            if quality >= PERFECT_QUALITY_THRESHOLD:
-                daily_income = int(daily_income * (1 + PERFECT_QUALITY_BONUS))
-                perfect_msg = "\n\n🌟 完美品质! 日收入永久翻倍!\n🏅 获得称号「万中无一」"
-
-            product = ProductModel(
-                company_id=company.id,
-                name=product_name,
-                tech_id="custom",
-                daily_income=daily_income,
-                quality=quality,
-                # 分配人员仅用于本次研发，创建完成即释放
-                assigned_employees=0,
-            )
-            session.add(product)
-            await update_daily_revenue(session, company.id)
-            await add_points(user.id, 10, session=session)
-
-            # Quest progress
-            from services.quest_service import update_quest_progress
-            await update_quest_progress(session, user.id, "product_count", increment=1)
-
-    await message.answer(
-        f"📦 产品「{product_name}」研发成功!\n"
-        f"{'─' * 24}\n"
-        f"投入资金: {fmt_traffic(investment)}\n"
-        f"分配人员: {employees} 人\n"
-        f"人员状态: 已自动释放\n"
-        f"基础日收入: {fmt_traffic(base_income)}\n"
-        f"人员加成: +{fmt_traffic(employee_bonus)}\n"
-        f"总日收入: {fmt_traffic(daily_income)}\n"
-        f"产品品质: {quality}/100"
-        f"{perfect_msg}"
-    )
+            await message.answer(msg)
 
 
 async def _refresh_product_list(callback: types.CallbackQuery, company_id: int):
@@ -318,8 +256,8 @@ async def cb_product_list(callback: types.CallbackQuery, company_id: int | None 
     else:
         lines.append("\n💡 完成科研可解锁产品模板")
 
-    lines.append("\n📦 也可使用命令创建自定义产品:")
-    lines.append("  /cp_new_product <名字> <资金> [人员]")
+    lines.append("\n📦 也可使用命令按模板创建产品:")
+    lines.append("  /cp_new_product <模板key> [自定义名称]")
     text = "\n".join(lines)
     all_buttons = product_buttons + template_buttons
     all_buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}")])

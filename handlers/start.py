@@ -43,13 +43,13 @@ BOT_COMMANDS = [
     BotCommand(command=CMD_RANK_COMPANY, description="综合实力排行榜"),
     BotCommand(command=CMD_BATTLE, description="商战（回复+可选战术）"),
     BotCommand(command=CMD_COOPERATE, description="合作（回复/all）"),
-    BotCommand(command=CMD_NEW_PRODUCT, description="研发产品（名字 资金 [人员]）"),
+    BotCommand(command=CMD_NEW_PRODUCT, description="创建产品（模板key [名称]）"),
     BotCommand(command=CMD_MEMBER, description="员工管理（add/minus 数量）"),
     BotCommand(command=CMD_INVEST, description="Reply invest to user"),
     BotCommand(command=CMD_DISSOLVE, description="注销公司"),
     BotCommand(command=CMD_QUEST, description="周任务清单"),
     BotCommand(command=CMD_HELP, description="帮助信息"),
-    BotCommand(command=CMD_GIVE_MONEY, description="超管发放积分（回复+金额）"),
+    BotCommand(command=CMD_GIVE_MONEY, description="超管发放积分（回复+积分）"),
     BotCommand(command=CMD_WELFARE, description="超管全服福利（每家100万）"),
     BotCommand(command="cp_slot", description="🎰 老虎机（每日奖励一次）"),
 ]
@@ -68,11 +68,11 @@ HELP_TEXT = (
     "  战术: 稳扎稳打 / 激进营销 / 奇袭渗透\n"
     "🤝 /company_cooperate — 回复某人/all 合作\n"
     "  每次+2%（上限50%），次日清空，双方各+30声望\n\n"
-    "📦 /cp_new_product <名字> <资金> [人员]\n"
-    "  人员参数可省略；无人员时不吃人员加成\n"
-    "  完美品质(100分) 极稀有，收入翻倍\n\n"
+    "📦 /cp_new_product <模板key> [自定义名称]\n"
+    "  仅可创建已通过科研解锁的产品模板\n"
+    "  可不填自定义名称，不填则使用模板默认名\n\n"
     "👷 /company_member add|minus <数量|max>\n"
-    "/company_invest <amount> - reply target user to invest and gain shares\n"
+    "/company_invest <积分> - reply target user to invest and gain shares\n"
     "Reply shortcut: invest5000 (must reply target message)\n"
     "🗑 /company_dissolve — 注销公司(24h冷却)\n"
     "/company_admin <密钥> — 管理员认证\n"
@@ -98,7 +98,7 @@ async def cmd_start(message: types.Message):
     if created:
         await message.answer(
             f"欢迎加入 商业帝国!\n"
-            f"已发放初始资金: {fmt_traffic(settings.initial_traffic)}\n\n"
+            f"已发放初始积分: {fmt_traffic(settings.initial_traffic)}\n\n"
             f"使用下方菜单开始游戏:",
             reply_markup=main_menu_kb(tg_id=tg_id),
         )
@@ -175,7 +175,7 @@ async def cb_leaderboard_switch(callback: types.CallbackQuery):
 
 LEADERBOARD_TYPES = {
     "revenue": "📈 日营收",
-    "funds": "💰 总资金",
+    "funds": "💰 总积分",
     "valuation": "🏷 估值",
     "power": "⚔️ 战力",
 }

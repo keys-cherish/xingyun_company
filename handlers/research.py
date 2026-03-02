@@ -11,13 +11,13 @@ from db.engine import async_session
 from keyboards.menus import tech_list_kb, tag_kb
 from services.company_service import get_company_by_id
 from services.research_service import (
-    check_and_complete_research,
     get_effective_research_duration_seconds,
     get_available_techs,
     get_company_direction_product_lines,
     get_company_research_directions,
     get_completed_techs,
     get_in_progress_research,
+    sync_research_progress_if_due,
     get_tech_tree_display,
     start_research,
 )
@@ -78,7 +78,7 @@ async def cb_research_list(callback: types.CallbackQuery, company_id: int | None
             await callback.answer("无权操作", show_alert=True)
             return
 
-        completed_now = await check_and_complete_research(session, company_id)
+        completed_now = await sync_research_progress_if_due(session, company_id)
         completed = await get_completed_techs(session, company_id)
         in_progress = await get_in_progress_research(session, company_id)
         available = await get_available_techs(session, company_id)

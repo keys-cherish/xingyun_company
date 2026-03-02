@@ -8,11 +8,18 @@ _is_pg = "postgresql" in settings.database_url
 
 _engine_kwargs: dict = {"echo": False}
 if _is_pg:
-    # PostgreSQL: 连接池优化
-    _engine_kwargs.update(pool_size=20, max_overflow=30, pool_pre_ping=True)
+    # PostgreSQL: configurable pool tuned for higher concurrent workload.
+    _engine_kwargs.update(
+        pool_size=max(1, settings.db_pool_size),
+        max_overflow=max(0, settings.db_max_overflow),
+        pool_timeout=max(1, settings.db_pool_timeout_seconds),
+        pool_recycle=max(60, settings.db_pool_recycle_seconds),
+        pool_pre_ping=True,
+    )
 else:
-    # SQLite: 使用NullPool避免线程问题
+    # SQLite: use NullPool to avoid thread/coroutine contention issues.
     from sqlalchemy.pool import NullPool
+
     _engine_kwargs["poolclass"] = NullPool
 
 engine = create_async_engine(settings.database_url, **_engine_kwargs)

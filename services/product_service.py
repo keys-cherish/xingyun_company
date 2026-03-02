@@ -20,7 +20,11 @@ from cache.redis_client import get_redis
 from config import settings
 from db.models import Company, Product, User
 from services.company_service import get_effective_employee_count_for_progress
-from services.research_service import check_and_complete_research, get_completed_techs
+from services.research_service import (
+    check_and_complete_research,
+    get_completed_techs,
+    sync_research_progress_if_due,
+)
 from services.user_service import add_points
 from utils.formatters import fmt_traffic
 from utils.validators import validate_name
@@ -51,7 +55,7 @@ def _load_products() -> dict:
 
 async def get_available_product_templates(session: AsyncSession, company_id: int) -> list[dict]:
     """返回公司可创建的产品模板（基于已完成科研）。"""
-    await check_and_complete_research(session, company_id)
+    await sync_research_progress_if_due(session, company_id)
     completed = set(await get_completed_techs(session, company_id))
     templates = _load_products()
     available = []
@@ -146,11 +150,11 @@ async def create_product(
         int(settings.product_create_cost * (1 + existing_count * PRODUCT_CREATE_COST_GROWTH)),
     )
 
-    # 扣除费用（从公司资金）
+    # 扣除费用（从公司积分）
     from services.company_service import add_funds
     ok = await add_funds(session, company_id, -dynamic_create_cost)
     if not ok:
-        return None, f"公司资金不足，需要 {fmt_traffic(dynamic_create_cost)}"
+        return None, f"公司积分不足，需要 {fmt_traffic(dynamic_create_cost)}"
 
     product = Product(
         company_id=company_id,
@@ -230,7 +234,7 @@ async def upgrade_product(
     from services.company_service import add_funds
     ok = await add_funds(session, product.company_id, -cost)
     if not ok:
-        return False, f"公司资金不足，升级需要 {fmt_traffic(cost)}"
+        return False, f"公司积分不足，升级需要 {fmt_traffic(cost)}"
 
     # 迭代收入增幅随版本递减（防止无限刷）
     diminish = max(0.05, settings.product_upgrade_income_pct - (product.version - 1) * 0.01)

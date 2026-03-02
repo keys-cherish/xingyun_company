@@ -215,12 +215,12 @@ async def _apply_event(session: AsyncSession, company: Company, event: GameEvent
         change = int(company.daily_revenue * event.effect_value)
         await add_funds(session, company.id, change)
         sign = "+" if change >= 0 else ""
-        effect_desc = f"资金变动: {sign}{change}"
+        effect_desc = f"积分变动: {sign}{change}"
 
     elif event.effect_type == "flat_traffic":
         amount = int(event.effect_value)
         await add_funds(session, company.id, amount)
-        effect_desc = f"资金{'+' if amount > 0 else ''}{amount}"
+        effect_desc = f"积分{'+' if amount > 0 else ''}{amount}"
 
     elif event.effect_type == "reputation":
         rep = int(event.effect_value)

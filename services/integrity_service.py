@@ -180,7 +180,7 @@ async def cleanup_negative_funds(session: AsyncSession) -> list[str]:
 
     for company in negative_companies:
         company.total_funds = 0
-        msg = f"⚠️ 「{company.name}」资金为负数，已修正为0"
+        msg = f"⚠️ 「{company.name}」积分为负数，已修正为0"
         msgs.append(msg)
         logger.warning(msg)
 
@@ -275,7 +275,7 @@ async def backfill_company_anomalies(session: AsyncSession) -> list[str]:
     if fixed_emp_cap:
         msgs.append(f"员工超上限回填: {fixed_emp_cap} 条")
     if fixed_funds:
-        msgs.append(f"公司负资金修正: {fixed_funds} 条")
+        msgs.append(f"公司负积分修正: {fixed_funds} 条")
     if fixed_version:
         msgs.append(f"公司版本号修正: {fixed_version} 条")
     if fixed_daily_revenue:
@@ -294,7 +294,7 @@ async def run_all_checks(session: AsyncSession | None = None) -> list[str]:
         ("孤立研发", cleanup_orphaned_research),
         ("孤立地产", cleanup_orphaned_realestate),
         ("孤立合作", cleanup_expired_cooperations),
-        ("负数资金", cleanup_negative_funds),
+        ("负数积分", cleanup_negative_funds),
     ]
     msgs = []
     for name, check_fn in checks:

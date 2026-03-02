@@ -1,43 +1,62 @@
-"""AI研发交互处理器（仅群组）。
-
-玩家提交产品方案 → AI评分 → 可选招聘研发人员加速 → 永久提升产品收入。
-"""
+"""产品迭代处理器 — 简化版：一键概率提升收入 + AI段子。"""
 
 from __future__ import annotations
 
-from aiogram import F, Router, types
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
+import datetime as _dt
+from zoneinfo import ZoneInfo
 
-from db.engine import async_session
+from aiogram import F, Router, types
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
 from cache.redis_client import get_redis
-from keyboards.menus import main_menu_kb, tag_kb
+from config import settings
+from db.engine import async_session
+from keyboards.menus import tag_kb
 from services.ai_rd_service import (
-    MAX_EXTRA_RD_STAFF,
-    R_AND_D_COST_PER_STAFF,
-    apply_rd_result,
-    evaluate_proposal_ai,
+    TIERS,
+    generate_upgrade_blurb,
+    get_rd_cost,
+    quick_iterate,
 )
 from services.company_service import add_funds, get_company_by_id
 from services.product_service import get_company_products
 from services.user_service import get_user_by_tg_id
+from utils.formatters import fmt_duration, fmt_traffic
 from utils.panel_owner import mark_panel
 
 router = Router()
 
-RD_COOLDOWN_SECONDS = 4 * 3600  # 4 hours per product
-RD_DAILY_LIMIT = 5              # per company per day
+
+def _rd_daily_limit() -> int:
+    return max(1, int(settings.ai_rd_daily_limit))
 
 
-class AIRDState(StatesGroup):
-    select_product = State()
-    waiting_proposal = State()
-    waiting_staff = State()
+def _rd_product_cd_seconds() -> int:
+    return max(0, int(settings.ai_rd_product_cooldown_seconds))
 
+
+def _rd_company_cd_seconds() -> int:
+    return max(0, int(settings.ai_rd_company_cooldown_seconds))
+
+
+def _app_tz() -> ZoneInfo:
+    try:
+        return ZoneInfo(settings.app_timezone or "Asia/Shanghai")
+    except Exception:
+        return ZoneInfo("Asia/Shanghai")
+
+
+def _seconds_until_local_day_reset() -> int:
+    now = _dt.datetime.now(_app_tz())
+    tomorrow = (now + _dt.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return max(1, int((tomorrow - now).total_seconds()))
+
+
+# ── 入口：选择产品 ────────────────────────────────────
 
 @router.callback_query(F.data.startswith("aird:start:"))
-async def cb_aird_start(callback: types.CallbackQuery, state: FSMContext):
-    """开始AI研发流程：先选择要研发的产品。"""
+async def cb_aird_start(callback: types.CallbackQuery):
+    """开始产品迭代：选择要迭代的产品。"""
     company_id = int(callback.data.split(":")[2])
     tg_id = callback.from_user.id
 
@@ -45,7 +64,7 @@ async def cb_aird_start(callback: types.CallbackQuery, state: FSMContext):
         user = await get_user_by_tg_id(session, tg_id)
         company = await get_company_by_id(session, company_id)
         if not company or not user or company.owner_id != user.id:
-            await callback.answer("只有公司老板才能发起研发", show_alert=True)
+            await callback.answer("只有公司老板才能迭代产品", show_alert=True)
             return
         products = await get_company_products(session, company_id)
 
@@ -53,181 +72,212 @@ async def cb_aird_start(callback: types.CallbackQuery, state: FSMContext):
         await callback.answer("公司还没有产品，请先创建产品", show_alert=True)
         return
 
-    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-    buttons = [
-        [InlineKeyboardButton(
-            text=f"{p.name} v{p.version} (日收入:{p.daily_income})",
-            callback_data=f"aird:select:{p.id}",
-        )]
-        for p in products
-    ]
-    buttons.append([InlineKeyboardButton(text="🔙 取消", callback_data=f"company:view:{company_id}")])
+    # 检查每日限额
+    r = await get_redis()
+    daily_limit = _rd_daily_limit()
+    daily_key = f"rd_daily:{company_id}"
+    daily_count = int(await r.get(daily_key) or 0)
+    remaining = max(0, daily_limit - daily_count)
+    company_cd_key = f"rd_company_cd:{company_id}"
+    company_cd_ttl = int(await r.ttl(company_cd_key) or 0)
+
+    buttons = []
+    for p in products:
+        cost = get_rd_cost(p)
+        buttons.append([InlineKeyboardButton(
+            text=f"{p.name} v{p.version} (💰{cost}) 日收入:{p.daily_income}",
+            callback_data=f"aird:confirm:{p.id}:{company_id}",
+        )])
+    buttons.append([InlineKeyboardButton(text="🔙 返回公司", callback_data=f"company:view:{company_id}")])
+
+    # 概率说明
+    tier_info = " | ".join(f"{t[5]}{t[6]}({t[0]}%)" for t in TIERS)
 
     await callback.message.edit_text(
-        "🧪 AI产品研发\n选择要进行研发的产品:",
-        reply_markup=tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), callback.from_user.id),
+        f"🧪 产品迭代\n"
+        f"{'─' * 24}\n"
+        f"概率：{tier_info}\n"
+        f"今日剩余：{remaining}/{daily_limit}次\n"
+        f"{'🏢 公司冷却：' + fmt_duration(company_cd_ttl) if company_cd_ttl > 0 else '🏢 公司冷却：可迭代'}\n"
+        f"{'─' * 24}\n"
+        f"选择要迭代的产品：",
+        reply_markup=tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), tg_id),
     )
-    await state.set_state(AIRDState.select_product)
-    await state.update_data(company_id=company_id)
     await callback.answer()
 
 
-@router.callback_query(AIRDState.select_product, F.data.startswith("aird:select:"))
-async def cb_aird_select(callback: types.CallbackQuery, state: FSMContext):
-    product_id = int(callback.data.split(":")[2])
-    data = await state.get_data()
-    company_id = data.get("company_id")
+# ── 确认面板 ──────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("aird:confirm:"))
+async def cb_aird_confirm(callback: types.CallbackQuery):
+    """显示迭代确认面板，包含费用和概率信息。"""
+    parts = callback.data.split(":")
+    product_id = int(parts[2])
+    company_id = int(parts[3])
+    tg_id = callback.from_user.id
 
     r = await get_redis()
 
-    # Per-product cooldown check
+    # 冷却检查
     cd_key = f"rd_cd:{product_id}"
     cd_ttl = await r.ttl(cd_key)
     if cd_ttl > 0:
-        hours = cd_ttl // 3600
-        minutes = (cd_ttl % 3600) // 60
-        await callback.answer(
-            f"该产品研发冷却中，剩余{hours}时{minutes}分",
-            show_alert=True,
-        )
+        await callback.answer(f"该产品冷却中，剩余 {fmt_duration(cd_ttl)}", show_alert=True)
         return
 
-    # Per-company daily limit check
-    if company_id:
-        daily_key = f"rd_daily:{company_id}"
-        daily_count = int(await r.get(daily_key) or 0)
-        if daily_count >= RD_DAILY_LIMIT:
-            await callback.answer(
-                f"今日研发次数已达上限（{RD_DAILY_LIMIT}次/天）",
-                show_alert=True,
-            )
+    company_cd_key = f"rd_company_cd:{company_id}"
+    company_cd_ttl = await r.ttl(company_cd_key)
+    if company_cd_ttl > 0:
+        await callback.answer(f"公司迭代冷却中，剩余 {fmt_duration(company_cd_ttl)}", show_alert=True)
+        return
+
+    # 每日限额检查
+    daily_limit = _rd_daily_limit()
+    daily_key = f"rd_daily:{company_id}"
+    daily_count = int(await r.get(daily_key) or 0)
+    if daily_count >= daily_limit:
+        await callback.answer(f"今日迭代次数已达上限（{daily_limit}次/天）", show_alert=True)
+        return
+
+    async with async_session() as session:
+        user = await get_user_by_tg_id(session, tg_id)
+        company = await get_company_by_id(session, company_id)
+        if not company or not user or company.owner_id != user.id:
+            await callback.answer("无权操作", show_alert=True)
+            return
+        from db.models import Product
+        product = await session.get(Product, product_id)
+        if not product or product.company_id != company_id:
+            await callback.answer("产品不存在", show_alert=True)
             return
 
-    await state.update_data(product_id=product_id)
-    await state.set_state(AIRDState.waiting_proposal)
+    cost = get_rd_cost(product)
 
-    # Build cooldown/limit info for display
-    remaining_info = ""
-    if company_id:
-        daily_key = f"rd_daily:{company_id}"
-        daily_count = int(await r.get(daily_key) or 0)
-        remaining_info = f"\n⏱ 研发冷却: 每产品{RD_COOLDOWN_SECONDS // 3600}小时 | 今日剩余: {RD_DAILY_LIMIT - daily_count}次"
+    lines = [
+        f"🧪 产品迭代确认",
+        f"{'─' * 24}",
+        f"产品：{product.name} v{product.version}",
+        f"当前日收入：{fmt_traffic(product.daily_income)}",
+        f"迭代费用：{fmt_traffic(cost)}",
+        f"🏦 公司积分：{fmt_traffic(company.total_funds)}",
+        f"{'─' * 24}",
+        f"📦 小幅改进(40%) | 📈 稳步提升(30%)",
+        f"🌟 重大突破(20%) | 🏆 创新飞跃(10%)",
+        f"{'─' * 24}",
+        f"⏱ 产品冷却：{fmt_duration(_rd_product_cd_seconds())}",
+    ]
+    if _rd_company_cd_seconds() > 0:
+        lines.append(f"🏢 公司冷却：{fmt_duration(_rd_company_cd_seconds())}")
+    if cost > company.total_funds:
+        lines.append(f"❌ 积分不足！还差 {fmt_traffic(cost - company.total_funds)}")
 
-    await callback.message.edit_text(
-        "🧪 AI产品研发\n\n"
-        f"请输入你的产品方案:{remaining_info}\n"
-        "• 描述产品功能和创新点\n"
-        "• 阐述市场定位和目标用户\n"
-        "• 说明商业模式和盈利方式\n"
-        "• 分析技术可行性与合规风险\n"
-        "• 给出可量化指标（转化、留存、ROI等）\n\n"
-        "AI将采用【专业评审标准】：\n"
-        "指出主要问题，并给分项评分与改进建议。\n"
-        "⚠️ 低分方案可能导致收入下降！高分方案有额外奖励。"
-    )
+    kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(
+                text=f"✅ 确认迭代（{fmt_traffic(cost)}）",
+                callback_data=f"aird:exec:{product_id}:{company_id}",
+            ),
+            InlineKeyboardButton(text="🔙 返回", callback_data=f"aird:start:{company_id}"),
+        ],
+    ]), tg_id)
+    await callback.message.edit_text("\n".join(lines), reply_markup=kb)
     await callback.answer()
 
 
-@router.message(AIRDState.waiting_proposal)
-async def on_proposal(message: types.Message, state: FSMContext):
-    proposal = (message.text or "").strip()
-    if len(proposal) < 10:
-        await message.answer("方案描述太短，请至少写10个字:")
-        return
+# ── 执行迭代 ──────────────────────────────────────────
 
-    # Evaluate
-    score, feedback, special_effect = await evaluate_proposal_ai(proposal)
-    await state.update_data(score=score, feedback=feedback, special_effect=special_effect)
-    await state.set_state(AIRDState.waiting_staff)
-    special_preview = f"特殊效果: {special_effect}" if special_effect else "特殊效果: 无"
-
-    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-    buttons = [
-        [InlineKeyboardButton(text="不招聘，直接研发", callback_data="aird:staff:0")],
-        [InlineKeyboardButton(text=f"招3人 (花费{3*R_AND_D_COST_PER_STAFF}💰)", callback_data="aird:staff:3")],
-        [InlineKeyboardButton(text=f"招5人 (花费{5*R_AND_D_COST_PER_STAFF}💰)", callback_data="aird:staff:5")],
-        [InlineKeyboardButton(text=f"招10人 (花费{10*R_AND_D_COST_PER_STAFF}💰)", callback_data="aird:staff:10")],
-    ]
-
-    data = await state.get_data()
-    company_id = data["company_id"]
-    buttons.append([InlineKeyboardButton(text="🔙 取消", callback_data=f"company:view:{company_id}")])
-
-    sent = await message.reply(
-        f"🧪 AI评估结果\n"
-        f"{'─' * 24}\n"
-        f"评分: {score}/100\n"
-        f"{feedback}\n"
-        f"{special_preview}\n\n"
-        f"预计收入提升: 约{score}%\n\n"
-        "是否招聘额外研发人员加速研发？\n"
-        "(每名研发人员+5%研发效率)",
-        reply_markup=tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), message.from_user.id),
-    )
-    await mark_panel(message.chat.id, sent.message_id, message.from_user.id)
-
-
-@router.callback_query(AIRDState.waiting_staff, F.data.startswith("aird:staff:"))
-async def cb_aird_staff(callback: types.CallbackQuery, state: FSMContext):
-    extra_staff = max(0, min(int(callback.data.split(":")[2]), MAX_EXTRA_RD_STAFF))
-    data = await state.get_data()
-    company_id = data["company_id"]
-    product_id = data["product_id"]
-    score = data["score"]
-    special_effect = data.get("special_effect")
+@router.callback_query(F.data.startswith("aird:exec:"))
+async def cb_aird_exec(callback: types.CallbackQuery):
+    """执行迭代：扣费 → 概率滚动 → 显示结果 + AI段子。"""
+    parts = callback.data.split(":")
+    product_id = int(parts[2])
+    company_id = int(parts[3])
     tg_id = callback.from_user.id
 
-    staff_cost = extra_staff * R_AND_D_COST_PER_STAFF
+    r = await get_redis()
+    product_cd_seconds = _rd_product_cd_seconds()
+    company_cd_seconds = _rd_company_cd_seconds()
+    daily_limit = _rd_daily_limit()
+
+    # 再次检查冷却和限额（防止并发点击）
+    cd_key = f"rd_cd:{product_id}"
+    if product_cd_seconds > 0 and await r.exists(cd_key):
+        await callback.answer("该产品冷却中", show_alert=True)
+        return
+    company_cd_key = f"rd_company_cd:{company_id}"
+    if company_cd_seconds > 0 and await r.exists(company_cd_key):
+        ttl = await r.ttl(company_cd_key)
+        await callback.answer(f"公司迭代冷却中，剩余 {fmt_duration(max(0, ttl))}", show_alert=True)
+        return
+    daily_key = f"rd_daily:{company_id}"
+    daily_count = int(await r.get(daily_key) or 0)
+    if daily_count >= daily_limit:
+        await callback.answer(f"今日迭代次数已达上限（{daily_limit}次/天）", show_alert=True)
+        return
 
     async with async_session() as session:
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
                 await callback.answer("用户不存在", show_alert=True)
-                await state.clear()
                 return
-
-            # 二次校验公司归属
             company = await get_company_by_id(session, company_id)
             if not company or company.owner_id != user.id:
-                await callback.answer("无权操作此公司", show_alert=True)
-                await state.clear()
+                await callback.answer("无权操作", show_alert=True)
                 return
 
-            # Deduct staff cost from company
-            if staff_cost > 0:
-                ok = await add_funds(session, company_id, -staff_cost)
-                if not ok:
-                    await callback.answer(f"公司资金不足，需要 {staff_cost:,} 积分", show_alert=True)
-                    return
+            from db.models import Product
+            product = await session.get(Product, product_id)
+            if not product or product.company_id != company_id:
+                await callback.answer("产品不存在", show_alert=True)
+                return
 
-            ok, msg, income_increase = await apply_rd_result(
-                session, product_id, user.id, score, extra_staff, special_effect=special_effect
+            # 扣费
+            cost = get_rd_cost(product)
+            ok = await add_funds(session, company_id, -cost)
+            if not ok:
+                await callback.answer(f"公司积分不足，需要 {fmt_traffic(cost)}", show_alert=True)
+                return
+
+            # 执行迭代
+            ok, msg, income_increase, tier_key = await quick_iterate(
+                session, product_id, user.id,
             )
+            product_name = product.name
 
-    await state.clear()
-    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup as IKM
-    result_kb = tag_kb(IKM(inline_keyboard=[
+    if not ok:
+        await callback.answer(msg, show_alert=True)
+        return
+
+    # 设置冷却和增加每日计数
+    if product_cd_seconds > 0:
+        await r.setex(cd_key, product_cd_seconds, "1")
+    if company_cd_seconds > 0:
+        await r.setex(company_cd_key, company_cd_seconds, "1")
+    await r.incr(daily_key)
+    if await r.ttl(daily_key) < 0:
+        await r.expire(daily_key, _seconds_until_local_day_reset() + 60)
+
+    # 生成AI段子（非阻塞，失败不影响结果）
+    tier_label = ""
+    for t in TIERS:
+        if t[4] == tier_key:
+            tier_label = t[6]
+            break
+    blurb = await generate_upgrade_blurb(product_name, income_increase, tier_label)
+
+    result_kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 继续迭代", callback_data=f"aird:start:{company_id}")],
         [InlineKeyboardButton(text="🔙 返回公司", callback_data=f"company:view:{company_id}")],
     ]), tg_id)
-    if ok:
-        # Set per-product cooldown and increment daily counter
-        r = await get_redis()
-        await r.setex(f"rd_cd:{product_id}", RD_COOLDOWN_SECONDS, "1")
-        daily_key = f"rd_daily:{company_id}"
-        await r.incr(daily_key)
-        # Set TTL to expire at end of day (UTC) if not already set
-        if await r.ttl(daily_key) < 0:
-            import datetime as _dt
-            now = _dt.datetime.now(_dt.timezone.utc)
-            end_of_day = now.replace(hour=23, minute=59, second=59, microsecond=0)
-            remaining = int((end_of_day - now).total_seconds()) + 1
-            await r.expire(daily_key, max(1, remaining))
 
-        await callback.message.edit_text(
-            f"🧪 研发完成!\n─" + "─" * 23 + f"\n{msg}",
-            reply_markup=result_kb,
-        )
-        await callback.answer()
-    else:
-        await callback.answer(msg, show_alert=True)
+    await callback.message.edit_text(
+        f"🧪 迭代完成！\n"
+        f"{'─' * 24}\n"
+        f"{msg}\n"
+        f"💰 花费：{fmt_traffic(cost)}\n"
+        f"{'─' * 24}\n"
+        f"💬 {blurb}",
+        reply_markup=result_kb,
+    )
+    await callback.answer()

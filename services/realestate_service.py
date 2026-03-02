@@ -100,7 +100,7 @@ async def purchase_building(
 
     ok = await add_funds(session, company_id, -price)
     if not ok:
-        return False, f"公司资金不足，需要 {price:,} 积分"
+        return False, f"公司积分不足，需要 {price:,} 积分"
 
     estate = RealEstate(
         company_id=company_id,
@@ -140,7 +140,7 @@ async def upgrade_estate(
     cost = calc_upgrade_cost(bld_info, estate.level)
     ok = await add_funds(session, company_id, -cost)
     if not ok:
-        return False, f"公司资金不足，升级需要 {cost:,} 积分"
+        return False, f"公司积分不足，升级需要 {cost:,} 积分"
 
     old_level = estate.level
     estate.level += 1

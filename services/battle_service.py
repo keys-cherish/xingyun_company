@@ -434,7 +434,7 @@ async def do_battle(
             "",
             f"🎓 公司成立不满{TRAINING_MODE_DAYS}天，自动进入训练模式:",
             "  • 胜者获半额奖金（系统发放）",
-            "  • 败者零损失（资金/员工/声望不变）",
+            "  • 败者零损失（积分/员工/声望不变）",
             f"⏳ 下次商战冷却: {mins}分{secs}秒",
             "",
             f"💬 {_pick_taunt(winner.name, loser.name)}",
@@ -507,13 +507,13 @@ async def do_battle(
     if loot > 0:
         lines.append(f"💰 掠夺: {fmt_traffic(loot)} (从 {loser.name})")
     else:
-        lines.append("💸 对方资金不足，未能掠夺")
+        lines.append("💸 对方积分不足，未能掠夺")
 
     lines += [
         "",
         "🩸 双边战损",
-        f"• {attacker_company.name}: 资金-{fmt_traffic(a_fund_loss)} | 员工-{a_emp_loss} | 声望-{a_rep_loss}",
-        f"• {defender_company.name}: 资金-{fmt_traffic(d_fund_loss)} | 员工-{d_emp_loss} | 声望-{d_rep_loss}",
+        f"• {attacker_company.name}: 积分-{fmt_traffic(a_fund_loss)} | 员工-{a_emp_loss} | 声望-{a_rep_loss}",
+        f"• {defender_company.name}: 积分-{fmt_traffic(d_fund_loss)} | 员工-{d_emp_loss} | 声望-{d_rep_loss}",
         "",
         "🧨 商战后遗症",
         f"⏳ 你的下次商战冷却: {mins}分{secs}秒",

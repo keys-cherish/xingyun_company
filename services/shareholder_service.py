@@ -22,7 +22,7 @@ async def invest(
 ) -> tuple[bool, str]:
     """用户注资积分到公司以换取股份。"""
     if amount <= 0:
-        return False, "注资金额必须大于0"
+        return False, "注资积分必须大于0"
     if amount > MAX_SINGLE_INVESTMENT:
         return False, f"单次注资上限为{MAX_SINGLE_INVESTMENT}积分"
 
@@ -95,12 +95,12 @@ async def invest(
         for sh in all_holders:
             sh.shares *= factor
 
-    # 添加资金到公司
+    # 添加积分到公司
     fund_ok = await add_funds(session, company_id, amount)
     if not fund_ok:
         # 回滚流量
         await add_traffic(session, user_id, amount)
-        return False, "公司资金更新失败，请重试"
+        return False, "公司积分更新失败，请重试"
 
     await session.flush()
     return True, f"注资成功! 获得{investor_sh.shares:.2f}%股份"
@@ -124,7 +124,7 @@ async def _get_shareholder(session: AsyncSession, company_id: int, user_id: int)
 
 
 def _max_investable(valuation: int, owner_current_shares: float) -> int:
-    """计算非老板最大可注资金额（不违反老板最低持股约束）。"""
+    """计算非老板最大可注资积分（不违反老板最低持股约束）。"""
     min_pct = settings.min_owner_share_pct
     if min_pct <= 0:
         min_pct = 1  # 防止除零

@@ -9,6 +9,7 @@ from pathlib import Path
 from sqlalchemy import func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from cache.redis_client import get_redis
 from config import settings
 from db.models import Company, ResearchProgress, User
 from services.company_service import (
@@ -25,6 +26,7 @@ _products_data: dict | None = None
 RESEARCH_COST_GROWTH_PER_COMPLETED = 0.20
 RESEARCH_REPUTATION_STEP = 8
 RESEARCH_EMPLOYEE_STEP = 1
+RESEARCH_SYNC_MIN_INTERVAL_SECONDS = 15
 
 COMPANY_RESEARCH_DIRECTIONS: dict[str, list[dict[str, list[str] | str]]] = {
     "tech": [
@@ -159,10 +161,31 @@ async def get_in_progress_research(session: AsyncSession, company_id: int) -> li
     return list(result.scalars().all())
 
 
+async def sync_research_progress_if_due(
+    session: AsyncSession,
+    company_id: int,
+    *,
+    min_interval_seconds: int = RESEARCH_SYNC_MIN_INTERVAL_SECONDS,
+) -> list[str]:
+    """Throttle research completion writes to avoid write-on-every-read paths."""
+    ttl = max(0, int(min_interval_seconds))
+    if ttl > 0:
+        try:
+            r = await get_redis()
+            lock_key = f"research:sync_gate:{company_id}"
+            allowed = await r.set(lock_key, "1", nx=True, ex=ttl)
+            if not allowed:
+                return []
+        except Exception:
+            # Redis issues should not block research sync correctness.
+            pass
+    return await check_and_complete_research(session, company_id)
+
+
 async def get_available_techs(session: AsyncSession, company_id: int) -> list[dict]:
     """Return techs whose prerequisites are met and not yet researched."""
     tree = _load_tech_tree()
-    await check_and_complete_research(session, company_id)
+    await sync_research_progress_if_due(session, company_id)
     completed = set(await get_completed_techs(session, company_id))
 
     # Also exclude in-progress
@@ -260,7 +283,7 @@ async def start_research(
     ok = await add_funds(session, company_id, -cost)
     if not ok:
         from utils.formatters import fmt_traffic
-        return False, f"公司资金不足，需要 {fmt_traffic(cost)}"
+        return False, f"公司积分不足，需要 {fmt_traffic(cost)}"
 
     rp = ResearchProgress(
         company_id=company_id,
@@ -282,20 +305,21 @@ async def start_research(
     )
 
 
-async def sync_research_progress_if_due(session: AsyncSession, company_id: int) -> list[str]:
-    """Alias for check_and_complete_research – used by company view to sync state."""
-    return await check_and_complete_research(session, company_id)
-
-
-async def check_and_complete_research(session: AsyncSession, company_id: int) -> list[str]:
+async def check_and_complete_research(
+    session: AsyncSession,
+    company_id: int,
+    *,
+    now: dt.datetime | None = None,
+) -> list[str]:
     """Check all in-progress research; complete those past duration. Returns list of completed tech names."""
     tree = _load_tech_tree()
     in_progress = await get_in_progress_research(session, company_id)
     company = await session.get(Company, company_id)
     company_type = company.company_type if company else "tech"
-    now = (await session.execute(select(sqlfunc.now()))).scalar()
     if now is None:
-        now = dt.datetime.utcnow()
+        now = (await session.execute(select(sqlfunc.now()))).scalar()
+    if now is None:
+        now = dt.datetime.now(dt.UTC).replace(tzinfo=None)
     if getattr(now, "tzinfo", None):
         now = now.replace(tzinfo=None)
     completed_names = []

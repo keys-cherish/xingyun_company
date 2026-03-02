@@ -203,13 +203,28 @@ async def main():
         await bot.session.close()
 
 
-if __name__ == "__main__":
-    if settings.use_uvloop:
-        try:
-            import uvloop
+def _install_uvloop() -> bool:
+    """Install uvloop as the default asyncio event loop policy.
 
-            uvloop.install()
-            logger.info("uvloop enabled")
-        except Exception:
-            logger.warning("uvloop unavailable, fallback to default asyncio loop")
+    Called before asyncio.run() so every coroutine benefits from uvloop.
+    Returns True if uvloop was installed, False otherwise.
+    """
+    if not settings.use_uvloop:
+        return False
+    try:
+        import uvloop
+
+        uvloop.install()
+        return True
+    except ImportError:
+        logger.warning("uvloop 未安装（Windows 不支持），使用默认 asyncio 事件循环")
+        return False
+    except Exception:
+        logger.warning("uvloop 安装失败，回退到默认 asyncio 事件循环", exc_info=True)
+        return False
+
+
+if __name__ == "__main__":
+    if _install_uvloop():
+        logger.info("uvloop 已启用（高性能事件循环）")
     asyncio.run(main())

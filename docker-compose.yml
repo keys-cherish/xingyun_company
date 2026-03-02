@@ -38,3 +38,25 @@ services:
       options:
         max-size: "5m"
         max-file: "3"
+
+  api:
+    build: .
+    container_name: my_company_api
+    command: uv run mycompany-api
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD:-mycompany_redis}@redis:6379/0
+    ports:
+      - "${API_PORT:-8090}:${API_PORT:-8090}"
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+      - redis
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"

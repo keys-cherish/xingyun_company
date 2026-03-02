@@ -172,7 +172,7 @@ async def on_total_war_mention(message: types.Message):
         "⚔️🔥 全面商战 — 终极宣战 🔥⚔️",
         f"{'─' * 28}",
         f"🏢 {my_company.name}  战力: {my_power:,.0f}",
-        f"💰 资金: {fmt_traffic(my_company.total_funds)}",
+        f"💰 积分: {fmt_traffic(my_company.total_funds)}",
         f"👷 员工: {my_company.employee_count}人",
         f"{'─' * 28}",
         f"🎯 宣战对象: {len(targets)} 家公司",
@@ -190,13 +190,13 @@ async def on_total_war_mention(message: types.Message):
         f"{'─' * 28}",
         "💸 全面商战代价:",
         f"  🏅 积分消耗: {WAR_POINT_COST}（当前: {current_points}）",
-        f"  💰 资金消耗: {fmt_traffic(fund_cost)}（公司资金的{int(WAR_FUND_RATE*100)}%）",
+        f"  💰 积分消耗: {fmt_traffic(fund_cost)}（公司积分的{int(WAR_FUND_RATE*100)}%）",
         f"  👷 预计员工损失: 3-8%",
         f"  ⭐ 预计声望损失: 每战 1-5",
         "",
         "🎁 胜利收益:",
         f"  📈 全面商战Buff: 营收+{int(WAR_SELF_REVENUE_BUFF_RATE*100)}%（至次日结算）",
-        f"  💰 每胜一场: 掠夺对方资金",
+        f"  💰 每胜一场: 掠夺对方积分",
         f"  🧨 每胜一场: 对方营收Debuff -12%",
         "",
         "⚠️ 警告:",
@@ -211,7 +211,7 @@ async def on_total_war_mention(message: types.Message):
         if current_points < WAR_POINT_COST:
             lines.append(f"❌ 积分不足！需要 {WAR_POINT_COST}，当前 {current_points}")
         if my_company.total_funds < fund_cost:
-            lines.append(f"❌ 资金不足！需要 {fmt_traffic(fund_cost)}")
+            lines.append(f"❌ 积分不足！需要 {fmt_traffic(fund_cost)}")
 
     buttons = []
     if can_afford:
@@ -284,7 +284,7 @@ return 1
                 if not fund_ok:
                     # Refund points
                     await r.incrby(f"points:{tg_id}", WAR_POINT_COST)
-                    await callback.message.edit_text("❌ 公司资金不足")
+                    await callback.message.edit_text("❌ 公司积分不足")
                     return
 
                 # Load all targets
@@ -357,7 +357,7 @@ return 1
 
         result_lines.extend([
             f"{'─' * 28}",
-            f"💸 总消耗: {WAR_POINT_COST}积分 + {fmt_traffic(fund_cost)}资金",
+            f"💸 总消耗: {WAR_POINT_COST}积分 + {fmt_traffic(fund_cost)}",
         ])
         if wins > 0:
             result_lines.append(

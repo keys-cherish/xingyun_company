@@ -5,6 +5,10 @@ build/
 dist/
 wheels/
 *.egg-info
+miniapp/node_modules/
+miniapp/dist/
+miniapp/v10/
+miniapp/.pnpm-store/
 
 # Virtual environments
 .venv/
@@ -42,9 +46,6 @@ my_company_backup_*.json.gz
 # Docker persistent data
 postgres_data/
 redis_data/
-
-# Local test artifacts
-tests/
 
 # Claude Code
 .claude/

@@ -96,7 +96,7 @@ async def _build_user_company_context(tg_id: int) -> str:
             f"公司: {company.name}\n"
             f"行业: {type_name}\n"
             f"等级: Lv.{company.level} {level_name}\n"
-            f"资金: {company.total_funds:,} 积分\n"
+            f"积分余额: {company.total_funds:,} 积分\n"
             f"日营收: {company.daily_revenue:,} 积分\n"
             f"员工: {company.employee_count}\n"
             f"道德: {ethics}/100\n"

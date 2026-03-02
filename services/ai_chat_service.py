@@ -20,7 +20,7 @@ GAME_SYSTEM_PROMPT = (
     '你是"商业帝国"Telegram经营游戏机器人的AI助手。'
     "你必须始终使用简体中文、语气专业简洁、结论先行。"
     "围绕公司经营玩法提供可执行建议：科研、产品、员工、合作、商战、成本、道德、监管、景气周期。"
-    '金额与收益统一使用"积分"表述，不使用MB/GB换算。'
+    '成本与收益统一使用"积分"表述，不使用MB/GB换算。'
     "当用户提问不完整时，先给最稳妥方案，再给最多2个可选策略。"
     "不编造未确认事实；不确定时明确说明并建议如何验证。"
     "你可以使用提供的工具帮用户查询游戏数据或执行游戏操作。"
@@ -145,7 +145,7 @@ def _parse_xml_tool_calls(text: str) -> list[dict] | None:
 
 COMPANY_KEYWORDS = [
     "公司", "科研", "产品", "员工", "合作", "商战", "排行", "任务",
-    "积分", "声望", "资金", "营收", "升级", "荣誉", "路演", "分红",
+    "积分", "声望", "营收", "升级", "荣誉", "路演", "分红",
     "老虎机", "slot", "创建公司", "注销", "投资", "股份", "股东",
     "地产", "广告", "道德", "文化", "监管", "景气", "商业帝国",
     "经营", "雇佣", "招聘", "裁员", "解雇", "buff", "加成",
@@ -174,7 +174,7 @@ GAME_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_my_company",
-            "description": "查看提问者的公司详细信息：资金、营收、员工、产品等",
+            "description": "查看提问者的公司详细信息：积分、营收、员工、产品等",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -197,7 +197,7 @@ GAME_TOOLS = [
                     "rank_type": {
                         "type": "string",
                         "enum": ["revenue", "funds", "valuation", "power"],
-                        "description": "排行榜类型: revenue=日营收, funds=总资金, valuation=估值, power=综合战力",
+                        "description": "排行榜类型: revenue=日营收, funds=总积分, valuation=估值, power=综合战力",
                     }
                 },
                 "required": ["rank_type"],
@@ -266,7 +266,7 @@ GAME_TOOLS = [
         "type": "function",
         "function": {
             "name": "upgrade_company",
-            "description": "升级公司到下一等级，需满足资金、员工、产品等条件",
+            "description": "升级公司到下一等级，需满足积分、员工、产品等条件",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -353,7 +353,7 @@ async def _exec_get_my_company(tg_id: int) -> str:
         f"公司: {company.name} (ID:{company.id})\n"
         f"类型: {type_info.get('name', company.company_type)}\n"
         f"等级: Lv.{company.level} {level_info.get('name', '')}\n"
-        f"资金: {company.total_funds:,} 积分\n"
+        f"积分余额: {company.total_funds:,} 积分\n"
         f"日营收: {company.daily_revenue:,} 积分\n"
         f"估值: {valuation:,} 积分\n"
         f"员工: {company.employee_count}/{max_emp}\n"
@@ -385,7 +385,7 @@ async def _exec_list_companies() -> str:
         emoji = type_info["emoji"] if type_info else ""
         lines.append(
             f"{i}. {emoji} {c.name} | Lv.{c.level} | "
-            f"资金:{c.total_funds:,} | 日营收:{c.daily_revenue:,} | 员工:{c.employee_count}"
+            f"积分余额:{c.total_funds:,} | 日营收:{c.daily_revenue:,} | 员工:{c.employee_count}"
         )
     return "\n".join(lines)
 
@@ -394,7 +394,7 @@ async def _exec_get_rankings(rank_type: str) -> str:
     from cache.redis_client import get_leaderboard
 
     type_names = {
-        "revenue": "日营收", "funds": "总资金",
+        "revenue": "日营收", "funds": "总积分",
         "valuation": "估值", "power": "综合战力",
     }
     title = type_names.get(rank_type, "排行榜")
@@ -443,15 +443,22 @@ async def _exec_hire_employees(tg_id: int, count: int) -> str:
             if not ok:
                 affordable = company.total_funds // hire_cost_per
                 if affordable <= 0:
-                    return f"公司资金不足，每人招聘需要 {hire_cost_per:,} 积分。"
+                    return f"公司积分不足，每人招聘需要 {hire_cost_per:,} 积分。"
                 hire = affordable
                 total_cost = hire * hire_cost_per
                 ok = await add_funds(session, company.id, -total_cost)
                 if not ok:
-                    return "资金扣除失败。"
+                    return "积分扣除失败。"
 
             company.employee_count += hire
             await session.flush()
+
+            # 立即更新周任务进度
+            from services.quest_service import update_quest_progress
+            await update_quest_progress(
+                session, user.id, "employee_count",
+                current_value=company.employee_count,
+            )
 
     return f"成功雇佣 {hire} 名员工，花费 {total_cost:,} 积分。当前员工: {company.employee_count}/{max_emp}"
 
@@ -533,8 +540,8 @@ async def _exec_view_quests(tg_id: int) -> str:
 
 
 async def _exec_play_slot(tg_id: int) -> str:
-    from handlers.slot_machine import _do_spin
-    return await _do_spin(tg_id)
+    from services.slot_service import do_spin
+    return await do_spin(tg_id)
 
 
 async def execute_tool(name: str, args: dict, tg_id: int) -> str:

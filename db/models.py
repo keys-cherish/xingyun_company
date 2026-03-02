@@ -195,6 +195,7 @@ class DailyReport(Base):
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
     date: Mapped[str] = mapped_column(String(10), nullable=False)  # YYYY-MM-DD
     product_income: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    employee_income: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     cooperation_bonus: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     realestate_income: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     reputation_buff_income: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)

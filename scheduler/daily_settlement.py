@@ -160,15 +160,34 @@ async def _daily_job():
 
 async def _research_realtime_job():
     """Complete expired research every minute (near-real-time)."""
-    from db.models import Company, User
+    from db.models import Company, ResearchProgress, User
     from services.research_service import check_and_complete_research
 
     completed_total = 0
     async with async_session() as session:
         async with session.begin():
-            companies = (await session.execute(select(Company))).scalars().all()
+            active_company_ids = (
+                await session.execute(
+                    select(ResearchProgress.company_id)
+                    .where(ResearchProgress.status == "researching")
+                    .distinct()
+                )
+            ).scalars().all()
+            if not active_company_ids:
+                return
+
+            companies = (
+                await session.execute(
+                    select(Company).where(Company.id.in_(active_company_ids))
+                )
+            ).scalars().all()
+            tick_now = dt.datetime.now(dt.UTC).replace(tzinfo=None)
             for company in companies:
-                completed = await check_and_complete_research(session, company.id)
+                completed = await check_and_complete_research(
+                    session,
+                    company.id,
+                    now=tick_now,
+                )
                 if not completed:
                     continue
                 completed_total += len(completed)

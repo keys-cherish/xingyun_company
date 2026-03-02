@@ -91,7 +91,7 @@ def _c2q_amounts_kb(rate: int, tg_id: int | None = None) -> InlineKeyboardMarkup
 async def cb_c2q_menu(callback: types.CallbackQuery):
     rate = get_credit_to_quota_rate(callback.from_user.id)
     await callback.message.edit_text(
-        f"💱 积分 → 储备积分\n当前汇率: {rate} 积分 = 1 储备积分\n\n选择兑换金额:",
+        f"💱 积分 → 储备积分\n当前汇率: {rate} 积分 = 1 储备积分\n\n选择兑换积分:",
         reply_markup=_c2q_amounts_kb(rate, tg_id=callback.from_user.id),
     )
     await callback.answer()

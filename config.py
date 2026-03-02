@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     # Telegram
     bot_token: str = ""
     proxy_url: str = ""  # HTTP代理，如 http://127.0.0.1:7890
-    run_mode: str = "polling"  # polling / webhook
+    run_mode: str = "webhook"  # polling / webhook
     use_uvloop: bool = True
     app_timezone: str = "Asia/Shanghai"
     webhook_base_url: str = ""  # 例如: https://example.com
@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     webhook_host: str = "0.0.0.0"
     webhook_port: int = 8080
     webhook_secret_token: str = ""
+    api_host: str = "0.0.0.0"
+    api_port: int = 8090
     # Comma-separated list of allowed chat_ids (group/subchannel) where commands work.
     # Empty means all groups are allowed.
     allowed_chat_ids: str = ""
@@ -34,6 +36,16 @@ class Settings(BaseSettings):
     postgres_db: str = ""
     postgres_user: str = ""
     postgres_password: str = ""
+    db_pool_size: int = 12
+    db_max_overflow: int = 16
+    db_pool_timeout_seconds: int = 30
+    db_pool_recycle_seconds: int = 1800
+
+    # Mini App API
+    miniapp_auth_max_age_seconds: int = 300
+    miniapp_session_ttl_seconds: int = 1800
+    miniapp_preload_ttl_seconds: int = 5
+    miniapp_allowed_origins: str = ""
 
     # Redis
     redis_password: str = ""
@@ -59,6 +71,11 @@ class Settings(BaseSettings):
     product_create_cost: int = 1500
     product_upgrade_cost_base: int = 800
     product_upgrade_income_pct: float = 0.20  # +20% per upgrade
+
+    # AI iterate (AI研发迭代)
+    ai_rd_daily_limit: int = 5  # per company/day
+    ai_rd_product_cooldown_seconds: int = 4 * 3600  # cooldown per product
+    ai_rd_company_cooldown_seconds: int = 3600  # global cooldown per company
 
     # Roadshow
     roadshow_cost: int = 700
@@ -92,6 +109,8 @@ class Settings(BaseSettings):
     employee_limit_growth_exponent: float = 2.2  # level->employee limit curve
     employee_effective_cap_for_progress: int = 600  # soft cap to avoid revenue inflation
     employee_salary_base: int = 80  # base daily salary per employee
+    employee_base_output: int = 100  # base daily income per employee (人均基础产出)
+    employee_efficiency_rate: float = 0.003  # product income boost per sqrt(employee) (效率加成系数)
 
     # Random events
     event_chance: float = 0.35  # 35% chance per company per day

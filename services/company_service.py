@@ -120,6 +120,22 @@ async def update_daily_revenue(session: AsyncSession, company_id: int) -> int:
     return total
 
 
+def calc_employee_income(employee_count: int, product_income: int) -> tuple[int, int]:
+    """Calculate employee workforce income.
+
+    Returns (base_output, efficiency_bonus):
+      - base_output:       employee_base_output × effective_employees
+      - efficiency_bonus:  product_income × employee_efficiency_rate × √effective_employees
+    """
+    import math
+    if employee_count <= 0:
+        return 0, 0
+    effective = min(employee_count, settings.employee_effective_cap_for_progress)
+    base_output = effective * settings.employee_base_output
+    efficiency_bonus = int(product_income * settings.employee_efficiency_rate * math.sqrt(effective))
+    return base_output, efficiency_bonus
+
+
 async def add_funds(session: AsyncSession, company_id: int, amount: int) -> bool:
     """Atomically add/subtract funds with optimistic locking."""
     company = await session.get(Company, company_id)
@@ -265,7 +281,7 @@ async def upgrade_company(
 
     cost = next_info["upgrade_cost"]
     if company.total_funds < cost:
-        fails.append(f"资金: {fmt_traffic(company.total_funds)}/{fmt_traffic(cost)}")
+        fails.append(f"积分: {fmt_traffic(company.total_funds)}/{fmt_traffic(cost)}")
 
     min_emp = next_info.get("min_employees", 0)
     if min_emp and company.employee_count < min_emp:
@@ -303,7 +319,7 @@ async def upgrade_company(
     # Deduct funds
     ok = await add_funds(session, company_id, -cost)
     if not ok:
-        return False, f"资金扣除失败"
+        return False, f"积分扣除失败"
 
     company.level = next_level
     await session.flush()

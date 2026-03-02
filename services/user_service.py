@@ -241,7 +241,7 @@ async def exchange_quota_for_credits(
     reverse_rate = int(rate * (1.0 - REVERSE_EXCHANGE_PENALTY))
     credits_gained = quota_mb * reverse_rate
     if credits_gained <= 0:
-        return False, "兑换金额过小"
+        return False, "兑换积分过小"
 
     # Atomically deduct quota from Redis
     r = await get_redis()

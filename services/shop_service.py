@@ -1,4 +1,9 @@
-"""Shop and black market service — item purchase, buff management, daily black market."""
+"""商店与黑市系统。
+
+商品购买 → Redis buff 管理 → 每日黑市刷新。
+研发加速(speed_research): 每轮最多3次，逐次涨价 6000→12000→24000。
+Redis键: buff:{company_id}:{item_key} (TTL自动过期或立即消耗)
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,8 @@
-"""Company operations gameplay: work-hour, office, training, insurance, culture, ethics, regulation."""
+"""经营策略系统：工时/办公/培训/保险/文化/道德/监管。
+
+监管压力由工时自动联动：超时自动涨，合规自动降。
+所有倍率影响每日结算的收入和成本计算。
+"""
 
 from __future__ import annotations
 
@@ -12,6 +16,8 @@ from utils.timezone import BJ_TZ
 from cache.redis_client import get_redis
 
 
+# ── 工时选项 ──────────────────────────────────────────
+# income_mult: 营收乘数  cost_mult: 成本乘数  ethics_delta: 每日道德变化
 WORK_HOUR_OPTIONS: dict[int, dict] = {
     6: {"label": "轻松", "income_mult": 0.88, "cost_mult": 0.92, "ethics_delta": 1},
     8: {"label": "正常", "income_mult": 1.00, "cost_mult": 1.00, "ethics_delta": 0},
@@ -19,6 +25,8 @@ WORK_HOUR_OPTIONS: dict[int, dict] = {
     12: {"label": "高压", "income_mult": 1.28, "cost_mult": 1.25, "ethics_delta": -3},
 }
 
+# ── 办公等级 ──────────────────────────────────────────
+# income_mult: 营收乘数  employee_cost: 每人每日办公成本
 OFFICE_LEVELS: dict[str, dict] = {
     "basic": {"name": "基础办公", "income_mult": 1.00, "employee_cost": 6},
     "standard": {"name": "标准办公", "income_mult": 1.12, "employee_cost": 14},
@@ -26,6 +34,8 @@ OFFICE_LEVELS: dict[str, dict] = {
     "top": {"name": "顶级办公", "income_mult": 1.70, "employee_cost": 45},
 }
 
+# ── 培训等级 ──────────────────────────────────────────
+# income_mult: 营收乘数  hourly_cost: 每人每小时培训费  duration_hours: 培训持续时长
 TRAINING_LEVELS: dict[str, dict] = {
     "none": {"name": "无培训", "income_mult": 1.00, "hourly_cost": 0, "duration_hours": 0},
     "basic": {"name": "基础培训", "income_mult": 1.12, "hourly_cost": 30, "duration_hours": 24},
@@ -33,24 +43,30 @@ TRAINING_LEVELS: dict[str, dict] = {
     "elite": {"name": "精英特训", "income_mult": 1.50, "hourly_cost": 120, "duration_hours": 48},
 }
 
+# ── 保险等级 ──────────────────────────────────────────
+# cost_rate: 保费占薪资比例  fine_reduction: 监管罚款减免比例
 INSURANCE_LEVELS: dict[str, dict] = {
     "basic": {"name": "基础险", "cost_rate": 0.010, "fine_reduction": 0.0},
     "plus": {"name": "进阶险", "cost_rate": 0.022, "fine_reduction": 0.4},
     "supreme": {"name": "至尊险", "cost_rate": 0.040, "fine_reduction": 0.8},
 }
 
+# ── 市场景气周期 ────────────────────────────────────
 MARKET_TRENDS: tuple[dict, ...] = (
     {"key": "sun", "label": "☀️ 繁荣", "income_mult": 1.12},
     {"key": "cloud", "label": "⛅ 平稳", "income_mult": 1.00},
     {"key": "rain", "label": "🌧️ 衰退", "income_mult": 0.88},
 )
-_MARKET_CYCLE_ANCHOR = dt.date(2026, 1, 1)
-LEGAL_WORK_HOURS = 8
-WORK_HOUR_AUDIT_VARIANCE = 1
-REGULATION_FINE_CAP_RATE = 0.75
+_MARKET_CYCLE_ANCHOR = dt.date(2026, 1, 1)  # 景气周期基准日期
+
+# ── 监管常量 ──────────────────────────────────────────
+LEGAL_WORK_HOURS = 8            # 法定工时上限（超出触发监管）
+WORK_HOUR_AUDIT_VARIANCE = 1    # 抽检时实际工时浮动范围 ±1h
+REGULATION_FINE_CAP_RATE = 0.75  # 罚款上限：当日收入的75%
 
 
 def _clamp(value: int, lower: int, upper: int) -> int:
+    """将数值限制在 [lower, upper] 范围内。"""
     return max(lower, min(upper, value))
 
 
@@ -200,10 +216,13 @@ def run_regulation_audit(
     - Higher regulation_pressure means stricter checks and stronger penalties.
     """
     insurance = INSURANCE_LEVELS.get(profile.insurance_level, INSURANCE_LEVELS["basic"])
+    # Deterministic daily RNG per company:
+    # same company/day => stable audit outcome, next day => new sample.
     rng = random.Random((now.toordinal() * 97) + profile.company_id)
     sampled_hours = max(1, min(24, profile.work_hours + rng.randint(-WORK_HOUR_AUDIT_VARIANCE, WORK_HOUR_AUDIT_VARIANCE)))
     overtime_hours = max(0, sampled_hours - LEGAL_WORK_HOURS)
 
+    # Risk is driven by ethics + regulation pressure, then sharply increased by overtime.
     base_risk = 0.02 + max(0, 50 - profile.ethics) * 0.004 + profile.regulation_pressure * 0.0005
     overtime_risk_boost = overtime_hours * 0.10
     culture_risk_reduce = (profile.culture / 100) * 0.30

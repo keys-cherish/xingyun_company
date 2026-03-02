@@ -34,7 +34,7 @@ from services.user_service import add_points, add_traffic, get_user_by_tg_id
 from utils.formatters import fmt_currency, fmt_reputation_buff, reputation_buff_multiplier
 
 router = Router()
-GIVE_MONEY_POINTS_DIVISOR = 1000
+GIVE_MONEY_POINTS_DIVISOR = 1000  # /give_money 赠送金额的换算除数
 
 
 # ---- Buff一览 ----

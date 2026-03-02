@@ -199,3 +199,34 @@ group_scope_middleware = GroupScopeMiddleware()
 async def reject_private(message: types.Message):
     """非管理员私聊时的拒绝提示。"""
     await message.answer("此命令仅限在群组指定频道中使用。\n私聊仅支持 /company_create 和 /company 查看信息。")
+
+
+# ── 通用辅助函数 ──────────────────────────────────────
+
+def parse_callback_id(callback_data: str, index: int = 2) -> int:
+    """从回调数据中解析指定位置的整数ID。
+
+    回调格式: entity:action:id[:param]
+    例如 "company:view:3001" → parse_callback_id(data, 2) → 3001
+    """
+    return int(callback_data.split(":")[index])
+
+
+async def require_company_owner(
+    session,
+    callback: types.CallbackQuery,
+    company_id: int,
+) -> tuple | None:
+    """验证回调用户是公司老板。返回 (user, company) 或 None（已自动回复错误）。
+
+    常见的权限检查模式，在 15+ 个 handler 中重复出现。
+    """
+    from services.user_service import get_user_by_tg_id
+    from services.company_service import get_company_by_id
+
+    user = await get_user_by_tg_id(session, callback.from_user.id)
+    company = await get_company_by_id(session, company_id)
+    if not company or not user or company.owner_id != user.id:
+        await callback.answer("无权操作", show_alert=True)
+        return None
+    return user, company

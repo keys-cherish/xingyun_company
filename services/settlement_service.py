@@ -33,7 +33,18 @@ logger = logging.getLogger(__name__)
 
 
 async def settle_company(session: AsyncSession, company: Company) -> tuple[DailyReport | None, list[str]]:
-    """Run daily settlement for one company."""
+    """结算单个公司的每日收支。
+
+    流程:
+    1. 完成到期科研 → 刷新产品收入
+    2. 计算总收入 = 产品 + 等级加成 + 合作 + 地产 + 声望 + 广告 + 商店 + 商战 + 类型
+    3. 扣除成本 = 税收 + 薪资 + 社保 + 办公 + 培训 + 监管 + 保险 + 工时
+    4. 运行监管抽检（可能产生罚款）
+    5. 计算利润 → 更新公司资金 → 分红 → 随机事件 → 生成日报
+
+    Returns:
+        (DailyReport, event_messages) 或 (None, []) 如果公司无产品
+    """
     today = dt.date.today().isoformat()
 
     # Check for completed research

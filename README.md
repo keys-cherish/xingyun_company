@@ -90,6 +90,8 @@ uv run python bot.py
 常用配置项：
 - `BOT_TOKEN`：机器人 token
 - `DATABASE_URL`：数据库连接（生产建议 PostgreSQL）
+- `DB_POOL_SIZE` / `DB_MAX_OVERFLOW`：数据库连接池容量（默认 `12/16`，小机更稳）
+- `DB_POOL_TIMEOUT_SECONDS` / `DB_POOL_RECYCLE_SECONDS`：连接池获取超时与连接回收时间
 - `REDIS_URL`：Redis 连接
 - `RUN_MODE`：运行模式（`polling` / `webhook`）
 - `USE_UVLOOP`：是否启用 uvloop
@@ -127,15 +129,146 @@ AI配置说明：
 
 ```
 my_company/
-├── bot.py              # 入口
-├── config.py           # 配置
-├── pyproject.toml      # uv项目配置
-├── db/                 # 数据库模型
-├── cache/              # Redis缓存
-├── services/           # 业务逻辑（15个服务）
-├── handlers/           # Telegram交互处理（13个）
-├── keyboards/          # Inline键盘布局
-├── scheduler/          # 定时任务
-├── game_data/          # 游戏静态数据(JSON)
-└── utils/              # 工具函数
+├── bot.py                      # 入口：启动bot + 注册router + 中间件
+├── config.py                   # pydantic-settings 配置加载
+├── commands.py                 # 命令常量定义
+├── pyproject.toml              # uv 项目配置
+├── db/
+│   ├── engine.py               # 数据库连接池 + async_session
+│   └── models.py               # SQLAlchemy ORM 模型
+├── cache/
+│   └── redis_client.py         # Redis 连接 + 排行榜 + Lua 脚本
+├── handlers/                   # Telegram 交互层（薄handler，逻辑在services）
+│   ├── common.py               # 公共过滤器、中间件、管理员认证
+│   ├── company.py              # 公司CRUD/导航/改名/注销/升级
+│   ├── company_helpers.py      # 公司共享函数（render_company_detail等）
+│   ├── company_ops.py          # 经营策略（工时/办公/培训/保险/文化/道德）
+│   ├── company_employees.py    # 员工管理（招聘/裁员/成员查看）
+│   ├── shareholder.py          # 股东注资
+│   ├── research.py             # 科研/研发树
+│   ├── product.py              # 产品管理
+│   ├── realestate.py           # 地产投资
+│   ├── ad.py                   # 广告系统
+│   ├── ai_rd.py                # AI 研发评审
+│   ├── ai_chat.py              # AI 聊天/意图识别
+│   ├── exchange.py             # 交易所/商店/黑市
+│   ├── total_war.py            # 全面商战
+│   ├── slot_machine.py         # 老虎机游戏
+│   ├── admin.py                # 管理员面板/Buff一览
+│   ├── start.py                # 注册/个人面板/排行榜
+│   └── ...
+├── services/                   # 业务逻辑层（单一真源）
+│   ├── settlement_service.py   # 每日结算核心
+│   ├── company_service.py      # 公司CRUD/资金/升级
+│   ├── operations_service.py   # 经营策略/监管审计
+│   ├── product_service.py      # 产品创建/升级
+│   ├── research_service.py     # 科研进度/完成
+│   ├── shop_service.py         # 商店/黑市/buff管理
+│   ├── slot_service.py         # 老虎机业务逻辑
+│   ├── battle_service.py       # 商战/全面商战
+│   ├── ai_chat_service.py      # AI 对话/工具调用
+│   ├── ai_rd_service.py        # AI 研发评分
+│   └── ...
+├── keyboards/
+│   └── menus.py                # Inline 键盘布局
+├── scheduler/
+│   └── daily_settlement.py     # APScheduler 定时结算
+├── game_data/                  # 静态游戏数据（JSON）
+│   ├── company_types.json      # 8种公司类型
+│   ├── company_levels.json     # 公司等级定义
+│   ├── tech_tree.json          # 研发树
+│   ├── products.json           # 产品模板
+│   ├── shop_items.json         # 商店道具
+│   ├── buildings.json          # 地产数据
+│   └── weekly_quests.json      # 周任务
+├── api/                        # Mini App REST API（Litestar）
+│   ├── app.py                  # ASGI 应用
+│   ├── routes.py               # /api/miniapp/auth + /api/miniapp/preload
+│   ├── security.py             # Telegram initData 签名验证
+│   └── preload.py              # 用户数据快照
+├── miniapp/                    # Telegram Mini App 前端（Vue 3）
+│   ├── src/                    # Vue + TypeScript + Vant
+│   └── package.json            # pnpm 依赖
+├── utils/                      # 工具函数
+│   ├── formatters.py           # 货币/数字格式化
+│   ├── validators.py           # 名称校验
+│   ├── concurrency.py          # Redis 分布式锁
+│   ├── panel_owner.py          # 面板归属追踪
+│   └── timezone.py             # 时区转换
+└── tests/                      # 单元测试（SQLite + FakeRedis）
+    ├── helpers/                 # 测试基类
+    └── test_*.py               # 10+ 测试文件
 ```
+
+## 工程规范（敏捷 + 可维护）
+
+项目采用“短迭代 + 小步提交 + 强回归”策略，详细规范见：
+
+- `docs/ENGINEERING_PLAYBOOK.md`
+
+核心要求：
+
+1. 单个需求拆分为可独立测试的小任务（建议 1 天内完成）。
+2. 代码变更必须附带测试或更新现有测试。
+3. 所有新业务规则必须在 `services/` 层实现，`handlers/` 只做交互编排。
+4. 文案、配置、README 必须同步更新。
+
+常用测试命令：
+
+```bash
+# 仅跑核心回归
+uv run pytest -q tests/test_settlement_logic.py tests/test_company_logic.py
+
+# 跑新增监管与分红回归
+uv run pytest -q tests/test_regulation_audit.py tests/test_dividend_distribution.py
+```
+
+## 小鸡服务器部署建议（防崩）
+
+低配单机（1C/2G）建议使用以下策略：
+
+1. **单实例**：`RUN_MODE=webhook`，避免 polling 长连接开销。
+2. **API 单进程**：Mini App API 保持 `workers=1`（当前已如此）。
+3. **保守连接池**：建议 `DB_POOL_SIZE=4~8`，`DB_MAX_OVERFLOW=4~8`。
+4. **缓存优先**：高频读取走 Redis（预加载/冷却/排行榜）。
+5. **限流必须开启**：AI 对话、AI 迭代、商战都要有冷却与配额。
+6. **避免重计算**：Mini App 读接口仅返回投影数据，不做复杂统计。
+7. **观测最小闭环**：保留错误日志 + 每日结算日志 + 备份通知。
+
+参考参数（小机）：
+
+```env
+RUN_MODE=webhook
+DB_POOL_SIZE=6
+DB_MAX_OVERFLOW=6
+DB_POOL_TIMEOUT_SECONDS=30
+DB_POOL_RECYCLE_SECONDS=1200
+REDIS_STREAM_MAXLEN=5000
+AI_TIMEOUT_SECONDS=20
+AI_MAX_RETRIES=1
+AI_RD_DAILY_LIMIT=3
+AI_RD_PRODUCT_COOLDOWN_SECONDS=21600
+AI_RD_COMPANY_COOLDOWN_SECONDS=7200
+```
+
+## Mini App 接入路线（先方案）
+
+当前已具备基础 API（认证 + preload），推荐按三阶段推进，避免一次性大改：
+
+1. **阶段1：只读看板**
+   - 保持文字机器人为主，Mini App 仅展示：公司状态、结算记录、产品/科研进度。
+   - 所有写操作继续走 Bot，先把读性能和鉴权打稳。
+
+2. **阶段2：低风险写操作**
+   - 开放幂等且低风险操作（例如切换展示、刷新、查询筛选）。
+   - 对写接口统一加会话校验、速率限制、审计日志。
+
+3. **阶段3：核心经营操作**
+   - 再逐步开放“有成本的操作”（研发、培训、购买）。
+   - 这些接口必须复用现有 `services/` 逻辑，禁止前后端双实现。
+
+设计原则：
+
+1. Mini App 是 UI 层，不是业务规则层。
+2. 以 `services/` 为单一业务真源（single source of truth）。
+3. 先解决一致性和风控，再追求界面丰富度。

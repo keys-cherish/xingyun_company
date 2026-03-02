@@ -1,4 +1,4 @@
-"""Shareholder interaction handlers (group only)."""
+"""股东注资处理器。"""
 
 from __future__ import annotations
 
@@ -21,9 +21,11 @@ from services.user_service import get_user_by_tg_id
 from utils.formatters import fmt_shares, fmt_traffic
 
 router = Router()
-INVEST_INPUT_TIMEOUT_SECONDS = 5 * 60
+
+# ── 常量 ──────────────────────────────────────────────
+INVEST_INPUT_TIMEOUT_SECONDS = 5 * 60  # 自定义注资输入超时（5分钟）
 INVEST_KEYWORD = chr(0x6295) + chr(0x8D44)  # "投资"
-CN_COMMA = chr(0xFF0C)  # Chinese comma
+CN_COMMA = chr(0xFF0C)  # 中文逗号，用于金额解析
 INVEST_SHORTCUT_RE = re.compile(rf"^\s*{INVEST_KEYWORD}\s*([0-9][0-9_,{CN_COMMA}]*)\s*$")
 
 
@@ -32,6 +34,7 @@ class InvestState(StatesGroup):
 
 
 def _parse_amount(amount_text: str) -> int | None:
+    """解析用户输入的金额文本，支持逗号/下划线/中文逗号分隔。"""
     normalized = amount_text.replace(",", "").replace("_", "").replace(CN_COMMA, "").strip()
     if not normalized:
         return None
@@ -45,77 +48,73 @@ def _parse_amount(amount_text: str) -> int | None:
 
 
 async def _handle_reply_invest(message: types.Message, amount: int):
+    """通过回复消息对目标用户的公司进行注资。"""
     if not message.reply_to_message or not message.reply_to_message.from_user:
-        await message.answer("Reply to a target user message first, then invest.")
+        await message.answer("请先回复目标用户的消息，再发送注资命令。")
         return
 
     investor_tg_id = message.from_user.id
     target_user_tg = message.reply_to_message.from_user
 
     if target_user_tg.is_bot:
-        await message.answer("You cannot invest in a bot.")
+        await message.answer("无法对机器人注资。")
         return
     if target_user_tg.id == investor_tg_id:
-        await message.answer("You cannot invest by replying to yourself.")
+        await message.answer("不能对自己注资，请回复其他玩家的消息。")
         return
 
     async with async_session() as session:
         async with session.begin():
             investor_user = await get_user_by_tg_id(session, investor_tg_id)
             if not investor_user:
-                await message.answer("Please register first: /company_start")
+                await message.answer("请先 /company_start 注册账号。")
                 return
 
-            # Validate investor company quota before investing
             investor_companies = await get_companies_by_owner(session, investor_user.id)
             if not investor_companies:
-                await message.answer("You do not own a company, so investing is unavailable.")
+                await message.answer("你还没有公司，无法注资。请先 /company_create 创建公司。")
                 return
             investor_company = investor_companies[0]
             investor_quota = int(investor_company.total_funds)
             if amount > investor_quota:
                 await message.answer(
-                    f"Investment quota exceeded. Your company quota is {fmt_traffic(investor_quota)}."
+                    f"公司资金不足，当前可用：{fmt_traffic(investor_quota)}。"
                 )
                 return
 
             target_user = await get_user_by_tg_id(session, target_user_tg.id)
             if not target_user:
-                await message.answer("The target user is not registered yet.")
+                await message.answer("目标用户尚未注册。")
                 return
 
             target_companies = await get_companies_by_owner(session, target_user.id)
             if not target_companies:
-                await message.answer("The target user has no company.")
+                await message.answer("目标用户还没有公司。")
                 return
 
             target_company = target_companies[0]
             ok, invest_msg = await invest(session, investor_user.id, target_company.id, amount)
 
     if ok:
-        await message.answer(f"{invest_msg}\nTarget company: {target_company.name}")
+        await message.answer(f"{invest_msg}\n目标公司：{target_company.name}")
         return
     await message.answer(invest_msg)
 
 
 @router.message(Command(CMD_INVEST))
 async def cmd_reply_invest(message: types.Message):
-    """Reply to a user and invest in that user's company.
-
-    Usage:
-      - Reply someone: /company_invest <amount>
-    """
+    """回复目标用户消息并注资。用法：/company_invest <金额>"""
     parts = (message.text or "").split(maxsplit=1)
     if len(parts) < 2:
         await message.answer(
-            "Usage: reply target user and send /company_invest <amount>\n"
-            "Example: /company_invest 5000"
+            "用法：回复目标用户消息，发送 /company_invest <金额>\n"
+            "示例：/company_invest 5000"
         )
         return
 
     amount = _parse_amount(parts[1])
     if amount is None:
-        await message.answer("Amount must be a positive integer.")
+        await message.answer("金额必须为正整数。")
         return
 
     await _handle_reply_invest(message, amount)
@@ -123,7 +122,7 @@ async def cmd_reply_invest(message: types.Message):
 
 @router.message(F.text.startswith(INVEST_KEYWORD))
 async def msg_reply_invest_shortcut(message: types.Message, state: FSMContext):
-    """Reply shortcut: invest5000"""
+    """快捷注资：回复消息并发送"投资5000"。"""
     if await state.get_state() is not None:
         return
 
@@ -133,7 +132,7 @@ async def msg_reply_invest_shortcut(message: types.Message, state: FSMContext):
 
     amount = _parse_amount(matched.group(1))
     if amount is None:
-        await message.answer("Invalid amount format. Use: invest5000")
+        await message.answer("金额格式无效，示例：投资5000")
         return
 
     await _handle_reply_invest(message, amount)
@@ -183,7 +182,7 @@ async def cb_shareholders(callback: types.CallbackQuery):
 @router.callback_query(F.data.startswith("shareholder:invest:"))
 async def cb_invest_menu(callback: types.CallbackQuery):
     company_id = int(callback.data.split(":")[2])
-    await callback.message.edit_text("选择注资金额:", reply_markup=invest_kb(company_id, tg_id=callback.from_user.id))
+    await callback.message.edit_text("选择注资积分:", reply_markup=invest_kb(company_id, tg_id=callback.from_user.id))
     await callback.answer()
 
 
@@ -199,8 +198,8 @@ async def cb_invest_input(callback: types.CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="🔙 返回注资面板", callback_data=f"shareholder:invest:{company_id}")],
     ])
     await callback.message.edit_text(
-        "✍️ 自定义注资金额\n"
-        "请输入注资金额（整数，如 5000）\n"
+        "✍️ 自定义注资积分\n"
+        "请输入注资积分（整数，如 5000）\n"
         f"⏳ {INVEST_INPUT_TIMEOUT_SECONDS // 60} 分钟内未输入将自动退出",
         reply_markup=kb,
     )
@@ -211,7 +210,7 @@ async def cb_invest_input(callback: types.CallbackQuery, state: FSMContext):
 async def cb_invest_input_cancel(callback: types.CallbackQuery, state: FSMContext):
     company_id = int(callback.data.split(":")[2])
     await state.clear()
-    await callback.message.edit_text("选择注资金额:", reply_markup=invest_kb(company_id, tg_id=callback.from_user.id))
+    await callback.message.edit_text("选择注资积分:", reply_markup=invest_kb(company_id, tg_id=callback.from_user.id))
     await callback.answer("已取消输入")
 
 
@@ -252,7 +251,7 @@ async def on_custom_invest_amount(message: types.Message, state: FSMContext):
     except ValueError:
         left = max(1, INVEST_INPUT_TIMEOUT_SECONDS - (now - started_ts))
         await message.answer(
-            f"请输入有效金额（整数，例如 5000）。剩余时间约 {left // 60}分{left % 60}秒"
+            f"请输入有效积分（整数，例如 5000）。剩余时间约 {left // 60}分{left % 60}秒"
         )
         return
 

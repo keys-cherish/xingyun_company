@@ -13,7 +13,7 @@ from aiogram.enums import ParseMode
 
 from cache.redis_client import get_redis
 from config import settings
-from services.ai_chat_service import ask_ai_smart, detect_image_intent
+from services.ai_chat_service import ask_ai_smart
 from db.engine import async_session
 from db.models import CompanyOperationProfile
 from services.company_service import get_companies_by_owner, get_company_type_info, get_level_info
@@ -193,10 +193,7 @@ async def on_ai_bot_mention(message: types.Message):
             pass
 
     # Determine model for the pending message
-    if detect_image_intent(prompt):
-        pending_model = (settings.ai_image_model or "").strip() or "grok-imagine-1.0-edit"
-    else:
-        pending_model = (settings.ai_model or "").strip() or "gpt-4o-mini"
+    pending_model = (settings.ai_model or "").strip() or "gpt-4o-mini"
 
     pending = await message.reply(
         f"🤖 努力思考中，请稍等…\n<blockquote>📡 {pending_model}</blockquote>",

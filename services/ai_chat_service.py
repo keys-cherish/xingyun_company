@@ -696,22 +696,12 @@ async def ask_ai_smart(
         return "AI 功能未启用。", "text", ""
 
     chat_model = (settings.ai_model or "").strip() or "gpt-4o-mini"
-    image_model = (settings.ai_image_model or "").strip() or "grok-imagine-1.0-edit"
 
-    # ── 1. Image intent ───────────────────────────────────────────────
-    if detect_image_intent(prompt):
-        if image:
-            url = await edit_image(prompt, image)
-        else:
-            url = await generate_image(prompt)
-        if url:
-            return url, "image", image_model
-        if not image:
-            return _wrap_blockquote("图片生成失败，请稍后再试。"), "text", image_model
-        # edit_image failed → fall through to chat model with vision
-        logger.info("edit_image failed, falling back to chat model vision")
+    # All requests (including image generation/editing) go through the chat
+    # model.  The model generates inline image URLs when asked to draw/edit;
+    # extract_image_urls() picks them up later.
 
-    # ── 2. Company or general intent ──────────────────────────────────
+    # ── Company or general intent ──────────────────────────────────
     is_company = detect_company_intent(prompt)
 
     if is_company:

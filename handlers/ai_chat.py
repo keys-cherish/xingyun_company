@@ -1,8 +1,9 @@
-"""@机器人 即时AI对话处理器 — 支持意图路由、工具调用和图片生成。"""
+"""@机器人 即时AI对话处理器 — 支持意图路由、工具调用、图片生成和连续对话。"""
 
 from __future__ import annotations
 
 import base64
+import json
 import re
 import tempfile
 
@@ -21,6 +22,8 @@ router = Router()
 
 AI_MENTION_LIMIT_PER_MINUTE = 10
 AI_MENTION_WINDOW_SECONDS = 60
+CONV_HISTORY_TTL = 1800  # 30 minutes
+CONV_MAX_TURNS = 10      # keep last 10 exchanges (20 messages)
 
 
 def _is_admin_or_super_admin(tg_id: int) -> bool:
@@ -78,6 +81,51 @@ async def _build_user_company_context(tg_id: int) -> str:
         )
 
 
+# ── Conversation history helpers ─────────────────────────────────────────
+
+def _conv_key(chat_id: int, message_id: int) -> str:
+    return f"ai:conv:{chat_id}:{message_id}"
+
+
+def _strip_blockquote(text: str) -> str:
+    """Remove Telegram HTML blockquote wrapper for storage."""
+    return (
+        text.replace("<blockquote expandable>", "")
+        .replace("<blockquote>", "")
+        .replace("</blockquote>", "")
+        .strip()
+    )
+
+
+async def _load_conv_history(chat_id: int, message_id: int) -> list[dict]:
+    """Load conversation history from Redis by bot reply message_id."""
+    r = await get_redis()
+    raw = await r.get(_conv_key(chat_id, message_id))
+    if not raw:
+        return []
+    try:
+        return json.loads(raw)
+    except Exception:
+        return []
+
+
+async def _save_conv_history(
+    chat_id: int,
+    message_id: int,
+    history: list[dict],
+) -> None:
+    """Save conversation history to Redis, keyed by bot reply message_id."""
+    # Trim to last N turns
+    if len(history) > CONV_MAX_TURNS * 2:
+        history = history[-(CONV_MAX_TURNS * 2):]
+    r = await get_redis()
+    await r.set(
+        _conv_key(chat_id, message_id),
+        json.dumps(history, ensure_ascii=False),
+        ex=CONV_HISTORY_TTL,
+    )
+
+
 @router.message(F.text & ~F.text.startswith("/"))
 async def on_ai_bot_mention(message: types.Message):
     if not message.from_user or message.from_user.is_bot:
@@ -124,6 +172,13 @@ async def on_ai_bot_mention(message: types.Message):
 
     company_context = await _build_user_company_context(tg_id)
 
+    # ── Load conversation history if replying to a bot message ────────
+    conv_history: list[dict] = []
+    if reply_to_bot and reply_to:
+        conv_history = await _load_conv_history(
+            message.chat.id, reply_to.message_id,
+        )
+
     # Determine model for the pending message
     if detect_image_intent(prompt):
         pending_model = (settings.ai_image_model or "").strip() or "grok-imagine-1.0"
@@ -135,9 +190,14 @@ async def on_ai_bot_mention(message: types.Message):
         parse_mode=ParseMode.HTML,
     )
 
-    content, response_type, model_name = await ask_ai_smart(prompt, company_context, tg_id)
+    content, response_type, model_name = await ask_ai_smart(
+        prompt, company_context, tg_id, history=conv_history,
+    )
 
     model_tag = f"\n<blockquote>📡 {model_name}</blockquote>" if model_name else ""
+
+    # ── Save conversation history on the bot's reply ──────────────────
+    bot_reply_id: int | None = None
 
     try:
         if response_type in ("image", "images"):
@@ -186,6 +246,7 @@ async def on_ai_bot_mention(message: types.Message):
                     await pending.edit_text(plain)
                 except Exception:
                     await message.reply(full, parse_mode=ParseMode.HTML)
+            bot_reply_id = pending.message_id
     except Exception:
         # Ultimate fallback
         plain = (
@@ -200,3 +261,13 @@ async def on_ai_bot_mention(message: types.Message):
             await pending.edit_text(plain)
         except Exception:
             await message.reply(plain)
+        bot_reply_id = pending.message_id
+
+    # ── Persist conversation history for follow-up replies ────────────
+    if bot_reply_id and response_type == "text":
+        assistant_text = _strip_blockquote(content)
+        new_history = conv_history + [
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": assistant_text},
+        ]
+        await _save_conv_history(message.chat.id, bot_reply_id, new_history)

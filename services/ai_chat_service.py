@@ -669,12 +669,17 @@ async def ask_ai_smart(
     prompt: str,
     company_context: str,
     tg_id: int,
+    *,
+    history: list[dict] | None = None,
 ) -> tuple[str, str, str]:
     """Smart AI with intent routing and tool calling.
 
     Returns ``(content, response_type, model_name)`` where *response_type* is one of:
     ``"text"`` – a plain text reply (already wrapped in expandable blockquote HTML),
     ``"image"`` / ``"images"`` – *content* is image URL(s) to send as photo(s).
+
+    *history* is an optional list of prior ``{"role": ..., "content": ...}``
+    messages for multi-turn conversation.
     """
     if not settings.ai_enabled or not settings.ai_api_key.strip():
         return "AI 功能未启用。", "text", ""
@@ -711,8 +716,11 @@ async def ask_ai_smart(
 
     messages: list[dict] = [
         {"role": "system", "content": system},
-        {"role": "user", "content": user_content},
     ]
+    # Insert conversation history for multi-turn dialogue
+    if history:
+        messages.extend(history)
+    messages.append({"role": "user", "content": user_content})
 
     try:
         # ── Tool-calling loop (max 5 rounds) ──────────────────────────

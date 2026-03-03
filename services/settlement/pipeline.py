@@ -147,6 +147,28 @@ async def apply_penalties(
             pass
         await r.delete(f"roadshow_penalty:{company_id}")
 
+    # 4. Brand conflict penalty
+    conflict_index_key = f"brand_conflicts:{company_id}"
+    conflict_pids = await r.smembers(conflict_index_key)
+    if conflict_pids:
+        import json
+        total_conflict_rate = 0.0
+        for pid_str in conflict_pids:
+            conflict_key = f"brand_conflict:{company_id}:{pid_str}"
+            raw = await r.get(conflict_key)
+            if raw:
+                try:
+                    data = json.loads(raw)
+                    total_conflict_rate += data.get("penalty_rate", 0.0)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            else:
+                # Expired — clean up index
+                await r.srem(conflict_index_key, pid_str)
+        total_conflict_rate = min(0.50, total_conflict_rate)
+        if total_conflict_rate > 0:
+            breakdown.brand_conflict_penalty = int(product_income * total_conflict_rate)
+
     # Adjusted income
     adjusted_income = max(0, product_income - breakdown.total)
 

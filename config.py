@@ -129,6 +129,17 @@ class Settings(BaseSettings):
     redpacket_expire_seconds: int = 86400  # 24h expiry
     redpacket_lucky_bonus_pct: float = 0.10  # 手气最佳额外10%奖金(系统出)
 
+    # 恶魔轮盘赌
+    roulette_min_bet: int = 5_000
+    roulette_max_bet_pct: float = 1.00  # 最高赌注=公司资金的100%
+    roulette_cooldown_seconds: int = 120  # 冷却2分钟
+    roulette_room_ttl_seconds: int = 60  # 房间1分钟过期
+
+    # 悬赏令
+    bounty_reputation_cost: int = 80
+    bounty_ttl_seconds: int = 86400
+    bounty_cooldown_seconds: int = 7200
+
     # 积分兑换真实流量 (个人积分 → MB/GB流量)
     # 满级公司(Lv.10)每日营收约30万+，按比例计算日上限不超过5TB
     traffic_exchange_rate: int = 100  # 100积分 = 1MB

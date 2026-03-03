@@ -32,7 +32,72 @@ from services.operations_service import (
 )
 from cache.redis_client import update_leaderboard
 
+import json as _json
+
 logger = logging.getLogger(__name__)
+
+
+async def _decay_brand_conflicts(session: AsyncSession, company_id: int) -> list[str]:
+    """Daily decay of brand conflict penalties. Returns event messages."""
+    from cache.redis_client import get_redis
+
+    r = await get_redis()
+    index_key = f"brand_conflicts:{company_id}"
+    pids = await r.smembers(index_key)
+    if not pids:
+        return []
+
+    msgs: list[str] = []
+    for pid_str in pids:
+        conflict_key = f"brand_conflict:{company_id}:{pid_str}"
+        raw = await r.get(conflict_key)
+        if not raw:
+            await r.srem(index_key, pid_str)
+            continue
+
+        try:
+            data = _json.loads(raw)
+        except (_json.JSONDecodeError, TypeError):
+            await r.delete(conflict_key)
+            await r.srem(index_key, pid_str)
+            continue
+
+        days_remaining = data.get("days_remaining", 0) - 1
+        penalty_rate = data.get("penalty_rate", 0.0)
+        product_name = data.get("product_name", "???")
+
+        # Quality advantage: extra decay of penalty_rate
+        # Check product quality vs average of same-name competitors
+        try:
+            pid_int = int(pid_str)
+            product = await session.get(Product, pid_int)
+            if product and product.quality > 0:
+                from sqlalchemy import func as sqlfunc
+                avg_q_result = await session.execute(
+                    select(sqlfunc.avg(Product.quality)).where(
+                        Product.name == product.name,
+                        Product.company_id != company_id,
+                    )
+                )
+                avg_quality = avg_q_result.scalar() or 0
+                if avg_quality > 0 and product.quality > avg_quality * 1.10:
+                    penalty_rate = max(0, penalty_rate - 0.04)
+        except (ValueError, TypeError):
+            pass
+
+        if days_remaining <= 0 or penalty_rate <= 0:
+            await r.delete(conflict_key)
+            await r.srem(index_key, pid_str)
+            msgs.append(f"🏷️ 品牌冲突消退：「{product_name}」惩罚已结束")
+        else:
+            data["days_remaining"] = days_remaining
+            data["penalty_rate"] = penalty_rate
+            await r.set(conflict_key, _json.dumps(data), ex=days_remaining * 86400 + 3600)
+            msgs.append(
+                f"🏷️ 品牌冲突：「{product_name}」营收-{int(penalty_rate * 100)}%（剩余{days_remaining}天）"
+            )
+
+    return msgs
 
 
 async def settle_company(session: AsyncSession, company: Company) -> tuple[DailyReport | None, list[str]]:
@@ -181,6 +246,11 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
             f"(-{penalties.roadshow_penalty:,})"
         )
 
+    if penalties.brand_conflict_penalty > 0:
+        event_messages.append(
+            f"🏷️ 品牌冲突惩罚：当日营收 -{penalties.brand_conflict_penalty:,}"
+        )
+
     # 商战Buff事件消息
     r = await get_redis()
     totalwar_buff_str = await r.get(f"totalwar_buff:{company.id}")
@@ -199,6 +269,10 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
     await save_recent_events(company.id, event_messages)
     profile_msgs = await settle_profile_daily(session, profile, now_utc)
     event_messages.extend(profile_msgs)
+
+    # Brand conflict daily decay
+    brand_msgs = await _decay_brand_conflicts(session, company.id)
+    event_messages.extend(brand_msgs)
 
     # Generate report
     from services.dividend_service import distribute_dividends

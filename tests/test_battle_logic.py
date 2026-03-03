@@ -23,6 +23,18 @@ class TestBattleLogic(AsyncDBTestCase):
         self._patcher.start()
         self.addCleanup(self._patcher.stop)
 
+        self._bounty_patcher = patch("services.bounty_service.get_redis", new=_fake_get_redis)
+        self._bounty_patcher.start()
+        self.addCleanup(self._bounty_patcher.stop)
+
+        self._rules_patcher = patch("services.rules.battle_rules.get_redis", new=_fake_get_redis)
+        self._rules_patcher.start()
+        self.addCleanup(self._rules_patcher.stop)
+
+        self._ops_patcher = patch("services.operations_service.get_redis", new=_fake_get_redis)
+        self._ops_patcher.start()
+        self.addCleanup(self._ops_patcher.stop)
+
         # 新建公司总是在训练模式，测试中关闭训练模式以验证完整逻辑
         self._training_patcher = patch(
             "services.battle_service._is_training_mode", return_value=False
@@ -57,6 +69,10 @@ class TestBattleLogic(AsyncDBTestCase):
         )
         session.add(company)
         await session.flush()
+
+        # Seed points for battle cost
+        await self.fake_redis.set(f"points:{tg_id}", "10000")
+
         return user, company
 
     async def test_battle_rejects_invalid_strategy_equivalence_class(self):

@@ -393,6 +393,13 @@ async def do_battle(
     attacker_power = _roll_power(attacker_base, attacker_strategy) * a_weak_mult
     defender_power = _roll_power(defender_base, defender_strategy) * d_weak_mult
 
+    # Bounty bonus: if target has a bounty, attacker gets power boost
+    from services.bounty_service import check_bounty_bonus, consume_bounty_attack
+    bounty_power, bounty_loot = await check_bounty_bonus(defender_company.id)
+    if bounty_power > 0:
+        attacker_power *= (1.0 + bounty_power)
+        underdog_hints.append(f"🎯 悬赏令加成：战力+{int(bounty_power * 100)}%")
+
     attacker_won = attacker_power >= defender_power
     winner = attacker_company if attacker_won else defender_company
     loser = defender_company if attacker_won else attacker_company
@@ -466,6 +473,9 @@ async def do_battle(
     loser_base = defender_base if attacker_won else attacker_base
     loot_scale = _calc_loot_scale(winner_base, loser_base, winner_strategy)
     raw_loot = int(loser.total_funds * BASE_LOOT_RATE * loot_scale)
+    # Apply bounty loot bonus if attacker won and bounty is active
+    if attacker_won and bounty_loot > 0:
+        raw_loot = int(raw_loot * (1.0 + bounty_loot))
     loot = max(MIN_LOOT, min(MAX_LOOT, raw_loot))
     if loser.total_funds < loot:
         loot = max(0, loser.total_funds)
@@ -476,6 +486,11 @@ async def do_battle(
             await add_funds(session, winner.id, loot)
         else:
             loot = 0
+
+    # Consume bounty attack if attacker won
+    bounty_consumed = False
+    if attacker_won and bounty_power > 0:
+        bounty_consumed = await consume_bounty_attack(defender_company.id)
 
     if attacker_won:
         winner_debuff_rate = await _set_revenue_debuff(defender_company.id, BATTLE_WIN_DEBUFF_RATE)
@@ -533,6 +548,11 @@ async def do_battle(
         lines.insert(
             -3,
             f"• 反噬触发：{attacker_company.name} 道德 -{backlash_ethics_loss}",
+        )
+    if bounty_consumed:
+        lines.insert(
+            -3,
+            f"🎯 悬赏令触发：掠夺加成+{int(bounty_loot * 100)}%",
         )
     return "\n".join(lines), attacker_won, cooldown_seconds
 

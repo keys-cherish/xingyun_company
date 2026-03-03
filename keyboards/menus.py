@@ -100,6 +100,10 @@ def company_detail_kb(company_id: int, is_owner: bool, tg_id: int | None = None)
                 InlineKeyboardButton(text="交易所", callback_data="menu:exchange"),
                 InlineKeyboardButton(text="周任务", callback_data="menu:quest"),
             ],
+            [
+                InlineKeyboardButton(text="😈 恶魔轮盘赌", callback_data=f"roulette:start:{company_id}"),
+                InlineKeyboardButton(text="🎯 悬赏令", callback_data=f"bounty:menu:{company_id}"),
+            ],
             [InlineKeyboardButton(text="升级公司", callback_data=f"company:upgrade:{company_id}")],
         ])
     else:

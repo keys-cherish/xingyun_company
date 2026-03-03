@@ -63,11 +63,12 @@ class PenaltyBreakdown:
     rename_penalty: int = 0
     battle_debuff: int = 0
     roadshow_penalty: int = 0
+    brand_conflict_penalty: int = 0
 
     @property
     def total(self) -> int:
         """计算总惩罚。"""
-        return self.rename_penalty + self.battle_debuff + self.roadshow_penalty
+        return self.rename_penalty + self.battle_debuff + self.roadshow_penalty + self.brand_conflict_penalty
 
 
 @dataclass

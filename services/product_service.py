@@ -194,6 +194,9 @@ async def create_product(
     await update_quest_progress(session, owner_user_id, "product_count", increment=1)
     await _mark_daily_product_create(company_id)
 
+    # Brand conflict detection: check for cross-company products with same name
+    await _apply_brand_conflict(session, product)
+
     return product, (
         f"产品「{name}」打造成功! 日收入: {fmt_traffic(tmpl['base_daily_income'])} "
         f"(研发投入: {fmt_traffic(dynamic_create_cost)})"
@@ -279,3 +282,75 @@ async def upgrade_product(
         f"产品「{product.name}」升级到v{product.version}! "
         f"日收入+{actual_boost} → {fmt_traffic(product.daily_income)}"
     )
+
+
+# ── Brand Conflict ──────────────────────────────────────
+
+# Penalty tiers: (min_duplicates, penalty_rate, duration_days)
+_BRAND_CONFLICT_TIERS = [
+    (3, 0.25, 7),
+    (2, 0.15, 5),
+    (1, 0.08, 3),
+]
+
+
+def _brand_conflict_tier(duplicate_count: int) -> tuple[float, int]:
+    """Return (penalty_rate, days) for a given duplicate count."""
+    for threshold, rate, days in _BRAND_CONFLICT_TIERS:
+        if duplicate_count >= threshold:
+            return rate, days
+    return 0.0, 0
+
+
+async def _apply_brand_conflict(session: AsyncSession, new_product: Product) -> None:
+    """Detect cross-company same-name products and write brand conflict penalties."""
+    # Find all products with the same name in OTHER companies
+    result = await session.execute(
+        select(Product).where(
+            Product.name == new_product.name,
+            Product.company_id != new_product.company_id,
+        )
+    )
+    others = list(result.scalars().all())
+    if not others:
+        return
+
+    r = await get_redis()
+
+    # Gather all affected company_ids (including the new product's company)
+    all_company_ids = {p.company_id for p in others}
+    all_company_ids.add(new_product.company_id)
+
+    # Total number of companies with same product name
+    total_companies = len(all_company_ids)
+    # duplicate_count = how many OTHER companies have same name (from each company's perspective)
+    duplicate_count = total_companies - 1
+
+    penalty_rate, days = _brand_conflict_tier(duplicate_count)
+    if penalty_rate <= 0:
+        return
+
+    # All products with same name (including the new one)
+    all_products = others + [new_product]
+
+    for product in all_products:
+        cid = product.company_id
+        pid = product.id
+        conflict_key = f"brand_conflict:{cid}:{pid}"
+        index_key = f"brand_conflicts:{cid}"
+
+        # Check existing conflict — upgrade if new is worse
+        existing_raw = await r.get(conflict_key)
+        if existing_raw:
+            existing = json.loads(existing_raw)
+            # Upgrade if new penalty is higher or more days
+            if existing.get("penalty_rate", 0) >= penalty_rate and existing.get("days_remaining", 0) >= days:
+                continue
+
+        data = json.dumps({
+            "product_name": product.name,
+            "penalty_rate": penalty_rate,
+            "days_remaining": days,
+        })
+        await r.set(conflict_key, data, ex=days * 86400 + 3600)
+        await r.sadd(index_key, str(pid))

@@ -108,13 +108,14 @@ class FakeRedis:
         2) Red packet grab: eval(script, 3, pk_key, grabs_key, results_key, tg_id)
         """
         if _numkeys == 1:
-            # Points deduction script
+            # Points deduction script: returns 0 (fail) or 1 (success)
             key, amount = args[0], args[1]
             current = int((await self.get(key)) or 0)
             amount_i = int(amount)
             if current < amount_i:
-                return -1
-            return await self.incrby(key, -amount_i)
+                return 0
+            await self.incrby(key, -amount_i)
+            return 1
 
         if _numkeys == 3:
             # Red packet grab script
@@ -201,6 +202,17 @@ class FakeRedis:
 
     async def smembers(self, key: str) -> set[str]:
         return set(self._sets.get(key, set()))
+
+    async def srem(self, key: str, *members: str) -> int:
+        s = self._sets.get(key, set())
+        removed = 0
+        for m in members:
+            if str(m) in s:
+                s.discard(str(m))
+                removed += 1
+        if not s:
+            self._sets.pop(key, None)
+        return removed
 
     # ---- List commands ----
     async def rpush(self, key: str, *values: str) -> int:

@@ -45,6 +45,8 @@ def _register_routers(dp: Dispatcher):
     from handlers.slot_machine import router as slot_router
     from handlers.checkin import router as checkin_router
     from handlers.redpacket import router as redpacket_router
+    from handlers.bounty import router as bounty_router
+    from handlers.roulette import router as roulette_router
 
     dp.include_router(start_router)
     dp.include_router(company_router)
@@ -69,6 +71,8 @@ def _register_routers(dp: Dispatcher):
     dp.include_router(slot_router)
     dp.include_router(checkin_router)
     dp.include_router(redpacket_router)
+    dp.include_router(bounty_router)
+    dp.include_router(roulette_router)
 
     # 私聊兜底：非管理员只允许常用命令，管理员放行
     from handlers.common import reject_private, is_admin_authenticated

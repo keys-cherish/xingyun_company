@@ -36,8 +36,20 @@ async def get_user_by_tg_id(session: AsyncSession, tg_id: int) -> User | None:
     return result.scalar_one_or_none()
 
 
-async def add_traffic(session: AsyncSession, user_id: int, amount: int) -> bool:
-    """Atomically add/subtract user currency (stored in legacy traffic field)."""
+async def add_traffic(
+    session: AsyncSession,
+    user_id: int,
+    amount: int,
+    reason: str = "未知",
+) -> bool:
+    """Atomically add/subtract user currency (stored in legacy traffic field).
+
+    Args:
+        session: Database session
+        user_id: User ID (not tg_id)
+        amount: Amount to add (negative for deduction)
+        reason: Reason for the change (for logging)
+    """
     for _retry in range(3):
         user = await session.get(User, user_id)
         if user is None:
@@ -52,6 +64,15 @@ async def add_traffic(session: AsyncSession, user_id: int, amount: int) -> bool:
         )
         if result.rowcount > 0:
             await session.refresh(user)
+            # 记录资金日志
+            from services.fundlog_service import log_fund_change
+            await log_fund_change(
+                "user",
+                user_id,
+                amount,
+                reason,
+                balance_after=user.traffic,
+            )
             return True
         await session.refresh(user)
     return False

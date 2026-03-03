@@ -120,24 +120,20 @@ async def update_daily_revenue(session: AsyncSession, company_id: int) -> int:
     return total
 
 
-def calc_employee_income(employee_count: int, product_income: int) -> tuple[int, int]:
-    """Calculate employee workforce income.
+async def add_funds(
+    session: AsyncSession,
+    company_id: int,
+    amount: int,
+    reason: str = "未知",
+) -> bool:
+    """Atomically add/subtract funds with optimistic locking.
 
-    Returns (base_output, efficiency_bonus):
-      - base_output:       employee_base_output × effective_employees
-      - efficiency_bonus:  product_income × employee_efficiency_rate × √effective_employees
+    Args:
+        session: Database session
+        company_id: Company ID
+        amount: Amount to add (negative for deduction)
+        reason: Reason for the change (for logging)
     """
-    import math
-    if employee_count <= 0:
-        return 0, 0
-    effective = min(employee_count, settings.employee_effective_cap_for_progress)
-    base_output = effective * settings.employee_base_output
-    efficiency_bonus = int(product_income * settings.employee_efficiency_rate * math.sqrt(effective))
-    return base_output, efficiency_bonus
-
-
-async def add_funds(session: AsyncSession, company_id: int, amount: int) -> bool:
-    """Atomically add/subtract funds with optimistic locking."""
     company = await session.get(Company, company_id)
     if company is None:
         return False
@@ -153,6 +149,16 @@ async def add_funds(session: AsyncSession, company_id: int, amount: int) -> bool
         return False
     # 立即刷新对象，避免惰性加载导致MissingGreenlet
     await session.refresh(company)
+
+    # 记录资金日志
+    from services.fundlog_service import log_fund_change
+    await log_fund_change(
+        "company",
+        company_id,
+        amount,
+        reason,
+        balance_after=company.total_funds,
+    )
     return True
 
 

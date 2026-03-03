@@ -33,6 +33,7 @@ def _register_routers(dp: Dispatcher):
     from handlers.cooperation import router as cooperation_router
     from handlers.realestate import router as realestate_router
     from handlers.dividend import router as dividend_router
+    from handlers.funds import router as funds_router
     from handlers.ad import router as ad_router
     from handlers.ai_rd import router as ai_rd_router
     from handlers.total_war import router as total_war_router
@@ -42,6 +43,8 @@ def _register_routers(dp: Dispatcher):
     from handlers.battle import router as battle_router
     from handlers.quest import router as quest_router
     from handlers.slot_machine import router as slot_router
+    from handlers.checkin import router as checkin_router
+    from handlers.redpacket import router as redpacket_router
 
     dp.include_router(start_router)
     dp.include_router(company_router)
@@ -54,6 +57,7 @@ def _register_routers(dp: Dispatcher):
     dp.include_router(cooperation_router)
     dp.include_router(realestate_router)
     dp.include_router(dividend_router)
+    dp.include_router(funds_router)
     dp.include_router(ad_router)
     dp.include_router(ai_rd_router)
     dp.include_router(total_war_router)
@@ -63,6 +67,8 @@ def _register_routers(dp: Dispatcher):
     dp.include_router(battle_router)
     dp.include_router(quest_router)
     dp.include_router(slot_router)
+    dp.include_router(checkin_router)
+    dp.include_router(redpacket_router)
 
     # 私聊兜底：非管理员只允许常用命令，管理员放行
     from handlers.common import reject_private, is_admin_authenticated
@@ -96,6 +102,8 @@ def _register_routers(dp: Dispatcher):
             "/company_quest",
             "/company_cleanup",
             "/company_cancel",
+            "/company_checkin",
+            "/company_redpacket",
             "/cp_slot",
         )
         if message.text and message.text.startswith(allowed_prefixes):

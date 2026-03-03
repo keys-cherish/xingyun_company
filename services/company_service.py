@@ -266,66 +266,34 @@ async def upgrade_company(
 ) -> tuple[bool, str]:
     """Upgrade company to next level. Requires funds + employees + products + techs + revenue."""
     from utils.formatters import fmt_traffic
-    from sqlalchemy import select, func as sqlfunc
-    from db.models import Product, ResearchProgress
+    from services.rules.company_rules import UPGRADE_GUARD_RULES, UPGRADE_REQUIREMENT_RULES
+    from utils.rules import check_rules_sequential, check_rules_parallel
 
+    ctx = {"session": session, "company_id": company_id}
+
+    # 顺序检查前置条件（公司存在、未满级、等级数据有效）
+    guard_fail = await check_rules_sequential(UPGRADE_GUARD_RULES, **ctx)
+    if guard_fail:
+        return False, guard_fail.message
+
+    # 加载公司和等级信息
     company = await session.get(Company, company_id)
-    if company is None:
-        return False, "公司不存在"
-
-    max_level = get_max_level()
-    if company.level >= max_level:
-        return False, f"已达最高等级 Lv.{max_level}"
-
     next_level = company.level + 1
     next_info = get_level_info(next_level)
-    if not next_info:
-        return False, "等级数据异常"
+    ctx["next_info"] = next_info
 
-    # Check all requirements
-    fails = []
-
-    cost = next_info["upgrade_cost"]
-    if company.total_funds < cost:
-        fails.append(f"积分: {fmt_traffic(company.total_funds)}/{fmt_traffic(cost)}")
-
-    min_emp = next_info.get("min_employees", 0)
-    if min_emp and company.employee_count < min_emp:
-        fails.append(f"员工: {company.employee_count}/{min_emp}")
-
-    min_products = next_info.get("min_products", 0)
-    if min_products:
-        prod_count = (await session.execute(
-            select(sqlfunc.count()).where(Product.company_id == company_id)
-        )).scalar() or 0
-        if prod_count < min_products:
-            fails.append(f"产品: {prod_count}/{min_products}")
-
-    min_techs = next_info.get("min_techs", 0)
-    if min_techs:
-        tech_count = (await session.execute(
-            select(sqlfunc.count()).where(
-                ResearchProgress.company_id == company_id,
-                ResearchProgress.status == "completed",
-            )
-        )).scalar() or 0
-        if tech_count < min_techs:
-            fails.append(f"科技: {tech_count}/{min_techs}")
-
-    min_revenue = next_info.get("min_daily_revenue", 0)
-    if min_revenue and company.daily_revenue < min_revenue:
-        fails.append(f"日营收: {fmt_traffic(company.daily_revenue)}/{fmt_traffic(min_revenue)}")
-
-    if fails:
-        return False, (
-            f"升级到 Lv.{next_level}「{next_info['name']}」条件不足:\n"
-            + "\n".join(f"  ❌ {f}" for f in fails)
-        )
+    # 并行检查所有升级需求
+    req_fails = await check_rules_parallel(UPGRADE_REQUIREMENT_RULES, **ctx)
+    if req_fails:
+        lines = [f"升级到 Lv.{next_level}「{next_info['name']}」条件不足:"]
+        lines.extend(f"  ❌ {v.message}" for v in req_fails)
+        return False, "\n".join(lines)
 
     # Deduct funds
+    cost = next_info["upgrade_cost"]
     ok = await add_funds(session, company_id, -cost)
     if not ok:
-        return False, f"积分扣除失败"
+        return False, "积分扣除失败"
 
     company.level = next_level
     await session.flush()

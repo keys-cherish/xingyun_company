@@ -81,8 +81,11 @@ class TestSettlementWithEmployeeIncome(AsyncDBTestCase):
             return self.fake_redis
 
         self._redis_patcher = patch("cache.redis_client.get_redis", new=_fake_get_redis)
+        self._redis_patcher_pipeline = patch("services.settlement.pipeline.get_redis", new=_fake_get_redis)
         self._redis_patcher.start()
+        self._redis_patcher_pipeline.start()
         self.addCleanup(self._redis_patcher.stop)
+        self.addCleanup(self._redis_patcher_pipeline.stop)
 
     async def _make_company(
         self,
@@ -129,13 +132,13 @@ class TestSettlementWithEmployeeIncome(AsyncDBTestCase):
             "insurance_cost": 0, "work_cost_adjust": 0, "culture_maintenance": 0,
         }
         with patch("services.settlement_service.check_and_complete_research", new=AsyncMock(return_value=[])), \
-            patch("services.settlement_service.get_cooperation_bonus", new=AsyncMock(return_value=0.0)), \
-            patch("services.settlement_service.get_total_estate_income", new=AsyncMock(return_value=0)), \
+            patch("services.cooperation_service.get_cooperation_bonus", new=AsyncMock(return_value=0.0)), \
+            patch("services.realestate_service.get_total_estate_income", new=AsyncMock(return_value=0)), \
             patch("services.settlement_service.roll_daily_events", new=AsyncMock(return_value=[])), \
             patch("services.settlement_service.update_leaderboard", new=AsyncMock(return_value=None)), \
             patch("services.ad_service.get_ad_boost", new=AsyncMock(return_value=0.0)), \
             patch("services.shop_service.get_income_buff_multiplier", new=AsyncMock(return_value=1.0)), \
-            patch("services.settlement_service.get_company_revenue_debuff", new=AsyncMock(return_value=0.0)), \
+            patch("services.battle_service.get_company_revenue_debuff", new=AsyncMock(return_value=0.0)), \
             patch("services.settlement_service.save_recent_events", new=AsyncMock(return_value=None)), \
             patch("services.settlement_service.calc_extra_operating_costs", return_value=extra), \
             patch("services.settlement_service.run_regulation_audit", return_value={"fine": 0, "sampled_hours": 8, "overtime_hours": 0, "risk": 0}):

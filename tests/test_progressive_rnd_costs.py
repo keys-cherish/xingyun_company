@@ -24,12 +24,16 @@ class TestProgressiveRndCosts(AsyncDBTestCase):
 
         # Product upgrade uses services.product_service.get_redis for cooldown.
         # Currency deduction uses services.user_service.get_redis in add_traffic.
+        # Product rules also use cache.redis_client.get_redis for cooldown check.
         self._patcher_product_redis = patch("services.product_service.get_redis", new=_fake_get_redis)
         self._patcher_user_redis = patch("services.user_service.get_redis", new=_fake_get_redis)
+        self._patcher_rules_redis = patch("services.rules.product_rules.get_redis", new=_fake_get_redis)
         self._patcher_product_redis.start()
         self._patcher_user_redis.start()
+        self._patcher_rules_redis.start()
         self.addCleanup(self._patcher_product_redis.stop)
         self.addCleanup(self._patcher_user_redis.stop)
+        self.addCleanup(self._patcher_rules_redis.stop)
 
     async def test_product_upgrade_requires_more_people_and_reputation_by_version(self):
         async with self.Session() as session:

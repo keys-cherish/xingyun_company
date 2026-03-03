@@ -18,6 +18,7 @@ from services.company_service import (
     get_effective_employee_count_for_progress,
 )
 from services.user_service import add_reputation, add_points
+from utils.formatters import fmt_traffic
 
 _tech_tree: dict | None = None
 _products_data: dict | None = None
@@ -217,73 +218,59 @@ async def start_research(
     tech_id: str,
 ) -> tuple[bool, str]:
     """Start researching a technology. Deducts company funds."""
+    from services.rules.research_rules import (
+        get_research_guard_rules,
+        get_research_requirement_rules,
+    )
+    from utils.rules import check_rules_sequential, check_rules_parallel
+
     tree = _load_tech_tree()
-    if tech_id not in tree:
-        return False, "无效的科研项目"
 
-    tech = tree[tech_id]
-
-    company = await session.get(Company, company_id)
-    if company is None:
-        return False, "公司不存在"
-    if company.owner_id != owner_user_id:
-        return False, "只有公司老板才能进行科研"
-    if not is_tech_allowed_for_company(company.company_type, tech_id):
-        return False, "该科研不在你公司行业的研发方向内"
-
-    owner = await session.get(User, owner_user_id)
-    if owner is None:
-        return False, "用户不存在"
-
-    # Check prerequisites
+    # 完成到期科研
     await check_and_complete_research(session, company_id)
     completed = set(await get_completed_techs(session, company_id))
-    for prereq in tech.get("prerequisites", []):
-        if prereq not in completed:
-            prereq_name = tree.get(prereq, {}).get("name", prereq)
-            return False, f"需要先完成前置科研: {prereq_name}"
-
-    # Check not already researching or done
-    existing = await session.execute(
-        select(ResearchProgress).where(
-            ResearchProgress.company_id == company_id,
-            ResearchProgress.tech_id == tech_id,
-        )
-    )
-    if existing.scalar_one_or_none():
-        return False, "该科研已开始或已完成"
-
     completed_count = len(completed)
+
+    # 获取公司信息用于计算成本
+    company = await session.get(Company, company_id)
+    tech = tree.get(tech_id, {})
+
+    # 计算科研成本
     base_cost = int(tech.get("cost", settings.base_research_cost))
     scaled_cost = int(base_cost * (1 + completed_count * RESEARCH_COST_GROWTH_PER_COMPLETED))
-    cost = max(base_cost, scaled_cost)
-    if tech_id in get_company_focus_tech_ids(company.company_type):
-        cost = int(cost * 0.9)
+    research_cost = max(base_cost, scaled_cost)
+    if company and tech_id in get_company_focus_tech_ids(company.company_type):
+        research_cost = int(research_cost * 0.9)
 
-    required_employees = int(
-        tech.get("required_employees", max(1, 1 + completed_count * RESEARCH_EMPLOYEE_STEP))
-    )
-    effective_employees = get_effective_employee_count_for_progress(company.employee_count)
-    if effective_employees < required_employees:
-        return False, (
-            f"\u5458\u5de5\u4e0d\u8db3\uff0c\u79d1\u7814\u300c{tech['name']}\u300d\u9700\u8981\u81f3\u5c11 {required_employees} \u4eba\uff0c"
-            f"\u5f53\u524d\u6709\u6548\u5458\u5de5 {effective_employees} \u4eba\uff08\u603b\u5458\u5de5 {company.employee_count}\uff09"
-        )
+    # 构建上下文
+    ctx = {
+        "session": session,
+        "company_id": company_id,
+        "owner_user_id": owner_user_id,
+        "tech_id": tech_id,
+        "tech_tree": tree,
+        "completed_techs": completed,
+        "completed_count": completed_count,
+        "is_tech_allowed_func": is_tech_allowed_for_company,
+        "employee_step": RESEARCH_EMPLOYEE_STEP,
+        "reputation_step": RESEARCH_REPUTATION_STEP,
+        "research_cost": research_cost,
+    }
 
-    required_reputation = int(
-        tech.get("required_reputation", completed_count * RESEARCH_REPUTATION_STEP)
-    )
-    if owner.reputation < required_reputation:
-        return False, (
-            f"声望不足，科研「{tech['name']}」需要声望 {required_reputation}，"
-            f"当前仅 {owner.reputation}"
-        )
+    # 顺序检查前置条件
+    guard_fail = await check_rules_sequential(get_research_guard_rules(), **ctx)
+    if guard_fail:
+        return False, guard_fail.message
+
+    # 并行检查需求条件
+    req_fails = await check_rules_parallel(get_research_requirement_rules(), **ctx)
+    if req_fails:
+        return False, req_fails[0].message
 
     # Deduct cost from company funds
-    ok = await add_funds(session, company_id, -cost)
+    ok = await add_funds(session, company_id, -research_cost)
     if not ok:
-        from utils.formatters import fmt_traffic
-        return False, f"公司积分不足，需要 {fmt_traffic(cost)}"
+        return False, f"公司积分不足，需要 {fmt_traffic(research_cost)}"
 
     rp = ResearchProgress(
         company_id=company_id,
@@ -297,11 +284,13 @@ async def start_research(
     await add_points(owner_user_id, 5, session=session)
 
     from utils.formatters import fmt_duration
+    # 重新获取公司信息（可能已被刷新）
+    company = await session.get(Company, company_id)
     duration_sec = get_effective_research_duration_seconds(tech, company.company_type, tech_id)
     duration_str = fmt_duration(duration_sec)
     return True, (
         f"开始研究「{tech['name']}」，预计{duration_str}完成 "
-        f"(本次投入: {cost:,} 积分)"
+        f"(本次投入: {research_cost:,} 积分)"
     )
 
 

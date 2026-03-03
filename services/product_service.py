@@ -80,75 +80,62 @@ async def create_product(
     custom_name: str = "",
 ) -> tuple[Product | None, str]:
     """从模板创建产品。消耗流量。"""
+    from services.rules.product_rules import (
+        get_product_create_guard_rules,
+        get_product_create_requirement_rules,
+    )
+    from utils.rules import check_rules_sequential, check_rules_parallel
+
     templates = _load_products()
-    if product_key not in templates:
-        return None, "无效的产品模板"
-
-    company = await session.get(Company, company_id)
-    if company is None:
-        return None, "公司不存在"
-    if company.owner_id != owner_user_id:
-        return None, "只有公司老板才能创建产品"
-
-    tmpl = templates[product_key]
-    owner = await session.get(User, owner_user_id)
-    if owner is None:
-        return None, "用户不存在"
 
     # 检查前置科研
     await check_and_complete_research(session, company_id)
     completed = set(await get_completed_techs(session, company_id))
-    if tmpl["tech_id"] not in completed:
-        return None, "需要先完成对应科研"
 
     # 产品名称
-    name = custom_name.strip() if custom_name.strip() else tmpl["name"]
-    name_err = validate_name(name, min_len=1, max_len=32)
-    if name_err:
-        return None, name_err
+    tmpl = templates.get(product_key, {})
+    name = custom_name.strip() if custom_name.strip() else tmpl.get("name", "")
 
-    # 重名检测（同公司内）
-    existing = await session.execute(
-        select(Product).where(Product.company_id == company_id, Product.name == name)
-    )
-    if existing.scalar_one_or_none():
-        return None, f"已存在同名产品「{name}」"
+    # 构建上下文
+    ctx = {
+        "session": session,
+        "company_id": company_id,
+        "owner_user_id": owner_user_id,
+        "product_key": product_key,
+        "templates": templates,
+        "tmpl": tmpl,
+        "completed_techs": completed,
+        "name": name,
+        "max_daily": MAX_DAILY_PRODUCT_CREATE,
+    }
 
-    # 每日创建上限
-    today_start = dt.datetime.now(dt.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
-    today_count = (await session.execute(
-        select(sqlfunc.count()).select_from(Product).where(
-            Product.company_id == company_id,
-            Product.created_at >= today_start,
-        )
-    )).scalar() or 0
-    if today_count >= MAX_DAILY_PRODUCT_CREATE:
-        return None, f"每日最多创建{MAX_DAILY_PRODUCT_CREATE}个产品"
+    # 顺序检查前置条件
+    guard_fail = await check_rules_sequential(get_product_create_guard_rules(), **ctx)
+    if guard_fail:
+        return None, guard_fail.message
 
-    # Progressive requirements based on how many products company already owns.
+    # 计算动态参数
     existing_count = (await session.execute(
         select(sqlfunc.count()).select_from(Product).where(Product.company_id == company_id)
     )).scalar() or 0
-
-    required_employees = max(1, 1 + existing_count * PRODUCT_CREATE_EMPLOYEE_STEP)
-    effective_employees = get_effective_employee_count_for_progress(company.employee_count)
-    if effective_employees < required_employees:
-        return None, (
-            f"\u5458\u5de5\u4e0d\u8db3\uff0c\u521b\u5efa\u8be5\u4ea7\u54c1\u9700\u8981\u81f3\u5c11 {required_employees} \u4eba\uff0c"
-            f"\u5f53\u524d\u6709\u6548\u5458\u5de5 {effective_employees} \u4eba\uff08\u603b\u5458\u5de5 {company.employee_count}\uff09"
-        )
-
-    required_reputation = max(0, existing_count * PRODUCT_CREATE_REPUTATION_STEP)
-    if owner.reputation < required_reputation:
-        return None, (
-            f"声望不足，创建该产品需要声望 {required_reputation}，"
-            f"当前仅 {owner.reputation}"
-        )
 
     dynamic_create_cost = max(
         settings.product_create_cost,
         int(settings.product_create_cost * (1 + existing_count * PRODUCT_CREATE_COST_GROWTH)),
     )
+
+    ctx.update({
+        "existing_count": existing_count,
+        "employee_step": PRODUCT_CREATE_EMPLOYEE_STEP,
+        "reputation_step": PRODUCT_CREATE_REPUTATION_STEP,
+        "dynamic_create_cost": dynamic_create_cost,
+    })
+
+    # 并行检查需求条件
+    req_fails = await check_rules_parallel(get_product_create_requirement_rules(), **ctx)
+    if req_fails:
+        # 返回第一个失败
+        return None, req_fails[0].message
 
     # 扣除费用（从公司积分）
     from services.company_service import add_funds
@@ -166,6 +153,7 @@ async def create_product(
     session.add(product)
     await session.flush()
 
+    owner = await session.get(User, owner_user_id)
     await add_points(owner_user_id, 10, session=session)
 
     # Quest progress
@@ -184,57 +172,48 @@ async def upgrade_product(
     owner_user_id: int,
 ) -> tuple[bool, str]:
     """升级产品：+版本 +收入 +品质。每个产品每天只能迭代1次。"""
+    from services.rules.product_rules import (
+        get_product_upgrade_guard_rules,
+        get_product_upgrade_requirement_rules,
+    )
+    from utils.rules import check_rules_sequential, check_rules_parallel
+
+    # 获取产品信息用于计算成本
     product = await session.get(Product, product_id)
-    if product is None:
-        return False, "产品不存在"
+    upgrade_cost = 0
+    if product:
+        upgrade_cost = int(settings.product_upgrade_cost_base * (1.3 ** (product.version - 1)))
 
+    # 构建上下文
+    ctx = {
+        "session": session,
+        "product_id": product_id,
+        "owner_user_id": owner_user_id,
+        "max_version": MAX_PRODUCT_VERSION,
+        "max_income": MAX_PRODUCT_DAILY_INCOME,
+        "employee_step": PRODUCT_UPGRADE_EMPLOYEE_STEP,
+        "reputation_step": PRODUCT_UPGRADE_REPUTATION_STEP,
+        "upgrade_cost": upgrade_cost,
+    }
+
+    # 顺序检查前置条件
+    guard_fail = await check_rules_sequential(get_product_upgrade_guard_rules(), **ctx)
+    if guard_fail:
+        return False, guard_fail.message
+
+    # 并行检查需求条件
+    req_fails = await check_rules_parallel(get_product_upgrade_requirement_rules(), **ctx)
+    if req_fails:
+        return False, req_fails[0].message
+
+    # 重新获取产品（确保最新状态）
+    product = await session.get(Product, product_id)
     company = await session.get(Company, product.company_id)
-    if company is None:
-        return False, "公司不存在"
-    if company.owner_id != owner_user_id:
-        return False, "只有公司老板才能升级产品"
-    owner = await session.get(User, owner_user_id)
-    if owner is None:
-        return False, "用户不存在"
 
-    # 版本上限
-    if product.version >= MAX_PRODUCT_VERSION:
-        return False, f"产品已达最高版本(v{MAX_PRODUCT_VERSION})"
-
-    # 收入上限
-    if product.daily_income >= MAX_PRODUCT_DAILY_INCOME:
-        return False, f"产品日收入已达上限({MAX_PRODUCT_DAILY_INCOME})"
-
-    # 每日CD检查（每个产品每天只能迭代1次）
-    r = await get_redis()
-    cd_key = f"product_upgrade_cd:{product_id}"
-    cd_ttl = await r.ttl(cd_key)
-    if cd_ttl > 0:
-        hours = cd_ttl // 3600
-        minutes = (cd_ttl % 3600) // 60
-        return False, f"产品迭代冷却中，剩余{hours}时{minutes}分"
-
-    target_version = product.version + 1
-    required_employees = max(1, target_version * PRODUCT_UPGRADE_EMPLOYEE_STEP)
-    effective_employees = get_effective_employee_count_for_progress(company.employee_count)
-    if effective_employees < required_employees:
-        return False, (
-            f"\u5458\u5de5\u4e0d\u8db3\uff0c\u5347\u7ea7\u5230 v{target_version} \u9700\u8981\u81f3\u5c11 {required_employees} \u4eba\uff0c"
-            f"\u5f53\u524d\u6709\u6548\u5458\u5de5 {effective_employees} \u4eba\uff08\u603b\u5458\u5de5 {company.employee_count}\uff09"
-        )
-
-    required_reputation = max(0, (target_version - 1) * PRODUCT_UPGRADE_REPUTATION_STEP)
-    if owner.reputation < required_reputation:
-        return False, (
-            f"声望不足，升级到 v{target_version} 需要声望 {required_reputation}，"
-            f"当前仅 {owner.reputation}"
-        )
-
-    cost = int(settings.product_upgrade_cost_base * (1.3 ** (product.version - 1)))
     from services.company_service import add_funds
-    ok = await add_funds(session, product.company_id, -cost)
+    ok = await add_funds(session, product.company_id, -upgrade_cost)
     if not ok:
-        return False, f"公司积分不足，升级需要 {fmt_traffic(cost)}"
+        return False, f"公司积分不足，升级需要 {fmt_traffic(upgrade_cost)}"
 
     # 迭代收入增幅随版本递减（防止无限刷）
     diminish = max(0.05, settings.product_upgrade_income_pct - (product.version - 1) * 0.01)
@@ -248,6 +227,8 @@ async def upgrade_product(
     await session.flush()
 
     # 设置24小时CD
+    r = await get_redis()
+    cd_key = f"product_upgrade_cd:{product_id}"
     await r.setex(cd_key, 86400, "1")
 
     await add_points(owner_user_id, 5, session=session)

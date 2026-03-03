@@ -42,7 +42,12 @@ class TestResearchLogic(AsyncDBTestCase):
         return owner, company
 
     async def test_research_not_completed_before_duration_boundary(self):
-        tech_duration = 3600
+        # Base duration is 3600, but tech company gets:
+        # - research_speed_bonus = 0.20
+        # - focus_bonus = 0.15 (basic_internet is in tech focus)
+        # multiplier = 1.0 - 0.20 - 0.15 = 0.65
+        # Effective duration = 3600 * 0.65 = 2340
+        tech_duration = 2340
         now = dt.datetime.now(dt.timezone.utc)
 
         async with self.Session() as session:
@@ -64,7 +69,12 @@ class TestResearchLogic(AsyncDBTestCase):
             self.assertEqual(updated.status, "researching")
 
     async def test_research_completes_after_duration_and_accepts_naive_datetime(self):
-        tech_duration = 3600
+        # Base duration is 3600, but tech company gets:
+        # - research_speed_bonus = 0.20
+        # - focus_bonus = 0.15 (basic_internet is in tech focus)
+        # multiplier = 1.0 - 0.20 - 0.15 = 0.65
+        # Effective duration = 3600 * 0.65 = 2340
+        tech_duration = 2340
         now = dt.datetime.now(dt.timezone.utc)
 
         async with self.Session() as session:

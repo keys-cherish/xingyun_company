@@ -546,34 +546,36 @@ async def battle(
     """Full battle flow with validation. Returns (success, message)."""
     from services.company_service import get_companies_by_owner
     from services.user_service import get_user_by_tg_id
+    from services.rules.battle_rules import get_battle_guard_rules
+    from utils.rules import check_rules_sequential
 
     strategy = _resolve_strategy(attacker_strategy)
-    if strategy is None:
-        return False, f"❌ 无效战术: {attacker_strategy}\n可选: {VALID_STRATEGY_HINT}"
 
-    # Cooldown check.
-    cd = await _check_cooldown(attacker_tg_id)
-    if cd > 0:
-        mins = cd // 60
-        secs = cd % 60
-        return False, f"⏳ 商战冷却中，还需 {mins}分{secs}秒"
-
-    if attacker_tg_id == defender_tg_id:
-        return False, "❌ 不能对自己发起商战"
-
+    # 获取用户和公司信息
     attacker_user = await get_user_by_tg_id(session, attacker_tg_id)
     defender_user = await get_user_by_tg_id(session, defender_tg_id)
-    if not attacker_user:
-        return False, "❌ 你还未注册，请先 /company_start"
-    if not defender_user:
-        return False, "❌ 对方还未注册"
+    a_companies = await get_companies_by_owner(session, attacker_user.id) if attacker_user else []
+    d_companies = await get_companies_by_owner(session, defender_user.id) if defender_user else []
 
-    a_companies = await get_companies_by_owner(session, attacker_user.id)
-    d_companies = await get_companies_by_owner(session, defender_user.id)
-    if not a_companies:
-        return False, "❌ 你还没有公司，无法发起商战"
-    if not d_companies:
-        return False, "❌ 对方没有公司，无法商战"
+    # 构建上下文
+    ctx = {
+        "session": session,
+        "attacker_tg_id": attacker_tg_id,
+        "defender_tg_id": defender_tg_id,
+        "attacker_strategy_raw": attacker_strategy,
+        "strategy": strategy,
+        "valid_strategy_hint": VALID_STRATEGY_HINT,
+        "attacker_user": attacker_user,
+        "defender_user": defender_user,
+        "attacker_companies": a_companies,
+        "defender_companies": d_companies,
+        "battle_point_cost": BATTLE_POINT_COST,
+    }
+
+    # 顺序检查前置条件
+    guard_fail = await check_rules_sequential(get_battle_guard_rules(), **ctx)
+    if guard_fail:
+        return False, guard_fail.message
 
     # Cost points to launch battle
     consumed = await _consume_battle_points(attacker_tg_id, BATTLE_POINT_COST)

@@ -10,14 +10,18 @@ def fmt_currency(amount: int) -> str:
     return f"{amount:,} {CURRENCY_NAME}"
 
 
-def fmt_quota(amount_mb: int) -> str:
-    """Display quota/currency uniformly in points (no MB/GB conversion)."""
-    return f"{amount_mb:,} {CURRENCY_NAME}"
-
-
 def fmt_traffic(amount: int) -> str:
-    """Backward-compatible alias: legacy 'traffic' now represents currency."""
+    """Format user/company credits (legacy name kept for compatibility)."""
     return fmt_currency(amount)
+
+
+def fmt_real_traffic(mb: int) -> str:
+    """Format real traffic in MB/GB/TB."""
+    if mb >= 1024 * 1024:
+        return f"{mb / 1024 / 1024:.1f}TB"
+    if mb >= 1024:
+        return f"{mb / 1024:.1f}GB"
+    return f"{mb}MB"
 
 
 def fmt_pct(value: float) -> str:

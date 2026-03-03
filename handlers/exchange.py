@@ -1,55 +1,46 @@
-"""Exchange, shop, and black market handler — unified 商业交易所."""
+"""商业交易所 — 积分兑换流量 + 道具商城 + 黑市。
+
+核心功能：
+- 个人积分 → 真实流量 (需要外部接口)
+- 道具商城 (buff道具)
+- 黑市特惠 (每日刷新)
+"""
 
 from __future__ import annotations
 
+import datetime as _dt
+
 from aiogram import F, Router, types
+from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from cache.redis_client import get_redis
+from commands import CMD_EXCHANGE
+from config import settings as cfg
 from db.engine import async_session
-from services.company_service import get_company_by_id
+from keyboards.menus import tag_kb
+from services.company_service import get_company_by_id, get_companies_by_owner
 from services.shop_service import (
     buy_black_market_item,
     buy_item,
-    get_active_buffs,
     get_black_market_items,
     load_shop_items,
 )
-from services.user_service import (
-    exchange_credits_for_quota,
-    exchange_points_for_traffic,
-    exchange_quota_for_credits,
-    get_credit_to_quota_rate,
-    get_points,
-    get_quota_mb,
-    get_user_by_tg_id,
-    BASE_CREDIT_TO_QUOTA_RATE,
-)
-from utils.formatters import fmt_traffic, fmt_quota
-from keyboards.menus import tag_kb
+from services.user_service import add_traffic, get_user_by_tg_id
+from utils.formatters import fmt_traffic, fmt_real_traffic
+from utils.timezone import BJ_TZ
 
 router = Router()
 
 
-# ---- Exchange menu ----
+# ========== 交易所主菜单 ==========
 
 def _exchange_menu_kb(tg_id: int | None = None) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="💱 积分→储备", callback_data="exchange:c2q"),
-            InlineKeyboardButton(text="💱 储备→积分", callback_data="exchange:q2c"),
-        ],
-        [
-            InlineKeyboardButton(text="🎁 荣誉点→积分", callback_data="exchange:p2c"),
-        ],
-        [
-            InlineKeyboardButton(text="🛒 道具商城", callback_data="shop:list"),
-        ],
-        [
-            InlineKeyboardButton(text="🌙 黑市特惠", callback_data="blackmarket:list"),
-        ],
-        [
-            InlineKeyboardButton(text="🔙 返回", callback_data="menu:company"),
-        ],
+        [InlineKeyboardButton(text="📶 积分→流量", callback_data="exchange:traffic")],
+        [InlineKeyboardButton(text="🛒 道具商城", callback_data="shop:list")],
+        [InlineKeyboardButton(text="🌙 黑市特惠", callback_data="blackmarket:list")],
+        [InlineKeyboardButton(text="🔙 返回", callback_data="menu:company")],
     ])
     return tag_kb(kb, tg_id)
 
@@ -57,169 +48,234 @@ def _exchange_menu_kb(tg_id: int | None = None) -> InlineKeyboardMarkup:
 @router.callback_query(F.data == "menu:exchange")
 async def cb_exchange_menu(callback: types.CallbackQuery):
     tg_id = callback.from_user.id
-    rate = get_credit_to_quota_rate(tg_id)
-    diff = rate - BASE_CREDIT_TO_QUOTA_RATE
-    pct = diff / BASE_CREDIT_TO_QUOTA_RATE * 100
-    arrow = "↑" if diff > 0 else "↓" if diff < 0 else "─"
-    sign = "+" if pct >= 0 else ""
+    rate = cfg.traffic_exchange_rate
+    limit_mb = cfg.traffic_exchange_daily_limit_mb
+
+    # 获取今日已兑换
+    r = await get_redis()
+    today_key = f"traffic_exchange:{tg_id}:{_dt.datetime.now(BJ_TZ).date().isoformat()}"
+    used_today = int(await r.get(today_key) or 0)
 
     text = (
         f"🏦 商业交易所\n"
         f"{'─' * 24}\n"
-        f"💱 当前汇率: 1储备积分 = {rate} 积分 ({arrow}{sign}{pct:.0f}%)\n"
+        f"💱 兑换比例: {rate} 积分 = 1MB\n"
+        f"📊 每日上限: {fmt_real_traffic(limit_mb)}\n"
+        f"📈 今日已兑: {fmt_real_traffic(used_today)}\n"
+        f"{'─' * 24}\n"
+        f"个人积分可兑换真实手机流量！"
     )
-    await callback.message.edit_text(text, reply_markup=_exchange_menu_kb(tg_id=callback.from_user.id))
+    await callback.message.edit_text(text, reply_markup=_exchange_menu_kb(tg_id))
     await callback.answer()
 
 
-# ---- Credit -> Quota ----
+# ========== 积分 → 流量 ==========
 
-def _c2q_amounts_kb(rate: int, tg_id: int | None = None) -> InlineKeyboardMarkup:
-    amounts = [1_000, 3_000, 8_000, 15_000]
+def _traffic_amounts_kb(tg_id: int | None = None) -> InlineKeyboardMarkup:
+    """流量兑换金额选择。"""
+    rate = cfg.traffic_exchange_rate
+    # 预设兑换选项: MB数 -> 所需积分
+    options = [
+        (100, rate * 100),        # 100MB
+        (500, rate * 500),        # 500MB
+        (1024, rate * 1024),      # 1GB
+        (5120, rate * 5120),      # 5GB
+        (10240, rate * 10240),    # 10GB
+    ]
     buttons = [
         [InlineKeyboardButton(
-            text=f"花费 {a:,} 积分 (~{max(1, a // rate)}储备积分)",
-            callback_data=f"exchange:c2q:{a}",
+            text=f"{fmt_real_traffic(mb)} ← {credits:,} 积分",
+            callback_data=f"exchange:traffic:{mb}",
         )]
-        for a in amounts
+        for mb, credits in options
     ]
-    buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:exchange")])
+    buttons.append([InlineKeyboardButton(text="🔙 返回交易所", callback_data="menu:exchange")])
     return tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), tg_id)
 
 
-@router.callback_query(F.data == "exchange:c2q")
-async def cb_c2q_menu(callback: types.CallbackQuery):
-    rate = get_credit_to_quota_rate(callback.from_user.id)
-    await callback.message.edit_text(
-        f"💱 积分 → 储备积分\n当前汇率: {rate} 积分 = 1 储备积分\n\n选择兑换积分:",
-        reply_markup=_c2q_amounts_kb(rate, tg_id=callback.from_user.id),
+@router.callback_query(F.data == "exchange:traffic")
+async def cb_traffic_menu(callback: types.CallbackQuery):
+    tg_id = callback.from_user.id
+    rate = cfg.traffic_exchange_rate
+    limit_mb = cfg.traffic_exchange_daily_limit_mb
+
+    # 获取用户当前积分
+    async with async_session() as session:
+        user = await get_user_by_tg_id(session, tg_id)
+        balance = user.traffic if user else 0
+
+    # 获取今日已兑换
+    r = await get_redis()
+    today_key = f"traffic_exchange:{tg_id}:{_dt.datetime.now(BJ_TZ).date().isoformat()}"
+    used_today = int(await r.get(today_key) or 0)
+    remaining = max(0, limit_mb - used_today)
+
+    text = (
+        f"📶 积分 → 流量\n"
+        f"{'─' * 24}\n"
+        f"💱 兑换比例: {rate} 积分 = 1MB\n"
+        f"💰 当前积分: {fmt_traffic(balance)}\n"
+        f"📊 今日剩余额度: {fmt_real_traffic(remaining)}\n"
+        f"{'─' * 24}\n"
+        f"选择兑换数量 👇"
     )
+    await callback.message.edit_text(text, reply_markup=_traffic_amounts_kb(tg_id))
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("exchange:c2q:"))
-async def cb_c2q_do(callback: types.CallbackQuery):
-    amount = int(callback.data.split(":")[2])
+@router.callback_query(F.data.startswith("exchange:traffic:"))
+async def cb_traffic_do(callback: types.CallbackQuery):
+    mb_amount = int(callback.data.split(":")[2])
     tg_id = callback.from_user.id
+    rate = cfg.traffic_exchange_rate
+    credits_needed = mb_amount * rate
 
-    async with async_session() as session:
-        async with session.begin():
-            ok, msg = await exchange_credits_for_quota(session, tg_id, amount)
-
-    await callback.answer(msg, show_alert=True)
-    if ok:
-        # Refresh exchange menu
-        rate = get_credit_to_quota_rate(tg_id)
-        diff = rate - BASE_CREDIT_TO_QUOTA_RATE
-        pct = diff / BASE_CREDIT_TO_QUOTA_RATE * 100
-        arrow = "↑" if diff > 0 else "↓" if diff < 0 else "─"
-        sign = "+" if pct >= 0 else ""
-        text = (
-            f"🏦 商业交易所\n"
-            f"{'─' * 24}\n"
-            f"💱 当前汇率: 1储备积分 = {rate} 积分 ({arrow}{sign}{pct:.0f}%)\n"
+    # 检查流量接口是否配置
+    if not cfg.traffic_exchange_api_url:
+        await callback.answer(
+            "🚧 流量兑换接口尚未接入\n"
+            "该功能即将开放，敬请期待！",
+            show_alert=True,
         )
-        try:
-            await callback.message.edit_text(text, reply_markup=_exchange_menu_kb(tg_id=tg_id))
-        except Exception:
-            pass
+        return
 
+    # 检查每日上限
+    r = await get_redis()
+    today_key = f"traffic_exchange:{tg_id}:{_dt.datetime.now(BJ_TZ).date().isoformat()}"
+    used_today = int(await r.get(today_key) or 0)
+    if used_today + mb_amount > cfg.traffic_exchange_daily_limit_mb:
+        remaining = max(0, cfg.traffic_exchange_daily_limit_mb - used_today)
+        await callback.answer(
+            f"❗ 超出今日兑换上限\n"
+            f"今日已兑: {fmt_real_traffic(used_today)}\n"
+            f"剩余额度: {fmt_real_traffic(remaining)}",
+            show_alert=True,
+        )
+        return
 
-# ---- Quota -> Credit (reverse, 20% penalty) ----
-
-def _q2c_amounts_kb(tg_id: int | None = None) -> InlineKeyboardMarkup:
-    amounts = [10, 50, 100, 500]
-    buttons = [
-        [InlineKeyboardButton(
-            text=f"兑出 {a} 储备积分",
-            callback_data=f"exchange:q2c:{a}",
-        )]
-        for a in amounts
-    ]
-    buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:exchange")])
-    return tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), tg_id)
-
-
-@router.callback_query(F.data == "exchange:q2c")
-async def cb_q2c_menu(callback: types.CallbackQuery):
-    tg_id = callback.from_user.id
-    quota = await get_quota_mb(tg_id)
-    rate = get_credit_to_quota_rate(tg_id)
-    reverse_rate = int(rate * 0.8)  # 20% penalty
-
-    await callback.message.edit_text(
-        f"💱 储备积分 → 积分 (有损兑换)\n"
-        f"反向汇率: 1储备积分 = {reverse_rate} 积分 (正向的80%)\n"
-        f"当前储备: {fmt_quota(quota)}\n\n"
-        f"选择兑出数量:",
-        reply_markup=_q2c_amounts_kb(tg_id=tg_id),
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("exchange:q2c:"))
-async def cb_q2c_do(callback: types.CallbackQuery):
-    amount_mb = int(callback.data.split(":")[2])
-    tg_id = callback.from_user.id
-
+    # 扣除积分
     async with async_session() as session:
         async with session.begin():
-            ok, msg = await exchange_quota_for_credits(session, tg_id, amount_mb)
+            user = await get_user_by_tg_id(session, tg_id)
+            if not user:
+                await callback.answer("用户不存在", show_alert=True)
+                return
+            if user.traffic < credits_needed:
+                await callback.answer(
+                    f"积分不足！\n需要: {fmt_traffic(credits_needed)}\n当前: {fmt_traffic(user.traffic)}",
+                    show_alert=True,
+                )
+                return
+            ok = await add_traffic(session, user.id, -credits_needed, reason=f"兑换流量 {fmt_real_traffic(mb_amount)}")
+            if not ok:
+                await callback.answer("扣款失败，请重试", show_alert=True)
+                return
 
-    await callback.answer(msg, show_alert=True)
+    # TODO: 调用外部流量接口发放流量
+    # 记录今日兑换量
+    await r.incrby(today_key, mb_amount)
+    await r.expire(today_key, 172800)  # 保留2天
 
-
-# ---- Points -> Credit ----
-
-def _p2c_amounts_kb(tg_id: int | None = None) -> InlineKeyboardMarkup:
-    amounts = [100, 500, 1000, 5000]
-    buttons = [
-        [InlineKeyboardButton(
-            text=f"兑换 {a} 荣誉点 → {a // 10} 积分",
-            callback_data=f"exchange:p2c:{a}",
-        )]
-        for a in amounts
-    ]
-    buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="menu:exchange")])
-    return tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), tg_id)
-
-
-@router.callback_query(F.data == "exchange:p2c")
-async def cb_p2c_menu(callback: types.CallbackQuery):
-    tg_id = callback.from_user.id
-    points = await get_points(tg_id)
-    await callback.message.edit_text(
-        f"🎁 荣誉点 → 积分\n"
-        f"汇率: 10 荣誉点 = 1 积分\n"
-        f"当前荣誉点: {points:,}\n\n"
-        f"选择兑换数量:",
-        reply_markup=_p2c_amounts_kb(tg_id=tg_id),
+    await callback.answer(
+        f"✅ 兑换成功！\n"
+        f"消耗: {fmt_traffic(credits_needed)}\n"
+        f"获得: {fmt_real_traffic(mb_amount)}\n"
+        f"流量将在24小时内到账",
+        show_alert=True,
     )
-    await callback.answer()
 
 
-@router.callback_query(F.data.startswith("exchange:p2c:"))
-async def cb_p2c_do(callback: types.CallbackQuery):
-    points_amount = int(callback.data.split(":")[2])
-    tg_id = callback.from_user.id
+# ========== /company_exchange 命令 ==========
 
+@router.message(Command(CMD_EXCHANGE))
+async def cmd_exchange(message: types.Message):
+    """积分兑换流量命令：/company_exchange <MB数>"""
+    tg_id = message.from_user.id
+    args = (message.text or "").split()
+    rate = cfg.traffic_exchange_rate
+
+    if len(args) < 2:
+        await message.answer(
+            f"📶 积分兑换流量\n"
+            f"{'─' * 24}\n"
+            f"用法: /company_exchange <MB数>\n"
+            f"例: /company_exchange 1000  (兑换1GB)\n"
+            f"{'─' * 24}\n"
+            f"💱 兑换比例: {rate} 积分 = 1MB\n"
+            f"📊 每日上限: {fmt_real_traffic(cfg.traffic_exchange_daily_limit_mb)}"
+        )
+        return
+
+    try:
+        mb_amount = int(args[1].replace(",", "").replace("_", ""))
+    except ValueError:
+        await message.answer("❌ MB数必须是整数")
+        return
+
+    if mb_amount <= 0:
+        await message.answer("❌ MB数必须大于0")
+        return
+
+    credits_needed = mb_amount * rate
+
+    # 检查流量接口
+    if not cfg.traffic_exchange_api_url:
+        await message.answer(
+            "🚧 流量兑换接口尚未接入\n"
+            "该功能即将开放，敬请期待！"
+        )
+        return
+
+    # 检查每日上限
+    r = await get_redis()
+    today_key = f"traffic_exchange:{tg_id}:{_dt.datetime.now(BJ_TZ).date().isoformat()}"
+    used_today = int(await r.get(today_key) or 0)
+    if used_today + mb_amount > cfg.traffic_exchange_daily_limit_mb:
+        remaining = max(0, cfg.traffic_exchange_daily_limit_mb - used_today)
+        await message.answer(
+            f"❗ 超出今日兑换上限\n"
+            f"今日已兑: {fmt_real_traffic(used_today)}\n"
+            f"剩余额度: {fmt_real_traffic(remaining)}"
+        )
+        return
+
+    # 扣除积分
     async with async_session() as session:
         async with session.begin():
-            ok, msg = await exchange_points_for_traffic(session, tg_id, points_amount)
+            user = await get_user_by_tg_id(session, tg_id)
+            if not user:
+                await message.answer("请先 /company_start 注册账号")
+                return
+            if user.traffic < credits_needed:
+                await message.answer(
+                    f"❌ 积分不足！\n需要: {fmt_traffic(credits_needed)}\n当前: {fmt_traffic(user.traffic)}"
+                )
+                return
+            ok = await add_traffic(session, user.id, -credits_needed, reason=f"兑换流量 {fmt_real_traffic(mb_amount)}")
+            if not ok:
+                await message.answer("❌ 扣款失败，请重试")
+                return
 
-    await callback.answer(msg, show_alert=True)
+    # TODO: 调用外部流量接口
+    await r.incrby(today_key, mb_amount)
+    await r.expire(today_key, 172800)
+
+    await message.answer(
+        f"✅ 兑换成功！\n"
+        f"{'─' * 24}\n"
+        f"💸 消耗: {fmt_traffic(credits_needed)}\n"
+        f"📶 获得: {fmt_real_traffic(mb_amount)}\n"
+        f"流量将在24小时内到账"
+    )
 
 
-# ---- Shop ----
+# ========== 道具商城 ==========
 
 @router.callback_query(F.data == "shop:list")
 async def cb_shop_list(callback: types.CallbackQuery):
     items = load_shop_items()
 
-    lines = [
-        "🛒 道具商城",
-        "─" * 24,
-    ]
+    lines = ["🛒 道具商城", "─" * 24]
     buttons = []
     for key, item in items.items():
         lines.append(f"{item['name']} — {item['price']:,} 积分")
@@ -248,11 +304,8 @@ async def cb_shop_select(callback: types.CallbackQuery):
         await callback.answer("无效道具", show_alert=True)
         return
 
-    item = items[item_key]
     tg_id = callback.from_user.id
 
-    # Get user's companies
-    from services.company_service import get_companies_by_owner
     async with async_session() as session:
         user = await get_user_by_tg_id(session, tg_id)
         if not user:
@@ -265,26 +318,23 @@ async def cb_shop_select(callback: types.CallbackQuery):
         return
 
     if len(companies) == 1:
-        # Directly buy for the only company
         async with async_session() as session:
             async with session.begin():
                 ok, msg = await buy_item(session, tg_id, companies[0].id, item_key)
         await callback.answer(msg, show_alert=True)
         return
 
-    # Multiple companies — let user choose
+    # Multiple companies
+    item = items[item_key]
     buttons = [
-        [InlineKeyboardButton(
-            text=c.name,
-            callback_data=f"shop:buy:{item_key}:{c.id}",
-        )]
+        [InlineKeyboardButton(text=c.name, callback_data=f"shop:buy:{item_key}:{c.id}")]
         for c in companies
     ]
     buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="shop:list")])
 
     await callback.message.edit_text(
         f"为哪家公司购买 {item['name']}?",
-        reply_markup=tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), callback.from_user.id),
+        reply_markup=tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), tg_id),
     )
     await callback.answer()
 
@@ -311,16 +361,13 @@ async def cb_shop_buy(callback: types.CallbackQuery):
     await callback.answer(msg, show_alert=True)
 
 
-# ---- Black Market ----
+# ========== 黑市特惠 ==========
 
 @router.callback_query(F.data == "blackmarket:list")
 async def cb_blackmarket_list(callback: types.CallbackQuery):
     deals = await get_black_market_items()
 
-    lines = [
-        "🌙 黑市特惠 — 每日刷新，先到先得",
-        "─" * 24,
-    ]
+    lines = ["🌙 黑市特惠 — 每日刷新，先到先得", "─" * 24]
     buttons = []
     for i, deal in enumerate(deals):
         stock_text = f"库存: {deal['stock']}" if deal['stock'] > 0 else "已售罄"
@@ -350,11 +397,9 @@ async def cb_blackmarket_list(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("blackmarket:select:"))
 async def cb_blackmarket_select(callback: types.CallbackQuery):
-    """Buy black market item — select company if multiple."""
     index = int(callback.data.split(":")[2])
     tg_id = callback.from_user.id
 
-    from services.company_service import get_companies_by_owner
     async with async_session() as session:
         user = await get_user_by_tg_id(session, tg_id)
         if not user:
@@ -374,17 +419,14 @@ async def cb_blackmarket_select(callback: types.CallbackQuery):
         return
 
     buttons = [
-        [InlineKeyboardButton(
-            text=c.name,
-            callback_data=f"blackmarket:buy:{index}:{c.id}",
-        )]
+        [InlineKeyboardButton(text=c.name, callback_data=f"blackmarket:buy:{index}:{c.id}")]
         for c in companies
     ]
     buttons.append([InlineKeyboardButton(text="🔙 返回", callback_data="blackmarket:list")])
 
     await callback.message.edit_text(
         "为哪家公司购买黑市道具?",
-        reply_markup=tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), callback.from_user.id),
+        reply_markup=tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), tg_id),
     )
     await callback.answer()
 

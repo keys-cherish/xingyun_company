@@ -51,6 +51,8 @@ from services.company_service import (
     get_companies_by_owner,
     get_company_by_id,
     get_company_type_info,
+    get_level_info,
+    get_max_level,
     load_company_types,
     upgrade_company,
 )
@@ -359,6 +361,132 @@ async def on_company_name(message: types.Message, state: FSMContext):
 
 @router.callback_query(F.data.startswith("company:upgrade:"))
 async def cb_upgrade(callback: types.CallbackQuery):
+    """显示升级预览面板：条件、好处、确认按钮。"""
+    company_id = int(callback.data.split(":")[2])
+    tg_id = callback.from_user.id
+
+    async with async_session() as session:
+        user = await get_user_by_tg_id(session, tg_id)
+        company = await get_company_by_id(session, company_id)
+        if not company or not user or company.owner_id != user.id:
+            await callback.answer("无权操作", show_alert=True)
+            return
+
+        max_level = get_max_level()
+        if company.level >= max_level:
+            await callback.answer(f"已达最高等级 Lv.{max_level}", show_alert=True)
+            return
+
+        next_level = company.level + 1
+        next_info = get_level_info(next_level)
+        current_info = get_level_info(company.level)
+        if not next_info:
+            await callback.answer("等级数据异常", show_alert=True)
+            return
+
+        # 获取当前状态
+        prod_count = (await session.execute(
+            select(sqlfunc.count()).where(Product.company_id == company_id)
+        )).scalar() or 0
+
+        tech_count = (await session.execute(
+            select(sqlfunc.count()).where(
+                ResearchProgress.company_id == company_id,
+                ResearchProgress.status == "completed",
+            )
+        )).scalar() or 0
+
+    # 构建升级条件检查
+    cost = next_info["upgrade_cost"]
+    min_emp = next_info.get("min_employees", 0)
+    min_products = next_info.get("min_products", 0)
+    min_techs = next_info.get("min_techs", 0)
+    min_revenue = next_info.get("min_daily_revenue", 0)
+
+    # 检查各项条件
+    checks = []
+    all_pass = True
+
+    # 积分
+    if company.total_funds >= cost:
+        checks.append(f"✅ 积分: {fmt_traffic(company.total_funds)} / {fmt_traffic(cost)}")
+    else:
+        checks.append(f"❌ 积分: {fmt_traffic(company.total_funds)} / {fmt_traffic(cost)}")
+        all_pass = False
+
+    # 员工
+    if min_emp > 0:
+        if company.employee_count >= min_emp:
+            checks.append(f"✅ 员工: {company.employee_count} / {min_emp}")
+        else:
+            checks.append(f"❌ 员工: {company.employee_count} / {min_emp}")
+            all_pass = False
+
+    # 产品
+    if min_products > 0:
+        if prod_count >= min_products:
+            checks.append(f"✅ 产品: {prod_count} / {min_products}")
+        else:
+            checks.append(f"❌ 产品: {prod_count} / {min_products}")
+            all_pass = False
+
+    # 科技
+    if min_techs > 0:
+        if tech_count >= min_techs:
+            checks.append(f"✅ 科技: {tech_count} / {min_techs}")
+        else:
+            checks.append(f"❌ 科技: {tech_count} / {min_techs}")
+            all_pass = False
+
+    # 日营收
+    if min_revenue > 0:
+        if company.daily_revenue >= min_revenue:
+            checks.append(f"✅ 日营收: {fmt_traffic(company.daily_revenue)} / {fmt_traffic(min_revenue)}")
+        else:
+            checks.append(f"❌ 日营收: {fmt_traffic(company.daily_revenue)} / {fmt_traffic(min_revenue)}")
+            all_pass = False
+
+    # 构建文本
+    lines = [
+        f"⬆️ 公司升级预览",
+        f"{'─' * 24}",
+        f"🏢 {company.name}",
+        f"📊 当前等级: Lv.{company.level}「{current_info['name'] if current_info else '未知'}」",
+        f"🎯 目标等级: Lv.{next_level}「{next_info['name']}」",
+        f"",
+        f"📋 升级条件:",
+    ]
+    lines.extend(f"  {c}" for c in checks)
+
+    # 升级好处
+    lines.append(f"")
+    lines.append(f"🎁 升级后获得:")
+    lines.append(f"  📈 永久日营收加成: +{fmt_traffic(next_info['daily_revenue_bonus'])}")
+    lines.append(f"  👷 员工上限提升: +{next_info['employee_limit_bonus']}")
+    if next_info.get('description'):
+        lines.append(f"  📝 {next_info['description']}")
+
+    # 按钮
+    if all_pass:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ 确认升级", callback_data=f"company:do_upgrade:{company_id}"),
+                InlineKeyboardButton(text="🔙 返回", callback_data=f"company:view:{company_id}"),
+            ],
+        ])
+    else:
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 返回（条件不足）", callback_data=f"company:view:{company_id}")],
+        ])
+
+    kb = tag_kb(kb, tg_id)
+    await callback.message.edit_text("\n".join(lines), reply_markup=kb)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("company:do_upgrade:"))
+async def cb_do_upgrade(callback: types.CallbackQuery):
+    """执行公司升级。"""
     company_id = int(callback.data.split(":")[2])
     tg_id = callback.from_user.id
 

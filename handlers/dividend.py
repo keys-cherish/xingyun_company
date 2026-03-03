@@ -1,20 +1,42 @@
-"""Dividend handlers: manual distribution and history."""
+"""Dividend handlers: manual distribution, command, and history."""
 
 from __future__ import annotations
 
+import re
+
 from aiogram import F, Router, types
+from aiogram.filters import Command
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy import select
 
+from commands import CMD_DIVIDEND
+from config import settings
 from db.engine import async_session
-from db.models import DailyReport
+from db.models import DailyReport, User
 from keyboards.menus import tag_kb
-from services.company_service import add_funds, get_company_by_id
+from services.company_service import add_funds, get_company_by_id, get_companies_by_owner
 from services.shareholder_service import get_shareholders
 from services.user_service import add_traffic, get_user_by_tg_id
 from utils.formatters import fmt_shares, fmt_traffic
 
 router = Router()
+
+# 分红税率使用统一税率
+DIVIDEND_TAX_RATE = settings.tax_rate
+
+
+def _parse_amount(text: str) -> int | None:
+    """解析金额，支持逗号/下划线分隔。"""
+    normalized = text.replace(",", "").replace("_", "").replace("，", "").strip()
+    if not normalized:
+        return None
+    try:
+        amount = int(normalized)
+    except ValueError:
+        return None
+    if amount <= 0:
+        return None
+    return amount
 
 
 def _dividend_amount_kb(company_id: int, tg_id: int) -> InlineKeyboardMarkup:
@@ -30,6 +52,134 @@ def _dividend_amount_kb(company_id: int, tg_id: int) -> InlineKeyboardMarkup:
     buttons.append([InlineKeyboardButton(text="🔙 返回股东", callback_data=f"shareholder:list:{company_id}")])
     return tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), tg_id)
 
+
+async def _execute_dividend(
+    session,
+    company_id: int,
+    amount: int,
+) -> tuple[bool, str, list[tuple[str, float, int, int]]]:
+    """执行分红逻辑（含税）。
+
+    Returns:
+        (success, message, distributions)
+        distributions: [(name, shares, gross_amount, net_amount), ...]
+    """
+    company = await get_company_by_id(session, company_id)
+    if not company:
+        return False, "公司不存在", []
+
+    if company.total_funds < amount:
+        return False, f"公司积分不足，当前: {fmt_traffic(company.total_funds)}", []
+
+    shareholders = await get_shareholders(session, company_id)
+    if not shareholders:
+        return False, "暂无股东，无法分红", []
+
+    # 扣除公司积分
+    ok = await add_funds(session, company_id, -amount)
+    if not ok:
+        return False, "扣款失败，请重试", []
+
+    # 按股份比例分配，扣除分红税
+    distributions = []
+    failed_total = 0
+    total_tax = 0
+
+    for sh in shareholders:
+        gross_amount = int(amount * sh.shares / 100)
+        if gross_amount > 0:
+            tax = int(gross_amount * DIVIDEND_TAX_RATE)
+            net_amount = gross_amount - tax
+            total_tax += tax
+
+            if net_amount > 0:
+                success = await add_traffic(session, sh.user_id, net_amount)
+                if success:
+                    u = await session.get(User, sh.user_id)
+                    name = u.tg_name if u else "未知"
+                    distributions.append((name, sh.shares, gross_amount, net_amount))
+                else:
+                    failed_total += gross_amount
+
+    # 退还失败的部分（退还总额，税也退）
+    if failed_total > 0:
+        await add_funds(session, company_id, failed_total)
+
+    total_distributed = sum(d[3] for d in distributions)  # net amounts
+    total_gross = sum(d[2] for d in distributions)
+    actual_tax = total_gross - total_distributed
+
+    return True, f"分红成功！税后实发: {fmt_traffic(total_distributed)}，税金: {fmt_traffic(actual_tax)}", distributions
+
+
+# ---- /company_dividend 命令 ----
+
+@router.message(Command(CMD_DIVIDEND))
+async def cmd_dividend(message: types.Message):
+    """命令分红：/company_dividend <金额>
+
+    从公司积分中分红给所有股东，按股份比例分配，扣除分红税后到账个人余额。
+    """
+    tg_id = message.from_user.id
+    parts = (message.text or "").split(maxsplit=1)
+
+    if len(parts) < 2:
+        await message.answer(
+            f"💸 分红命令用法:\n"
+            f"/company_dividend <金额>\n\n"
+            f"示例: /company_dividend 10000\n\n"
+            f"⚠️ 分红税率: {int(DIVIDEND_TAX_RATE * 100)}%\n"
+            f"分红后扣税，税后金额进入股东个人余额"
+        )
+        return
+
+    amount = _parse_amount(parts[1])
+    if amount is None:
+        await message.answer("❌ 金额必须为正整数，示例: /company_dividend 10000")
+        return
+
+    async with async_session() as session:
+        async with session.begin():
+            user = await get_user_by_tg_id(session, tg_id)
+            if not user:
+                await message.answer("请先 /company_start 注册账号")
+                return
+
+            companies = await get_companies_by_owner(session, user.id)
+            if not companies:
+                await message.answer("你还没有公司，请先 /company_create 创建公司")
+                return
+
+            # 默认使用第一家公司
+            company = companies[0]
+            ok, msg, distributions = await _execute_dividend(session, company.id, amount)
+
+    if not ok:
+        await message.answer(f"❌ {msg}")
+        return
+
+    # 构建结果
+    lines = [
+        f"✅ {company.name} 分红发放成功!",
+        f"{'─' * 24}",
+        f"💸 分红总额: {fmt_traffic(amount)}",
+        f"📊 分红税率: {int(DIVIDEND_TAX_RATE * 100)}%",
+        f"",
+        f"👥 分配详情 (税后到账):",
+    ]
+    for name, shares, gross, net in distributions:
+        lines.append(f"  • {name} ({fmt_shares(shares)}): {fmt_traffic(gross)} → {fmt_traffic(net)}")
+
+    total_net = sum(d[3] for d in distributions)
+    total_tax = sum(d[2] - d[3] for d in distributions)
+    lines.append(f"")
+    lines.append(f"💰 实际到账: {fmt_traffic(total_net)}")
+    lines.append(f"🏛️ 税金扣除: {fmt_traffic(total_tax)}")
+
+    await message.answer("\n".join(lines))
+
+
+# ---- 按钮分红 ----
 
 @router.callback_query(F.data.startswith("dividend:distribute:"))
 async def cb_dividend_distribute(callback: types.CallbackQuery):
@@ -57,16 +207,16 @@ async def cb_dividend_distribute(callback: types.CallbackQuery):
             "─" * 24,
             f"🏢 公司: {company.name}",
             f"🏦 公司积分: {fmt_traffic(company.total_funds)}",
+            f"📊 分红税率: {int(DIVIDEND_TAX_RATE * 100)}%",
             "",
-            "📊 股东持股比例:",
+            "👥 股东持股比例:",
         ]
         for sh in shareholders:
-            from db.models import User
             u = await session.get(User, sh.user_id)
             name = u.tg_name if u else "未知"
             lines.append(f"  • {name}: {fmt_shares(sh.shares)}")
         lines.append("")
-        lines.append("选择分红总金额（将按股份比例分配）:")
+        lines.append("选择分红总金额（扣税后按股份比例分配）:")
 
     await callback.message.edit_text(
         "\n".join(lines),
@@ -77,7 +227,7 @@ async def cb_dividend_distribute(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("dividend:confirm:"))
 async def cb_dividend_confirm(callback: types.CallbackQuery):
-    """显示分红确认界面。"""
+    """显示分红确认界面（含税预览）。"""
     parts = callback.data.split(":")
     company_id = int(parts[2])
     amount = int(parts[3])
@@ -105,17 +255,26 @@ async def cb_dividend_confirm(callback: types.CallbackQuery):
             "💸 分红确认",
             "─" * 24,
             f"分红总额: {fmt_traffic(amount)}",
+            f"分红税率: {int(DIVIDEND_TAX_RATE * 100)}%",
             "",
-            "📊 各股东将获得:",
+            "👥 各股东将获得 (税后):",
         ]
+        total_tax = 0
+        total_net = 0
         for sh in shareholders:
-            from db.models import User
             u = await session.get(User, sh.user_id)
             name = u.tg_name if u else "未知"
-            share_amount = int(amount * sh.shares / 100)
-            lines.append(f"  • {name} ({fmt_shares(sh.shares)}): +{fmt_traffic(share_amount)}")
+            gross = int(amount * sh.shares / 100)
+            tax = int(gross * DIVIDEND_TAX_RATE)
+            net = gross - tax
+            total_tax += tax
+            total_net += net
+            lines.append(f"  • {name} ({fmt_shares(sh.shares)}): {fmt_traffic(gross)} → {fmt_traffic(net)}")
+
         lines.append("")
-        lines.append(f"公司积分: {fmt_traffic(company.total_funds)} → {fmt_traffic(company.total_funds - amount)}")
+        lines.append(f"💰 税后实发: {fmt_traffic(total_net)}")
+        lines.append(f"🏛️ 税金扣除: {fmt_traffic(total_tax)}")
+        lines.append(f"🏦 公司积分: {fmt_traffic(company.total_funds)} → {fmt_traffic(company.total_funds - amount)}")
 
     kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -130,7 +289,7 @@ async def cb_dividend_confirm(callback: types.CallbackQuery):
 
 @router.callback_query(F.data.startswith("dividend:execute:"))
 async def cb_dividend_execute(callback: types.CallbackQuery):
-    """执行分红操作。"""
+    """执行分红操作（含税）。"""
     parts = callback.data.split(":")
     company_id = int(parts[2])
     amount = int(parts[3])
@@ -146,54 +305,30 @@ async def cb_dividend_execute(callback: types.CallbackQuery):
             if company.owner_id != user.id:
                 await callback.answer("只有老板才能发放分红", show_alert=True)
                 return
-            if company.total_funds < amount:
-                await callback.answer(f"公司积分不足", show_alert=True)
-                return
 
-            shareholders = await get_shareholders(session, company_id)
-            if not shareholders:
-                await callback.answer("暂无股东", show_alert=True)
-                return
+            ok, msg, distributions = await _execute_dividend(session, company_id, amount)
 
-            # 先扣除公司积分
-            ok = await add_funds(session, company_id, -amount)
-            if not ok:
-                await callback.answer("扣款失败，请重试", show_alert=True)
-                return
-
-            # 按股份比例分配给各股东
-            distributions = []
-            failed_total = 0
-            for sh in shareholders:
-                share_amount = int(amount * sh.shares / 100)
-                if share_amount > 0:
-                    success = await add_traffic(session, sh.user_id, share_amount)
-                    if success:
-                        from db.models import User
-                        u = await session.get(User, sh.user_id)
-                        name = u.tg_name if u else "未知"
-                        distributions.append((name, sh.shares, share_amount))
-                    else:
-                        failed_total += share_amount
-
-            # 退还失败的部分
-            if failed_total > 0:
-                await add_funds(session, company_id, failed_total)
+    if not ok:
+        await callback.answer(msg, show_alert=True)
+        return
 
     # 构建结果消息
-    total_distributed = sum(d[2] for d in distributions)
     lines = [
         "✅ 分红发放成功!",
         "─" * 24,
-        f"💸 分红总额: {fmt_traffic(total_distributed)}",
+        f"💸 分红总额: {fmt_traffic(amount)}",
+        f"📊 分红税率: {int(DIVIDEND_TAX_RATE * 100)}%",
         "",
-        "📊 分配详情:",
+        "👥 分配详情 (税后到账):",
     ]
-    for name, shares, amt in distributions:
-        lines.append(f"  • {name} ({fmt_shares(shares)}): +{fmt_traffic(amt)}")
+    for name, shares, gross, net in distributions:
+        lines.append(f"  • {name} ({fmt_shares(shares)}): {fmt_traffic(gross)} → {fmt_traffic(net)}")
 
-    if failed_total > 0:
-        lines.append(f"\n⚠️ 部分分红失败，已退还: {fmt_traffic(failed_total)}")
+    total_net = sum(d[3] for d in distributions)
+    total_tax = sum(d[2] - d[3] for d in distributions)
+    lines.append(f"")
+    lines.append(f"💰 实际到账: {fmt_traffic(total_net)}")
+    lines.append(f"🏛️ 税金扣除: {fmt_traffic(total_tax)}")
 
     kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 返回股东列表", callback_data=f"shareholder:list:{company_id}")],
@@ -254,7 +389,6 @@ async def cb_dividend_menu(callback: types.CallbackQuery):
         if not user:
             await callback.answer("请先 /company_create 创建公司", show_alert=True)
             return
-        from services.company_service import get_companies_by_owner
         companies = await get_companies_by_owner(session, user.id)
 
         if not companies:

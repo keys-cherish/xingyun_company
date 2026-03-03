@@ -98,8 +98,9 @@ class Settings(BaseSettings):
     backup_keep_files: int = 72
     backup_notify_super_admin: bool = True
 
-    # Tax system
-    tax_rate: float = 0.06
+    # Tax system (统一税率体系)
+    # 所有税费使用统一税率：日结算税、分红税、交易税等
+    tax_rate: float = 0.10  # 统一税率 10%
     social_insurance_rate: float = 0.02
 
     # Employee system
@@ -114,6 +115,25 @@ class Settings(BaseSettings):
 
     # Random events
     event_chance: float = 0.35  # 35% chance per company per day
+
+    # Daily check-in (每日打卡)
+    checkin_base_reward: int = 300  # Day-1 reward
+    checkin_streak_rewards: str = "300,450,600,800,1000,1500,3000"  # Day 1-7 rewards, comma-separated
+    checkin_streak_cycle: int = 7  # streak resets after this many days (宝箱循环)
+    checkin_streak_bonus_pool: str = "5000,8000,12000,20000,50000"  # 7-day chest random pick
+
+    # Red packet (公司红包)
+    redpacket_min_amount: int = 500  # minimum total amount
+    redpacket_max_amount: int = 500_000  # maximum total amount
+    redpacket_max_count: int = 50  # max number of splits
+    redpacket_expire_seconds: int = 86400  # 24h expiry
+    redpacket_lucky_bonus_pct: float = 0.10  # 手气最佳额外10%奖金(系统出)
+
+    # Credits to real traffic exchange (积分兑换流量)
+    traffic_exchange_credits_per_100mb: int = 1000  # 1000 credits = 100MB
+    traffic_exchange_api_url: str = ""  # 外部流量发放接口URL，空=未接入
+    traffic_exchange_api_key: str = ""  # 外部接口密钥
+    traffic_exchange_daily_limit_mb: int = 5000  # 每人每日兑换上限(MB)
 
     # AI API（AI研发评审）
     ai_enabled: bool = True

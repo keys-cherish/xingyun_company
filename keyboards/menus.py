@@ -34,7 +34,11 @@ def main_menu_kb(tg_id: int | None = None) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text="📊 个人面板", callback_data="menu:profile"),
         ],
         [
-            InlineKeyboardButton(text="📈 排行榜", callback_data="menu:leaderboard"),
+            InlineKeyboardButton(text="� 每日打卡", callback_data="menu:checkin"),
+            InlineKeyboardButton(text="🎰 老虎机", callback_data="slot:spin"),
+        ],
+        [
+            InlineKeyboardButton(text="�📈 排行榜", callback_data="menu:leaderboard"),
             InlineKeyboardButton(text="🎯 周任务", callback_data="menu:quest"),
         ],
         [
@@ -85,7 +89,6 @@ def company_detail_kb(company_id: int, is_owner: bool, tg_id: int | None = None)
         ])
         buttons.append([
             InlineKeyboardButton(text="📒 收支明细", callback_data=f"company:finance:{company_id}"),
-            InlineKeyboardButton(text="💸 分红记录", callback_data="menu:dividend"),
         ])
         buttons.append([
             InlineKeyboardButton(text="📢 广告", callback_data=f"ad:menu:{company_id}"),
@@ -146,11 +149,18 @@ def invest_kb(company_id: int, tg_id: int | None = None) -> InlineKeyboardMarkup
     return tag_kb(kb, tg_id)
 
 
-def shareholder_list_kb(company_id: int, tg_id: int | None = None) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardMarkup(inline_keyboard=[
+def shareholder_list_kb(company_id: int, tg_id: int | None = None, is_owner: bool = False) -> InlineKeyboardMarkup:
+    """股东列表键盘，老板可以看到分红按钮。"""
+    buttons = [
         [InlineKeyboardButton(text="💵 去注资", callback_data=f"shareholder:invest:{company_id}")],
-        [InlineKeyboardButton(text="🔙 返回公司", callback_data=f"company:view:{company_id}")],
-    ])
+    ]
+    if is_owner:
+        buttons.append([
+            InlineKeyboardButton(text="💸 发放分红", callback_data=f"dividend:distribute:{company_id}"),
+            InlineKeyboardButton(text="📜 分红记录", callback_data=f"dividend:history:{company_id}"),
+        ])
+    buttons.append([InlineKeyboardButton(text="🔙 返回公司", callback_data=f"company:view:{company_id}")])
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
     return tag_kb(kb, tg_id)
 
 

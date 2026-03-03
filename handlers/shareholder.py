@@ -139,22 +139,25 @@ async def msg_reply_invest_shortcut(message: types.Message, state: FSMContext):
 
 
 async def _refresh_shareholder_list(callback: types.CallbackQuery, company_id: int):
-
-
     """操作后刷新股东列表消息。"""
     tg_id = callback.from_user.id
     try:
         async with async_session() as session:
+            from services.company_service import get_company_by_id
+            company = await get_company_by_id(session, company_id)
+            user = await get_user_by_tg_id(session, tg_id)
+            is_owner = company and user and company.owner_id == user.id
+
             shareholders = await get_shareholders(session, company_id)
             lines = ["👥 股东列表", "─" * 24]
             for sh in shareholders:
                 from db.models import User
-                user = await session.get(User, sh.user_id)
-                name = user.tg_name if user else "未知"
+                u = await session.get(User, sh.user_id)
+                name = u.tg_name if u else "未知"
                 lines.append(f"• {name}: {fmt_shares(sh.shares)} (注资: {fmt_traffic(sh.invested_amount)})")
         await callback.message.edit_text(
             "\n".join(lines),
-            reply_markup=shareholder_list_kb(company_id, tg_id=tg_id),
+            reply_markup=shareholder_list_kb(company_id, tg_id=tg_id, is_owner=is_owner),
         )
     except Exception:
         pass  # 消息未变化时edit会抛异常，忽略
@@ -163,18 +166,23 @@ async def _refresh_shareholder_list(callback: types.CallbackQuery, company_id: i
 @router.callback_query(F.data.startswith("shareholder:list:"))
 async def cb_shareholders(callback: types.CallbackQuery):
     company_id = int(callback.data.split(":")[2])
+    tg_id = callback.from_user.id
     async with async_session() as session:
+        from services.company_service import get_company_by_id
+        company = await get_company_by_id(session, company_id)
+        user = await get_user_by_tg_id(session, tg_id)
+        is_owner = company and user and company.owner_id == user.id
+
         shareholders = await get_shareholders(session, company_id)
-        # fetch user names
         lines = ["👥 股东列表", "─" * 24]
         for sh in shareholders:
             from db.models import User
-            user = await session.get(User, sh.user_id)
-            name = user.tg_name if user else "未知"
+            u = await session.get(User, sh.user_id)
+            name = u.tg_name if u else "未知"
             lines.append(f"• {name}: {fmt_shares(sh.shares)} (注资: {fmt_traffic(sh.invested_amount)})")
     await callback.message.edit_text(
         "\n".join(lines),
-        reply_markup=shareholder_list_kb(company_id, tg_id=callback.from_user.id),
+        reply_markup=shareholder_list_kb(company_id, tg_id=tg_id, is_owner=is_owner),
     )
     await callback.answer()
 

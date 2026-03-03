@@ -125,7 +125,10 @@ async def upgrade_estate(
     estate_id: int,
     company_id: int,
 ) -> tuple[bool, str]:
-    """Upgrade a real estate building to the next level."""
+    """Upgrade a real estate building to the next level.
+
+    使用 UPDATE 语句确保数据库修改被正确持久化。
+    """
     estate = await session.get(RealEstate, estate_id)
     if not estate or estate.company_id != company_id:
         return False, "地产不存在"
@@ -143,12 +146,20 @@ async def upgrade_estate(
         return False, f"公司积分不足，升级需要 {cost:,} 积分"
 
     old_level = estate.level
-    estate.level += 1
-    estate.daily_dividend = calc_level_income(bld_info, estate.level)
+    new_level = old_level + 1
+    new_income = calc_level_income(bld_info, new_level)
+
+    # 使用 update() 语句确保修改被持久化
+    from sqlalchemy import update
+    await session.execute(
+        update(RealEstate)
+        .where(RealEstate.id == estate_id)
+        .values(level=new_level, daily_dividend=new_income)
+    )
     await session.flush()
 
     return True, (
         f"「{bld_info['name']}」升级成功! "
-        f"Lv.{old_level} → Lv.{estate.level}，"
-        f"日收益: {estate.daily_dividend:,} 积分"
+        f"Lv.{old_level} → Lv.{new_level}，"
+        f"日收益: {new_income:,} 积分"
     )

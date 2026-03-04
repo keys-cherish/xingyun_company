@@ -273,11 +273,11 @@ async def cb_traffic_route(callback: types.CallbackQuery):
     await _render_traffic_menu(callback, source=source)
 
 
-# ========== /company_exchange 命令 ==========
+# ========== /cp_exchange 命令 ==========
 
 @router.message(Command(CMD_EXCHANGE))
 async def cmd_exchange(message: types.Message):
-    """积分兑换流量命令：/company_exchange <MB数>"""
+    """积分兑换流量命令：/cp_exchange <MB数>"""
     tg_id = message.from_user.id
     args = (message.text or "").split()
     rate = cfg.traffic_exchange_rate
@@ -286,8 +286,8 @@ async def cmd_exchange(message: types.Message):
         await message.answer(
             f"📶 积分兑换流量\n"
             f"{'─' * 24}\n"
-            f"用法: /company_exchange <MB数>\n"
-            f"例: /company_exchange 1000  (兑换1GB)\n"
+            f"用法: /cp_exchange <MB数>\n"
+            f"例: /cp_exchange 1000  (兑换1GB)\n"
             f"{'─' * 24}\n"
             f"💱 兑换比例: {rate} 积分 = 1MB\n"
             f"📊 每日上限: {fmt_real_traffic(cfg.traffic_exchange_daily_limit_mb)}"
@@ -332,7 +332,7 @@ async def cmd_exchange(message: types.Message):
         async with session.begin():
             user = await get_user_by_tg_id(session, tg_id)
             if not user:
-                await message.answer("请先 /company_start 注册账号")
+                await message.answer("请先 /cp_start 注册账号")
                 return
             if user.traffic < credits_needed:
                 await message.answer(
@@ -409,7 +409,7 @@ async def cb_shop_select(callback: types.CallbackQuery):
     async with async_session() as session:
         user = await get_user_by_tg_id(session, tg_id)
         if not user:
-            await callback.answer("请先 /company_create 创建公司", show_alert=True)
+            await callback.answer("请先 /cp_create 创建公司", show_alert=True)
             return
         companies = await get_companies_by_owner(session, user.id)
 
@@ -451,7 +451,7 @@ async def cb_shop_buy(callback: types.CallbackQuery):
             user = await get_user_by_tg_id(session, tg_id)
             company = await get_company_by_id(session, company_id)
             if not user:
-                await callback.answer("请先 /company_create 创建公司", show_alert=True)
+                await callback.answer("请先 /cp_create 创建公司", show_alert=True)
                 return
             if not company or company.owner_id != user.id:
                 await callback.answer("无权操作", show_alert=True)
@@ -515,7 +515,7 @@ async def cb_blackmarket_select(callback: types.CallbackQuery):
     async with async_session() as session:
         user = await get_user_by_tg_id(session, tg_id)
         if not user:
-            await callback.answer("请先 /company_create 创建公司", show_alert=True)
+            await callback.answer("请先 /cp_create 创建公司", show_alert=True)
             return
         companies = await get_companies_by_owner(session, user.id)
 
@@ -555,7 +555,7 @@ async def cb_blackmarket_buy(callback: types.CallbackQuery):
             user = await get_user_by_tg_id(session, tg_id)
             company = await get_company_by_id(session, company_id)
             if not user:
-                await callback.answer("请先 /company_create 创建公司", show_alert=True)
+                await callback.answer("请先 /cp_create 创建公司", show_alert=True)
                 return
             if not company or company.owner_id != user.id:
                 await callback.answer("无权操作", show_alert=True)

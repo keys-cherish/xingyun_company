@@ -172,7 +172,7 @@ class TestTrafficExchangeConfig(unittest.TestCase):
         # 100积分 = 1MB
         self.assertEqual(settings.traffic_exchange_rate, 100)
 
-    def test_traffic_api_url_default_empty(self):
+    def test_traffic_exchange_api_url_default_empty(self):
         from config import settings
         self.assertEqual(settings.traffic_exchange_api_url, "")
 

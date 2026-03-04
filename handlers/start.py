@@ -61,7 +61,7 @@ BOT_COMMANDS = [
     BotCommand(command=CMD_DIVIDEND, description="公司分红（金额）"),
     BotCommand(command=CMD_TRANSFER, description="个人转账（需回复目标）"),
     BotCommand(command=CMD_LOG, description="资金流水（user/company）"),
-    BotCommand(command=CMD_EXCHANGE, description="积分兑换流量"),
+    BotCommand(command=CMD_EXCHANGE, description="交易所（商城/黑市）"),
     BotCommand(command=CMD_DISSOLVE, description="注销公司"),
     BotCommand(command=CMD_QUEST, description="周任务清单"),
     BotCommand(command=CMD_HELP, description="帮助信息"),
@@ -100,7 +100,7 @@ HELP_TEXT = (
     "/cp_dividend <金额> — 公司分红\n"
     "/cp_transfer <金额> — 回复目标进行个人转账\n"
     "/cp_log [user|company] — 资金流水\n"
-    "/cp_exchange <MB> — 积分兑换流量\n"
+    "/cp_exchange — 交易所（商城/黑市）\n"
     "Reply shortcut: invest5000 (must reply target message)\n"
     "🗑 /cp_dissolve — 注销公司(24h冷却)\n"
     "/cp_cancel — 取消当前输入流程\n"
@@ -115,7 +115,7 @@ HELP_TEXT = (
     "/cp_makeup — 【超管】数据修复检查\n"
     "/cp_maintain [更新说明] — 【超管】进入停机维护并置顶公告\n"
     "/cp_compensate <更新说明> — 【超管】解除维护+全员补偿500并置顶\n"
-    "\n📶 积分兑换流量：交易所→积分→流量\n"    "\n🤖 AI对话: 任意消息带 @机器人用户名 即可调用\n"
+    "\n🤖 AI对话: 任意消息带 @机器人用户名 即可调用\n"
     "普通用户每分钟最多 10 次，管理员/超管不限制\n"
 )
 

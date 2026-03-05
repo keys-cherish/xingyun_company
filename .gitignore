@@ -50,3 +50,7 @@ redis_data/
 # Claude Code
 .claude/
 CLAUDE.md
+
+
+tests/*
+out/*

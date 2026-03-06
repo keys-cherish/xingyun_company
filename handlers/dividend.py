@@ -49,7 +49,8 @@ def _parse_amount(text: str) -> int | None:
 
 def _dividend_amount_kb(company_id: int, tg_id: int) -> InlineKeyboardMarkup:
     """分红金额选择键盘。"""
-    amounts = [1000, 5000, 10000, 50000]
+    max_div = settings.max_daily_dividend
+    amounts = [a for a in [1000, 5000, 10000, 50000] if a <= max_div]
     buttons = [
         [InlineKeyboardButton(
             text=f"💸 分红 {fmt_traffic(a)}",
@@ -76,6 +77,9 @@ async def _execute_dividend(
     company = await get_company_by_id(session, company_id)
     if not company:
         return False, "公司不存在", []
+
+    if amount > settings.max_daily_dividend:
+        return False, f"单次分红不可超过 {fmt_traffic(settings.max_daily_dividend)}", []
 
     if company.total_funds < amount:
         return False, f"公司积分不足，当前: {fmt_traffic(company.total_funds)}", []
@@ -145,6 +149,12 @@ async def cmd_dividend(message: types.Message):
     amount = _parse_amount(parts[1])
     if amount is None:
         await message.answer("❌ 金额必须为正整数，示例: /cp_dividend 10000")
+        return
+
+    if amount > settings.max_daily_dividend:
+        await message.answer(
+            f"❌ 单次分红不可超过 {fmt_traffic(settings.max_daily_dividend)}"
+        )
         return
 
     async with async_session() as session:

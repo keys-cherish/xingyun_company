@@ -40,37 +40,64 @@ async def add_traffic(
 ) -> bool:
     """Atomically add/subtract user credits (stored in legacy traffic field).
 
+    When adding funds that would exceed max_user_traffic, the excess is
+    automatically invested into the user's first company (if any).
+
     Args:
         session: Database session
         user_id: User ID (not tg_id)
         amount: Amount to add (negative for deduction)
         reason: Reason for the change (for logging)
     """
+    max_traffic = settings.max_user_traffic
     for _retry in range(3):
         user = await session.get(User, user_id)
         if user is None:
             return False
         if amount < 0 and user.traffic + amount < 0:
             return False
-        old_version = user.version
-        result = await session.execute(
-            update(User)
-            .where(User.id == user_id, User.version == old_version)
-            .values(traffic=User.traffic + amount, version=User.version + 1)
-        )
-        if result.rowcount > 0:
+
+        new_traffic = user.traffic + amount
+        overflow = 0
+        if amount > 0 and new_traffic > max_traffic:
+            overflow = new_traffic - max_traffic
+            new_traffic = max_traffic
+
+        actual_amount = new_traffic - user.traffic
+        if actual_amount == 0 and overflow == 0:
+            return True
+
+        if actual_amount != 0:
+            old_version = user.version
+            result = await session.execute(
+                update(User)
+                .where(User.id == user_id, User.version == old_version)
+                .values(traffic=new_traffic, version=User.version + 1)
+            )
+            if result.rowcount == 0:
+                await session.refresh(user)
+                continue
             await session.refresh(user)
             # 记录资金日志
             from services.fundlog_service import log_fund_change
             await log_fund_change(
                 "user",
                 user_id,
-                amount,
+                actual_amount,
                 reason,
                 balance_after=user.traffic,
             )
-            return True
-        await session.refresh(user)
+
+        # 超出上限的部分自动注资到用户的公司
+        if overflow > 0:
+            from services.company_service import get_companies_by_owner, add_funds
+            companies = await get_companies_by_owner(session, user_id)
+            if companies:
+                await add_funds(
+                    session, companies[0].id, overflow,
+                    f"自动注资({reason})",
+                )
+        return True
     return False
 
 

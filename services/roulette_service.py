@@ -524,20 +524,30 @@ def _use_item(state: GameState, user_tg_id: int, item_key: str, target_tg_id: in
         alive_opponents = [p for p in _alive_players(state) if p["tg_id"] != user_tg_id]
 
         if target_tg_id:
-            target = _get_player(state, target_tg_id)
-            if target and target["alive"] and target["tg_id"] != user_tg_id:
-                state.handcuffed_tg_id = target_tg_id
+            if target_tg_id == state.handcuffed_tg_id:
+                player["items"].append("handcuffs")
+                msgs.append("该玩家已被铐住，不能重复使用")
+            else:
+                target = _get_player(state, target_tg_id)
+                if target and target["alive"] and target["tg_id"] != user_tg_id:
+                    state.handcuffed_tg_id = target_tg_id
+                    t_name = "魔鬼" if target["is_devil"] else target["name"]
+                    msgs.append(f"{name} 用手铐铐住 {t_name}")
+                else:
+                    player["items"].append("handcuffs")
+                    msgs.append("手铐目标无效")
+        elif alive_opponents:
+            # Exclude already-handcuffed player from auto-target
+            candidates = [p for p in alive_opponents if p["tg_id"] != state.handcuffed_tg_id]
+            if not candidates:
+                player["items"].append("handcuffs")
+                msgs.append(f"{name} 手铐无效（对手已被铐住）")
+            else:
+                candidates.sort(key=lambda p: p["hp"], reverse=True)
+                target = candidates[0]
+                state.handcuffed_tg_id = target["tg_id"]
                 t_name = "魔鬼" if target["is_devil"] else target["name"]
                 msgs.append(f"{name} 用手铐铐住 {t_name}")
-            else:
-                player["items"].append("handcuffs")
-                msgs.append("手铐目标无效")
-        elif alive_opponents:
-            alive_opponents.sort(key=lambda p: p["hp"], reverse=True)
-            target = alive_opponents[0]
-            state.handcuffed_tg_id = target["tg_id"]
-            t_name = "魔鬼" if target["is_devil"] else target["name"]
-            msgs.append(f"{name} 用手铐铐住 {t_name}")
         else:
             player["items"].append("handcuffs")
             msgs.append(f"{name} 手铐无效")
@@ -588,8 +598,11 @@ def _devil_single_step(state: GameState) -> list[str]:
             return _use_item(state, DEVIL_TG_ID, "adrenaline", target_tg_id=strongest["tg_id"])
 
     if "handcuffs" in items and alive_opponents and not making_mistake:
-        strongest = max(alive_opponents, key=lambda p: p["hp"])
-        return _use_item(state, DEVIL_TG_ID, "handcuffs", target_tg_id=strongest["tg_id"])
+        # Don't handcuff someone already handcuffed
+        handcuff_candidates = [p for p in alive_opponents if p["tg_id"] != state.handcuffed_tg_id]
+        if handcuff_candidates:
+            strongest = max(handcuff_candidates, key=lambda p: p["hp"])
+            return _use_item(state, DEVIL_TG_ID, "handcuffs", target_tg_id=strongest["tg_id"])
 
     if "beer" in items and known is None and not making_mistake:
         return _use_item(state, DEVIL_TG_ID, "beer")
@@ -979,12 +992,14 @@ async def _settle_game(state: GameState) -> str:
     human_players = [p for p in state.players if not p.get("is_devil")]
     base_pot = state.bet * len(human_players)
     round_reached = min(state.current_round, len(ROUND_CONFIG) - 1)
-    multiplier = 1.5 ** round_reached
+    # Base 1.2x reward (first-round win = 20% profit), +50% per extra round
+    multiplier = 1.2 * (1.5 ** round_reached)
     total_pot = int(base_pot * multiplier) - state.forfeited_pool
     total_pot = max(total_pot, 0)
     winner = _get_player(state, state.winner_tg_id)
 
     msgs: list[str] = []
+    is_draw = False
 
     if state.winner_tg_id == 0 and len(_alive_players(state)) > 1:
         from services.user_service import add_traffic_by_tg_id
@@ -997,6 +1012,7 @@ async def _settle_game(state: GameState) -> str:
             except Exception:
                 logger.exception("Failed to refund draw for tg_id=%s", p["tg_id"])
         msgs.append(f"平局! 各退回 {per_player:,} 积分")
+        is_draw = True
     elif winner and not winner.get("is_devil"):
         from services.user_service import add_traffic_by_tg_id, add_reputation, get_user_by_tg_id
 
@@ -1024,6 +1040,44 @@ async def _settle_game(state: GameState) -> str:
         msgs.append("魔鬼获胜! 积分被吞噬")
     else:
         msgs.append("全灭，积分消失")
+
+    # Update win/loss/draw stats for all human players
+    r = await get_redis()
+    for p in human_players:
+        tid = p["tg_id"]
+        stats_key = f"roulette_stats:{tid}"
+        raw = await r.get(stats_key)
+        if raw:
+            try:
+                stats = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                stats = {"wins": 0, "losses": 0, "draws": 0}
+        else:
+            stats = {"wins": 0, "losses": 0, "draws": 0}
+
+        if is_draw:
+            stats["draws"] = stats.get("draws", 0) + 1
+        elif winner and winner["tg_id"] == tid:
+            stats["wins"] = stats.get("wins", 0) + 1
+        else:
+            stats["losses"] = stats.get("losses", 0) + 1
+
+        await r.set(stats_key, json.dumps(stats))
+
+    # Append win rate lines for all human players
+    msgs.append("")
+    msgs.append("📊 历史胜率:")
+    for p in human_players:
+        tid = p["tg_id"]
+        raw = await r.get(f"roulette_stats:{tid}")
+        stats = json.loads(raw) if raw else {"wins": 0, "losses": 0, "draws": 0}
+        w = stats.get("wins", 0)
+        l = stats.get("losses", 0)
+        d = stats.get("draws", 0)
+        total = w + l + d
+        rate = (w / total * 100) if total > 0 else 0
+        name = p.get("name", "?")
+        msgs.append(f"  {name}: {w}胜 {l}负 {d}平 ({rate:.1f}%)")
 
     await _cleanup_room(state.room_id, [p["tg_id"] for p in state.players])
     return "\n".join(msgs)
@@ -1097,6 +1151,66 @@ def render_game_panel(state: GameState, viewer_tg_id: int = 0) -> str:
     rnd = min(state.current_round, len(ROUND_CONFIG) - 1) + 1
     lines = [f"恶魔轮盘赌 · 第{rnd}轮"]
 
+    if state.phase == "finished":
+        # --- Finished: show full action log with round spacing ---
+        lines = ["恶魔轮盘赌 · 游戏结束"]
+        lines.append("─" * 22)
+
+        # Final HP display
+        for p in state.players:
+            name = _format_player_name(p)
+            if not p.get("alive"):
+                lines.append(f"  💀 {name}  [淘汰]")
+            else:
+                max_hp = max(1, int(p.get("max_hp", 1) or 1))
+                hp = max(0, min(int(p.get("hp", 0) or 0), max_hp))
+                hearts = "❤️" * hp + "🤍" * (max_hp - hp)
+                lines.append(f"  🏆 {name}  {hearts}")
+
+        lines.append("─" * 22)
+
+        # Full action log with spacing between rounds
+        if state.action_log:
+            lines.append("📋 完整行动记录:")
+
+            log_lines: list[str] = []
+            for entry in state.action_log:
+                safe = _escape_text(entry)
+                # Round header lines start with "—" → add blank line before
+                if entry.startswith("—"):
+                    log_lines.append("")
+                    log_lines.append(safe)
+                # Item distribution lines (indented) keep tight
+                elif entry.startswith("  "):
+                    log_lines.append(safe)
+                # Victory/elimination lines
+                elif entry.startswith(">>>"):
+                    log_lines.append("")
+                    log_lines.append(safe)
+                else:
+                    log_lines.append(f"  {safe}")
+
+            # Safety: truncate early entries if too long (leave room for settlement ~500 chars)
+            MAX_PANEL_LEN = 3500
+            header_len = len("\n".join(lines)) + 2
+            while log_lines and header_len + len("\n".join(log_lines)) > MAX_PANEL_LEN:
+                # Remove earliest non-empty entry
+                for i, l in enumerate(log_lines):
+                    if l.strip():
+                        log_lines[i] = "  ...(省略)..."
+                        # Remove consecutive skipped entries
+                        while i + 1 < len(log_lines) and log_lines[i + 1].strip() == "...(省略)...":
+                            log_lines.pop(i + 1)
+                        break
+                else:
+                    break
+
+            lines.extend(log_lines)
+
+        return "\n".join(lines)
+
+    # --- Playing phase: normal compact panel ---
+
     # Ammo info — prominent position at top
     remaining = max(0, len(state.shells) - state.shell_index)
     lines.append(f"🔫 {state.live_count}实弹 / {state.blank_count}空弹 (剩{remaining}发)")
@@ -1116,12 +1230,11 @@ def render_game_panel(state: GameState, viewer_tg_id: int = 0) -> str:
     lines.append("─" * 22)
 
     # Current turn
-    if state.phase == "playing":
-        current = _current_turn_tg_id(state)
-        cp = _get_player(state, current)
-        if cp:
-            c_name = _format_player_name(cp, mention=True)
-            lines.append(f"▶ {c_name} 的回合")
+    current = _current_turn_tg_id(state)
+    cp = _get_player(state, current)
+    if cp:
+        c_name = _format_player_name(cp, mention=True)
+        lines.append(f"▶ {c_name} 的回合")
 
     # Items — show current turn player's items as readable text
     current_tid = _current_turn_tg_id(state)

@@ -12,7 +12,7 @@ import logging
 from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import Company, Product
+from db.models import Company, Product, User
 
 from config import settings
 
@@ -256,6 +256,39 @@ async def cleanup_excess_funds(session: AsyncSession) -> list[str]:
     return msgs
 
 
+async def cleanup_excess_user_traffic(session: AsyncSession) -> list[str]:
+    """Cap user traffic at max_user_traffic, auto-invest excess to company."""
+    max_traffic = settings.max_user_traffic
+    msgs = []
+    result = await session.execute(
+        select(User).where(User.traffic > max_traffic)
+    )
+    over_users = list(result.scalars().all())
+
+    for user in over_users:
+        overflow = user.traffic - max_traffic
+        user.traffic = max_traffic
+
+        # Try to invest overflow into user's company
+        if overflow > 0:
+            from services.company_service import get_companies_by_owner
+            companies = await get_companies_by_owner(session, user.id)
+            if companies:
+                new_funds = min(
+                    companies[0].total_funds + overflow,
+                    settings.max_company_funds,
+                )
+                companies[0].total_funds = new_funds
+
+        msg = f"⚠️ 用户「{user.tg_name}」个人积分超过上限({max_traffic:,})，已修正(溢出注资公司)"
+        msgs.append(msg)
+        logger.warning(msg)
+
+    if msgs:
+        await session.flush()
+    return msgs
+
+
 async def backfill_company_anomalies(session: AsyncSession) -> list[str]:
     """Backfill and correct abnormal company core fields."""
     from config import settings
@@ -367,6 +400,7 @@ async def run_all_checks(session: AsyncSession | None = None) -> list[str]:
         ("负数积分", cleanup_negative_funds),
         ("地产超限", cleanup_excess_estates),
         ("积分超限", cleanup_excess_funds),
+        ("个人积分超限", cleanup_excess_user_traffic),
     ]
     msgs = []
     for name, check_fn in checks:

@@ -1,40 +1,40 @@
 {
   "office_building": {
     "name": "写字楼",
-    "purchase_price": 10000,
-    "daily_dividend": 200,
+    "purchase_price": 3000,
+    "daily_dividend": 80,
     "description": "标准商业写字楼，稳定收入",
     "max_count": 20,
     "upgrade_cost_mult": 0.6
   },
   "shopping_mall": {
     "name": "购物中心",
-    "purchase_price": 25000,
-    "daily_dividend": 600,
+    "purchase_price": 8000,
+    "daily_dividend": 200,
     "description": "大型商业综合体",
     "max_count": 15,
     "upgrade_cost_mult": 0.6
   },
   "tech_park": {
     "name": "科技园区",
-    "purchase_price": 50000,
-    "daily_dividend": 1500,
+    "purchase_price": 15000,
+    "daily_dividend": 500,
     "description": "高新技术产业园",
     "max_count": 10,
     "upgrade_cost_mult": 0.6
   },
   "data_center": {
     "name": "数据中心",
-    "purchase_price": 80000,
-    "daily_dividend": 2800,
+    "purchase_price": 25000,
+    "daily_dividend": 900,
     "description": "大规模数据中心",
     "max_count": 8,
     "upgrade_cost_mult": 0.6
   },
   "landmark_tower": {
     "name": "地标大厦",
-    "purchase_price": 200000,
-    "daily_dividend": 8000,
+    "purchase_price": 60000,
+    "daily_dividend": 2500,
     "description": "城市地标建筑，顶级收益",
     "max_count": 5,
     "upgrade_cost_mult": 0.6

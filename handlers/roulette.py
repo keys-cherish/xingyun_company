@@ -80,7 +80,7 @@ async def _animate_pending(callback: types.CallbackQuery, room_id: str, tg_id: i
 
 
 def _bet_kb(company_id: int, tg_id: int) -> InlineKeyboardMarkup:
-    bets = [5_000, 10_000, 25_000, 50_000]
+    bets = [1_000, 3_000, 5_000, 10_000]
     rows = [
         [
             InlineKeyboardButton(

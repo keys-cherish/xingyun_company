@@ -55,26 +55,28 @@ class Settings(BaseSettings):
     redis_stream_maxlen: int = 20000
 
     # Game constants
-    initial_traffic: int = 100000
-    company_creation_cost: int = 55000
+    initial_traffic: int = 30_000
+    company_creation_cost: int = 15_000
     min_owner_share_pct: int = 30  # owner must hold >= 30%
     valuation_fund_coeff: float = 1.0
     valuation_income_days: int = 30
     daily_operating_cost_pct: float = 0.07
     dividend_pct: float = 0.70
-    max_company_funds: int = 1_000_000_000  # 公司积分上限: 10亿
+    max_company_funds: int = 10_000_000  # 公司积分上限: 1000万
+    max_user_traffic: int = 1_000_000  # 个人积分上限: 100万（超出自动注资公司）
+    max_daily_dividend: int = 200_000  # 每日分红上限: 20万
     max_total_estates: int = 8  # 每家公司最多拥有的地产总数
 
     # Research
-    base_research_cost: int = 2500
+    base_research_cost: int = 800
     base_research_seconds: int = 3600  # 1 hour default
 
     # Product
-    product_create_cost: int = 1500
-    product_upgrade_cost_base: int = 800
+    product_create_cost: int = 500
+    product_upgrade_cost_base: int = 300
     product_upgrade_income_pct: float = 0.20  # +20% per upgrade
-    product_min_investment: int = 1500  # 创建产品最低投资额
-    product_max_investment: int = 500_000  # 创建产品最高投资额
+    product_min_investment: int = 500  # 创建产品最低投资额
+    product_max_investment: int = 200_000  # 创建产品最高投资额
     product_ai_income_rate: float = 0.08  # 日收入 = 投资额 * 品质/100 * 此系数
 
     # AI iterate (AI研发迭代)
@@ -83,7 +85,7 @@ class Settings(BaseSettings):
     ai_rd_company_cooldown_seconds: int = 3600  # global cooldown per company
 
     # Roadshow
-    roadshow_cost: int = 700
+    roadshow_cost: int = 200
     roadshow_daily_once: bool = True
     roadshow_cooldown_seconds: int = 7200  # legacy: used only when roadshow_daily_once = false
     roadshow_satire_chance: float = 0.18
@@ -110,35 +112,35 @@ class Settings(BaseSettings):
     # Employee system
     base_employee_limit: int = 10  # initial company employees / minimum limit
     employee_limit_per_level: int = 3  # legacy linear growth term (kept for compatibility)
-    max_employee_limit: int = 10_000  # hard cap for any company
+    max_employee_limit: int = 500  # hard cap for any company
     employee_limit_growth_exponent: float = 2.2  # level->employee limit curve
-    employee_effective_cap_for_progress: int = 600  # soft cap to avoid revenue inflation
-    employee_salary_base: int = 80  # base daily salary per employee
+    employee_effective_cap_for_progress: int = 200  # soft cap to avoid revenue inflation
+    employee_salary_base: int = 50  # base daily salary per employee
 
     # Random events
     event_chance: float = 0.35  # 35% chance per company per day
 
     # Daily check-in (每日打卡)
-    checkin_base_reward: int = 300  # Day-1 reward
-    checkin_streak_rewards: str = "300,450,600,800,1000,1500,3000"  # Day 1-7 rewards, comma-separated
+    checkin_base_reward: int = 100  # Day-1 reward
+    checkin_streak_rewards: str = "100,150,200,300,400,500,1000"  # Day 1-7 rewards, comma-separated
     checkin_streak_cycle: int = 7  # streak resets after this many days (宝箱循环)
-    checkin_streak_bonus_pool: str = "5000,8000,12000,20000,50000"  # 7-day chest random pick
+    checkin_streak_bonus_pool: str = "1500,2500,4000,6000,15000"  # 7-day chest random pick
 
     # Red packet (公司红包)
-    redpacket_min_amount: int = 500  # minimum total amount
-    redpacket_max_amount: int = 500_000  # maximum total amount
+    redpacket_min_amount: int = 100  # minimum total amount
+    redpacket_max_amount: int = 100_000  # maximum total amount
     redpacket_max_count: int = 50  # max number of splits
     redpacket_expire_seconds: int = 86400  # 24h expiry
     redpacket_lucky_bonus_pct: float = 0.10  # 手气最佳额外10%奖金(系统出)
 
     # 恶魔轮盘赌
-    roulette_min_bet: int = 5_000
+    roulette_min_bet: int = 1_000
     roulette_max_bet_pct: float = 1.00  # 最高赌注=公司资金的100%
     roulette_cooldown_seconds: int = 120  # 冷却2分钟
     roulette_room_ttl_seconds: int = 60  # 房间1分钟过期
 
     # 悬赏令
-    bounty_reputation_cost: int = 80
+    bounty_reputation_cost: int = 30
     bounty_ttl_seconds: int = 86400
     bounty_cooldown_seconds: int = 7200
 

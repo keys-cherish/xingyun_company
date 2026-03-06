@@ -28,6 +28,9 @@ async def distribute_dividends(
     if dividend_pool <= 0:
         return []
 
+    # Cap daily auto-dividend at max_daily_dividend
+    dividend_pool = min(dividend_pool, settings.max_daily_dividend)
+
     shareholders = await get_shareholders(session, company.id)
     planned: list[tuple[int, int]] = []
 

@@ -491,7 +491,7 @@ async def cmd_compensate(message: types.Message):
     update_desc = args[1].strip()
 
     from cache.redis_client import get_redis
-    from sqlalchemy import func as sqlfunc, select, update
+    from sqlalchemy import func as sqlfunc, select
     from db.models import User
     import json
 
@@ -499,9 +499,14 @@ async def cmd_compensate(message: types.Message):
         async with session.begin():
             total_users = int((await session.execute(select(sqlfunc.count(User.id)))).scalar() or 0)
             if total_users > 0:
-                await session.execute(
-                    update(User).values(self_points=User.self_points + MAINTENANCE_COMPENSATION_BONUS)
-                )
+                users = list((await session.execute(select(User))).scalars().all())
+                for u in users:
+                    await add_self_points(
+                        u.id,
+                        MAINTENANCE_COMPENSATION_BONUS,
+                        session=session,
+                        reason="maintenance_compensation",
+                    )
 
     await clear_maintenance_mode()
     await _unpin_and_delete_stored_notice(message.bot, MAINTENANCE_PIN_KEY)

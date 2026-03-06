@@ -55,7 +55,7 @@ from services.company_service import (
     load_company_types,
     upgrade_company,
 )
-from services.user_service import get_or_create_user, get_user_by_tg_id
+from services.user_service import add_self_points_by_user_id, get_or_create_user, get_user_by_tg_id
 from utils.formatters import compact_number, fmt_quota, fmt_traffic
 from utils.panel_owner import mark_panel
 from utils.validators import validate_name
@@ -637,8 +637,14 @@ async def cmd_dissolve(message: types.Message):
                 ))
                 await session.delete(company)
 
-            # 清空个人积分
-            user.self_points = 0
+            # 清空个人积分（同步共享账户）
+            if user.self_points > 0:
+                await add_self_points_by_user_id(
+                    session,
+                    user.id,
+                    -int(user.self_points),
+                    reason="dissolve_reset_self_points",
+                )
             user.reputation = 0
             await session.flush()
 

@@ -23,9 +23,14 @@ GAME_SYSTEM_PROMPT = (
     '成本与收益统一使用"积分"表述，不使用MB/GB换算。'
     "当用户提问不完整时，先给最稳妥方案，再给最多2个可选策略。"
     "不编造未确认事实；不确定时明确说明并建议如何验证。"
-    "你可以使用提供的工具帮用户查询游戏数据或执行游戏操作。"
-    "你可以执行的操作包括：查看信息(个人/公司/排行/产品/科研/地产/任务/流水)、"
-    "创建公司、升级公司、改名、雇佣/裁员、创建产品、开始研发、购买地产、分红、打卡、老虎机。"
+    "\n\n## 关键规则：工具调用\n"
+    "当用户请求执行操作（如签到、路演、创建产品、升级、雇佣、分红、查看信息等），"
+    "你**必须**调用对应的工具来执行，而不是只给出文字说明或命令提示。"
+    "例如用户说"帮我签到"，你必须调用 daily_checkin 工具；"
+    "用户说"帮我路演"，你必须调用 do_roadshow 工具。"
+    "只有当没有对应工具时（如商战、合作需要指定目标），才告诉用户使用命令。"
+    "\n\n你可以执行的操作包括：查看信息(个人/公司/排行/产品/科研/地产/任务/流水)、"
+    "创建公司、升级公司、改名、雇佣/裁员、创建产品、开始研发、购买地产、分红、打卡签到、老虎机、路演。"
     "涉及商战(/cp_battle)、合作(/cp_cooperate)、投资(/cp_invest)、转账(/cp_transfer)等需要指定目标玩家的操作，"
     "请告诉用户回复目标消息并使用对应命令。"
     "恶魔轮盘赌(/cp_demon)和发红包(/cp_redpacket)也需要用户手动在群里发起。"
@@ -153,7 +158,11 @@ COMPANY_KEYWORDS = [
     "地产", "广告", "道德", "文化", "监管", "景气", "商业帝国",
     "经营", "雇佣", "招聘", "裁员", "解雇", "buff", "加成",
     "兑换", "估值", "战力", "研发", "迭代", "品质",
-    "company", "quest", "battle", "cooperate",
+    "签到", "打卡", "签", "赌", "轮盘", "红包", "商店",
+    "转账", "查看", "信息", "资料", "改名", "薪资", "工资",
+    "购买", "买", "卖", "下架", "创建", "删除", "地标",
+    "科技", "写字楼", "购物", "数据中心", "帮我", "帮忙",
+    "company", "quest", "battle", "cooperate", "checkin",
 ]
 
 
@@ -414,6 +423,14 @@ GAME_TOOLS = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "do_roadshow",
+            "description": "进行公司路演，提升声望和营收，每日一次",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
 ]
 
 
@@ -666,6 +683,25 @@ async def _exec_view_quests(tg_id: int) -> str:
 async def _exec_play_slot(tg_id: int) -> str:
     from services.slot_service import do_spin
     return await do_spin(tg_id)
+
+
+async def _exec_do_roadshow(tg_id: int) -> str:
+    from db.engine import async_session
+    from services.user_service import get_user_by_tg_id
+    from services.company_service import get_companies_by_owner
+    from services.roadshow_service import do_roadshow
+
+    async with async_session() as session:
+        async with session.begin():
+            user = await get_user_by_tg_id(session, tg_id)
+            if not user:
+                return "用户未注册。"
+            companies = await get_companies_by_owner(session, user.id)
+            if not companies:
+                return "你还没有公司。"
+            company = companies[0]
+            ok, msg = await do_roadshow(session, company.id, user.id)
+    return msg
 
 
 async def _exec_create_product(tg_id: int, name: str, investment: int) -> str:
@@ -997,6 +1033,8 @@ async def execute_tool(name: str, args: dict, tg_id: int) -> str:
             return await _exec_view_quests(tg_id)
         elif name == "play_slot":
             return await _exec_play_slot(tg_id)
+        elif name == "do_roadshow":
+            return await _exec_do_roadshow(tg_id)
         else:
             return f"未知工具: {name}"
     except Exception as exc:
@@ -1138,17 +1176,25 @@ async def ask_ai_smart(
 
     # ── Company or general intent ──────────────────────────────────
     is_company = detect_company_intent(prompt)
+    logger.debug("ask_ai_smart: prompt=%r, is_company=%s, tools=%s",
+                 prompt[:80], is_company, "GAME_TOOLS" if is_company else "None")
 
     if is_company:
-        system = (
+        base_system = (
             (settings.ai_chat_system_prompt or "").strip()
             or (settings.ai_system_prompt or "").strip()
             or GAME_SYSTEM_PROMPT
         )
+        # Always append tool-calling instruction regardless of custom prompt
+        tool_instruction = (
+            "\n\n【重要】当用户请求执行操作时，你必须调用对应的工具，不要只给文字回复。"
+            "例如"帮我签到"→调用daily_checkin，"帮我路演"→调用do_roadshow。"
+        )
+        system = base_system + tool_instruction
         user_content = (
             f"【提问者游戏数据】\n{company_context}\n\n"
             f"【用户问题】\n{prompt}\n\n"
-            "要求：优先给可执行建议，必要时给简短分步方案。"
+            "要求：如果用户要求执行操作，直接调用对应工具；如果是咨询问题，给简短可执行建议。"
         )
         tools = GAME_TOOLS
     else:
@@ -1178,11 +1224,15 @@ async def ask_ai_smart(
 
     try:
         # ── Tool-calling loop (max 5 rounds) ──────────────────────────
-        for _ in range(5):
+        for _round in range(5):
             data = await _call_chat_api(messages, tools=tools)
             choice = (data.get("choices") or [{}])[0]
             message = choice.get("message") or {}
             tool_calls = message.get("tool_calls")
+
+            logger.debug("ask_ai_smart round %d: tool_calls=%s, content_len=%d",
+                         _round, bool(tool_calls),
+                         len(message.get("content") or ""))
 
             # Fallback: some models (e.g. grok) emit tool calls as
             # <xtoolcall> XML in the text content instead of using the

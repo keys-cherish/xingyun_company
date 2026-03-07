@@ -17,6 +17,11 @@ DEFAULT_AI_BASE_URL = "https://api.openai.com/v1"
 
 # ── System Prompts ────────────────────────────────────────────────────────
 
+TEXT_ONLY_PREFIX_PROMPT = (
+    "【最高优先级规则】你只允许输出文本回答。"
+    "严禁返回任何图片、图片链接、base64图片数据或要求用户查看图像。"
+)
+
 GAME_SYSTEM_PROMPT = (
     '你是"商业帝国"Telegram经营游戏机器人的AI助手。'
     "你必须始终使用简体中文、语气专业简洁、结论先行。"
@@ -1122,7 +1127,7 @@ async def ask_ai_smart(
             "\n\n【重要】当用户请求执行操作时，你必须调用对应的工具，不要只给文字回复。"
             "例如“帮我签到”→调用daily_checkin，“帮我路演”→调用do_roadshow。"
         )
-        system = base_system + tool_instruction
+        system = TEXT_ONLY_PREFIX_PROMPT + "\n\n" + base_system + tool_instruction
         user_content = (
             f"【提问者游戏数据】\n{company_context}\n\n"
             f"【用户问题】\n{prompt}\n\n"
@@ -1130,7 +1135,7 @@ async def ask_ai_smart(
         )
         tools = GAME_TOOLS
     else:
-        system = GENERAL_SYSTEM_PROMPT
+        system = TEXT_ONLY_PREFIX_PROMPT + "\n\n" + GENERAL_SYSTEM_PROMPT
         user_content = prompt
         tools = None
 
@@ -1243,11 +1248,12 @@ async def ask_ai_chat(prompt: str) -> str:
     if not settings.ai_enabled or not settings.ai_api_key.strip():
         return "AI 功能未启用。"
 
-    system = (
+    base_system = (
         (settings.ai_chat_system_prompt or "").strip()
         or (settings.ai_system_prompt or "").strip()
         or GAME_SYSTEM_PROMPT
     )
+    system = TEXT_ONLY_PREFIX_PROMPT + "\n\n" + base_system
 
     messages = [
         {"role": "system", "content": system},

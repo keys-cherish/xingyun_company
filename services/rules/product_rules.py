@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cache.redis_client import get_redis
 from db.models import Company, Product, User
 from services.company_service import get_effective_employee_count_for_progress
-from utils.formatters import fmt_traffic
+from utils.formatters import fmt_points
 from utils.rules import Rule, RuleViolation
 from utils.validators import validate_name
 
@@ -258,7 +258,7 @@ async def check_product_create_funds(
             code="INSUFFICIENT_FUNDS",
             actual=company.cp_points,
             expected=dynamic_create_cost,
-            message=f"公司积分不足，需要 {fmt_traffic(dynamic_create_cost)}",
+            message=f"公司积分不足，需要 {fmt_points(dynamic_create_cost)}",
         )
     return None
 
@@ -469,7 +469,7 @@ async def check_product_upgrade_funds(
             code="INSUFFICIENT_FUNDS",
             actual=company.cp_points,
             expected=upgrade_cost,
-            message=f"公司积分不足，升级需要 {fmt_traffic(upgrade_cost)}",
+            message=f"公司积分不足，升级需要 {fmt_points(upgrade_cost)}",
         )
     return None
 

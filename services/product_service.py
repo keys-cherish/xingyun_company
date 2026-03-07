@@ -19,7 +19,7 @@ from config import settings
 from db.models import Company, Product, User
 from services.company_service import get_effective_employee_count_for_progress
 from services.user_service import add_self_points
-from utils.formatters import fmt_traffic
+from utils.formatters import fmt_points
 from utils.validators import validate_name
 
 _products_data: dict | None = None
@@ -138,9 +138,9 @@ async def create_product(
 
     # 投资金额验证
     if investment < settings.product_min_investment:
-        return None, f"最低投资额 {fmt_traffic(settings.product_min_investment)}"
+        return None, f"最低投资额 {fmt_points(settings.product_min_investment)}"
     if investment > settings.product_max_investment:
-        return None, f"最高投资额 {fmt_traffic(settings.product_max_investment)}"
+        return None, f"最高投资额 {fmt_points(settings.product_max_investment)}"
 
     # 每日创建次数限制
     today_count: int = 0
@@ -156,13 +156,13 @@ async def create_product(
 
     # 公司积分检查
     if company.cp_points < investment:
-        return None, f"公司积分不足，需要 {fmt_traffic(investment)}"
+        return None, f"公司积分不足，需要 {fmt_points(investment)}"
 
     # 扣除投资金额
     from services.company_service import add_funds
     ok = await add_funds(session, company_id, -investment)
     if not ok:
-        return None, f"公司积分不足，需要 {fmt_traffic(investment)}"
+        return None, f"公司积分不足，需要 {fmt_points(investment)}"
 
     # AI评估产品方案
     ai_score = await ai_evaluate_product(name)
@@ -194,8 +194,8 @@ async def create_product(
     return product, (
         f"产品「{name}」研发成功!\n"
         f"AI评分: {quality}/100\n"
-        f"研发投入: {fmt_traffic(investment)}\n"
-        f"日收入: {fmt_traffic(daily_income)}"
+        f"研发投入: {fmt_points(investment)}\n"
+        f"日收入: {fmt_points(daily_income)}"
     )
 
 
@@ -373,7 +373,7 @@ async def upgrade_product(
     from services.company_service import add_funds
     ok = await add_funds(session, product.company_id, -upgrade_cost)
     if not ok:
-        return False, f"公司积分不足，升级需要 {fmt_traffic(upgrade_cost)}"
+        return False, f"公司积分不足，升级需要 {fmt_points(upgrade_cost)}"
 
     # 负道德时产品升级有失败率
     from services.operations_service import get_or_create_profile
@@ -403,7 +403,7 @@ async def upgrade_product(
 
     return True, (
         f"产品「{product.name}」升级到v{product.version}! "
-        f"日收入+{actual_boost} → {fmt_traffic(product.daily_income)}"
+        f"日收入+{actual_boost} → {fmt_points(product.daily_income)}"
     )
 
 

@@ -19,7 +19,7 @@ from services.company_service import (
 )
 from services.operations_service import get_or_create_profile
 from services.user_service import get_user_by_tg_id
-from utils.formatters import fmt_traffic
+from utils.formatters import fmt_points
 
 router = Router()
 
@@ -92,7 +92,7 @@ async def cmd_member(message: types.Message):
                 if not ok:
                     affordable = company.cp_points // hire_cost_per
                     if affordable <= 0:
-                        await message.answer(f"❌ 公司积分不足，每人招聘需要 {fmt_traffic(hire_cost_per)}")
+                        await message.answer(f"❌ 公司积分不足，每人招聘需要 {fmt_points(hire_cost_per)}")
                         return
                     hire_count = min(hire_count, affordable)
                     total_cost = hire_count * hire_cost_per
@@ -110,7 +110,7 @@ async def cmd_member(message: types.Message):
                 )
                 await message.answer(
                     f"✅ 招聘成功! 招了 {hire_count} 人\n"
-                    f"花费: {fmt_traffic(total_cost)}\n"
+                    f"花费: {fmt_points(total_cost)}\n"
                     f"当前员工: {company.employee_count}/{max_emp}"
                 )
 
@@ -175,16 +175,16 @@ async def cb_emp_manage(callback: types.CallbackQuery):
         f"👷 员工管理｜{company.name}",
         "",
         f"👥 员工：{company.employee_count}/{max_emp}（可招 {available_slots}）",
-        f"💳 招聘单价：{fmt_traffic(hire_cost_per)}/人",
-        f"🧾 日薪标准：{fmt_traffic(cfg.employee_salary_base)}/人/日",
+        f"💳 招聘单价：{fmt_points(hire_cost_per)}/人",
+        f"🧾 日薪标准：{fmt_points(cfg.employee_salary_base)}/人/日",
         f"🧠 道德影响：{ethics_effect}",
         "",
         "📊 人力收益（按当前员工）",
-        f"• 产出：+{fmt_traffic(emp_total)}/日",
-        f"  · 基础：+{fmt_traffic(emp_base)}",
-        f"  · 效率：+{fmt_traffic(emp_eff)}",
-        f"• 日薪：-{fmt_traffic(salary_total)}/日",
-        f"• 净收益：{net_prefix}{fmt_traffic(net_emp)}/日",
+        f"• 产出：+{fmt_points(emp_total)}/日",
+        f"  · 基础：+{fmt_points(emp_base)}",
+        f"  · 效率：+{fmt_points(emp_eff)}",
+        f"• 日薪：-{fmt_points(salary_total)}/日",
+        f"• 净收益：{net_prefix}{fmt_points(net_emp)}/日",
         "",
         "👇 选择操作",
     ]
@@ -247,13 +247,13 @@ async def cb_hire(callback: types.CallbackQuery):
         f"👷 招聘确认",
         f"{'─' * 24}",
         f"招聘人数：{hire_count}人",
-        f"单价：{fmt_traffic(hire_cost_per)}/人{ethics_label}",
-        f"总费用：{fmt_traffic(total_cost)}",
+        f"单价：{fmt_points(hire_cost_per)}/人{ethics_label}",
+        f"总费用：{fmt_points(total_cost)}",
         f"{'─' * 24}",
         f"👥 当前员工：{company.employee_count}/{max_emp}人",
-        f"📈 招聘后日产出增加：+{fmt_traffic(income_increase)}/日",
-        f"📌 招聘后日薪增加：+{fmt_traffic(daily_salary)}/日",
-        f"🏦 公司积分余额：{fmt_traffic(company.cp_points)}",
+        f"📈 招聘后日产出增加：+{fmt_points(income_increase)}/日",
+        f"📌 招聘后日薪增加：+{fmt_points(daily_salary)}/日",
+        f"🏦 公司积分余额：{fmt_points(company.cp_points)}",
     ]
     if total_cost > company.cp_points:
         affordable = company.cp_points // hire_cost_per
@@ -262,7 +262,7 @@ async def cb_hire(callback: types.CallbackQuery):
     kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
-                text=f"✅ 确认招聘{hire_count}人（{fmt_traffic(total_cost)}）",
+                text=f"✅ 确认招聘{hire_count}人（{fmt_points(total_cost)}）",
                 callback_data=f"company:xhire:{company_id}:{count_str}",
             ),
             InlineKeyboardButton(text="🔙 取消", callback_data=f"company:view:{company_id}"),
@@ -316,7 +316,7 @@ async def cb_do_hire(callback: types.CallbackQuery):
                 if hire_count > 1:
                     affordable = company.cp_points // hire_cost_per
                     if affordable <= 0:
-                        await callback.answer(f"公司积分不足，每人招聘需要 {fmt_traffic(hire_cost_per)}", show_alert=True)
+                        await callback.answer(f"公司积分不足，每人招聘需要 {fmt_points(hire_cost_per)}", show_alert=True)
                         return
                     hire_count = min(hire_count, affordable)
                     total_cost = hire_count * hire_cost_per
@@ -325,7 +325,7 @@ async def cb_do_hire(callback: types.CallbackQuery):
                         await callback.answer("公司积分不足", show_alert=True)
                         return
                 else:
-                    await callback.answer(f"公司积分不足，招聘需要 {fmt_traffic(hire_cost_per)}", show_alert=True)
+                    await callback.answer(f"公司积分不足，招聘需要 {fmt_points(hire_cost_per)}", show_alert=True)
                     return
             company.employee_count += hire_count
             # 立即更新周任务进度
@@ -336,7 +336,7 @@ async def cb_do_hire(callback: types.CallbackQuery):
             )
 
     await callback.answer(
-        f"招聘成功! 招了{hire_count}人，花费 {fmt_traffic(total_cost)}",
+        f"招聘成功! 招了{hire_count}人，花费 {fmt_points(total_cost)}",
         show_alert=True,
     )
     await _refresh_company_view(callback, company_id)

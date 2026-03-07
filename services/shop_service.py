@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cache.redis_client import get_redis
 from services.company_service import add_funds, get_company_by_id
 from services.user_service import get_user_by_tg_id
-from utils.formatters import fmt_traffic
+from utils.formatters import fmt_points
 
 _shop_items: dict | None = None
 
@@ -106,7 +106,7 @@ async def buy_item(
 
     ok = await add_funds(session, company_id, -price)
     if not ok:
-        return False, f"公司积分不足，需要 {fmt_traffic(price)}"
+        return False, f"公司积分不足，需要 {fmt_points(price)}"
 
     # Apply buff
     buff_key = f"buff:{company_id}:{item_key}"
@@ -132,10 +132,10 @@ async def buy_item(
         price_hint = ""
         if remaining_uses > 0:
             next_price = item["price"] * (2 ** new_count)
-            price_hint = f"\n下次加速费用：{fmt_traffic(next_price)}"
+            price_hint = f"\n下次加速费用：{fmt_points(next_price)}"
         return True, (
             f"购买成功! {item['name']}（第{new_count}次）\n"
-            f"花费：{fmt_traffic(price)}\n"
+            f"花费：{fmt_points(price)}\n"
             f"{item['description']}\n"
             f"剩余加速次数：{remaining_uses}/3{price_hint}"
         )

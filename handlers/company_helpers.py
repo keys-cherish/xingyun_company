@@ -51,7 +51,7 @@ from services.research_service import (
 )
 from services.shop_service import get_income_buff_multiplier
 from services.user_service import get_user_by_tg_id
-from utils.formatters import fmt_duration, fmt_quota, fmt_traffic, reputation_buff_multiplier
+from utils.formatters import fmt_duration, fmt_quota, fmt_points, reputation_buff_multiplier
 from utils.panel_owner import mark_panel
 
 
@@ -444,36 +444,36 @@ async def render_company_finance_detail(company_id: int, tg_id: int) -> tuple[st
         "分红说明: 每日结算后按股权自动发放到个人积分",
         "",
         "【收入目录】",
-        f"产品基础收入: {fmt_traffic(product_income)}",
-        f"等级固定加成: +{fmt_traffic(level_revenue_bonus)}",
-        f"合作加成: +{fmt_traffic(cooperation_bonus)}",
-        f"地产收入: +{fmt_traffic(estate_income)}",
-        f"声望加成: +{fmt_traffic(reputation_buff_income)}",
-        f"广告加成: +{fmt_traffic(ad_boost_income)}",
-        f"商城加成: +{fmt_traffic(shop_buff_income)}",
-        f"公司类型加成: +{fmt_traffic(type_income)}",
+        f"产品基础收入: {fmt_points(product_income)}",
+        f"等级固定加成: +{fmt_points(level_revenue_bonus)}",
+        f"合作加成: +{fmt_points(cooperation_bonus)}",
+        f"地产收入: +{fmt_points(estate_income)}",
+        f"声望加成: +{fmt_points(reputation_buff_income)}",
+        f"广告加成: +{fmt_points(ad_boost_income)}",
+        f"商城加成: +{fmt_points(shop_buff_income)}",
+        f"公司类型加成: +{fmt_points(type_income)}",
     ]
     if fin_immoral_buff_income > 0:
-        lines.append(f"😈 缺德buff: +{fmt_traffic(fin_immoral_buff_income)}")
+        lines.append(f"😈 缺德buff: +{fmt_points(fin_immoral_buff_income)}")
     lines.extend([
-        f"预估总收入: {fmt_traffic(estimated_income)}",
+        f"预估总收入: {fmt_points(estimated_income)}",
         "",
         "【成本目录】",
-        f"基础运营(比例): -{fmt_traffic(overhead_cost)}",
-        f"员工薪资: -{fmt_traffic(salary_cost)}",
-        f"社保支出: -{fmt_traffic(social_insurance)}",
-        f"公司类型成本修正: {'+' if type_cost_adjust >= 0 else ''}{fmt_traffic(type_cost_adjust)}",
-        f"税费: -{fmt_traffic(tax)}",
-        f"办公成本: -{fmt_traffic(extra_costs['office_cost'])}",
-        f"培训成本: -{fmt_traffic(extra_costs['training_cost'])}",
-        f"监管成本: -{fmt_traffic(extra_costs['regulation_cost'])}",
-        f"保险成本: -{fmt_traffic(extra_costs['insurance_cost'])}",
-        f"工时成本修正: {'+' if extra_costs['work_cost_adjust'] >= 0 else ''}{fmt_traffic(extra_costs['work_cost_adjust'])}",
-        f"文化维护: -{fmt_traffic(extra_costs['culture_maintenance'])}",
+        f"基础运营(比例): -{fmt_points(overhead_cost)}",
+        f"员工薪资: -{fmt_points(salary_cost)}",
+        f"社保支出: -{fmt_points(social_insurance)}",
+        f"公司类型成本修正: {'+' if type_cost_adjust >= 0 else ''}{fmt_points(type_cost_adjust)}",
+        f"税费: -{fmt_points(tax)}",
+        f"办公成本: -{fmt_points(extra_costs['office_cost'])}",
+        f"培训成本: -{fmt_points(extra_costs['training_cost'])}",
+        f"监管成本: -{fmt_points(extra_costs['regulation_cost'])}",
+        f"保险成本: -{fmt_points(extra_costs['insurance_cost'])}",
+        f"工时成本修正: {'+' if extra_costs['work_cost_adjust'] >= 0 else ''}{fmt_points(extra_costs['work_cost_adjust'])}",
+        f"文化维护: -{fmt_points(extra_costs['culture_maintenance'])}",
         "随机罚款: 每日抽检工时，抽检>8h会触发重罚（不计入本预估）",
-        f"预估总成本: {fmt_traffic(estimated_cost)}",
+        f"预估总成本: {fmt_points(estimated_cost)}",
         "",
-        f"💵 预估净利润: {'+' if estimated_profit >= 0 else ''}{fmt_traffic(estimated_profit)}",
+        f"💵 预估净利润: {'+' if estimated_profit >= 0 else ''}{fmt_points(estimated_profit)}",
     ])
 
     if latest_report:
@@ -482,10 +482,10 @@ async def render_company_finance_detail(company_id: int, tg_id: int) -> tuple[st
             "",
             "【最近一次结算】",
             f"日期: {latest_report['date']}",
-            f"总收入: {fmt_traffic(latest_report['total_income'])}",
-            f"总成本: -{fmt_traffic(latest_report['operating_cost'])}",
-            f"净利润: {'+' if latest_profit >= 0 else ''}{fmt_traffic(latest_profit)}",
-            f"分红支出: -{fmt_traffic(latest_report['dividend_paid'])}",
+            f"总收入: {fmt_points(latest_report['total_income'])}",
+            f"总成本: -{fmt_points(latest_report['operating_cost'])}",
+            f"净利润: {'+' if latest_profit >= 0 else ''}{fmt_points(latest_profit)}",
+            f"分红支出: -{fmt_points(latest_report['dividend_paid'])}",
         ]
     else:
         lines += [

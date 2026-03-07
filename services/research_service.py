@@ -18,7 +18,7 @@ from services.company_service import (
     get_effective_employee_count_for_progress,
 )
 from services.user_service import add_reputation, add_self_points
-from utils.formatters import fmt_traffic
+from utils.formatters import fmt_points
 
 _tech_tree: dict | None = None
 _products_data: dict | None = None
@@ -294,7 +294,7 @@ async def start_research(
     # Deduct cost from company funds
     ok = await add_funds(session, company_id, -research_cost)
     if not ok:
-        return False, f"公司积分不足，需要 {fmt_traffic(research_cost)}"
+        return False, f"公司积分不足，需要 {fmt_points(research_cost)}"
 
     rp = ResearchProgress(
         company_id=company_id,

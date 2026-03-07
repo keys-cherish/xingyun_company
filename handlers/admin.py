@@ -27,7 +27,7 @@ from services.company_service import (
     get_company_type_info,
 )
 from services.cooperation_service import get_active_cooperations
-from services.user_service import add_self_points, add_traffic, get_user_by_tg_id
+from services.user_service import add_self_points, add_points, get_user_by_tg_id
 from utils.maintenance import (
     COMPENSATION_PIN_KEY,
     MAINTENANCE_COMPENSATION_BONUS,
@@ -263,7 +263,7 @@ async def cmd_give_money(message: types.Message):
                 credited_company_name = target_company.name
             else:
                 # 若对方暂无公司，则回退到个人钱包发放
-                ok = await add_traffic(session, user.id, amount)
+                ok = await add_points(session, user.id, amount)
                 if not ok:
                     await message.answer("❌ 发放失败，请稍后重试")
                     return

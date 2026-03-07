@@ -9,7 +9,7 @@ from cache.redis_client import get_redis
 from db.engine import async_session
 from services.company_service import add_funds, get_companies_by_owner
 from services.user_service import get_user_by_tg_id
-from utils.formatters import fmt_traffic
+from utils.formatters import fmt_points
 from utils.timezone import BJ_TZ
 
 # ── 老虎机符号与权重 ──────────────────────────────────
@@ -90,7 +90,7 @@ async def do_spin(tg_id: int) -> str:
         if already_rewarded:
             return (
                 f"🎰 老虎机\n{display}\n\n"
-                f"🎉 三个{symbol}！本可获得 {fmt_traffic(reward)}！\n"
+                f"🎉 三个{symbol}！本可获得 {fmt_points(reward)}！\n"
                 f"但你今天已经领过奖励了～明天再来吧"
             )
 
@@ -122,7 +122,7 @@ async def do_spin(tg_id: int) -> str:
         return (
             f"🎰 老虎机\n{display}\n\n"
             f"🎉 三个{symbol}！恭喜中奖！{jackpot_msg}\n"
-            f"💰 奖金 {fmt_traffic(reward)} 已存入「{company_name}」"
+            f"💰 奖金 {fmt_points(reward)} 已存入「{company_name}」"
         )
 
     # 两个相同 — 差一点

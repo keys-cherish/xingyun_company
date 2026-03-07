@@ -22,7 +22,7 @@ from services.product_service import (
     MAX_PRODUCT_VERSION,
 )
 from services.user_service import get_user_by_tg_id
-from utils.formatters import fmt_traffic
+from utils.formatters import fmt_points
 from utils.panel_owner import mark_panel
 
 router = Router()
@@ -39,8 +39,8 @@ async def cmd_new_product(message: types.Message):
         await message.answer(
             "📦 用法: /cp_new_product <产品名> <投资金额>\n"
             f"例: /cp_new_product 超能社交 5000\n\n"
-            f"💰 投资范围: {fmt_traffic(settings.product_min_investment)} ~ "
-            f"{fmt_traffic(settings.product_max_investment)}\n"
+            f"💰 投资范围: {fmt_points(settings.product_min_investment)} ~ "
+            f"{fmt_points(settings.product_max_investment)}\n"
             "🤖 AI将根据产品名评估方案，投资越多、评分越高，日收入越高"
         )
         return
@@ -90,7 +90,7 @@ async def _refresh_product_list(callback: types.CallbackQuery, company_id: int):
                 upgrade_cost = int(settings.product_upgrade_cost_base * (1.3 ** (p.version - 1)))
                 remaining = min(5, MAX_PRODUCT_VERSION - p.version)
                 x5_cost = sum(int(settings.product_upgrade_cost_base * (1.3 ** (p.version - 1 + i))) for i in range(remaining)) if remaining > 0 else 0
-                lines.append(f"• {p.name} v{p.version} — {fmt_traffic(p.daily_income)}/日 (品质:{p.quality})")
+                lines.append(f"• {p.name} v{p.version} — {fmt_points(p.daily_income)}/日 (品质:{p.quality})")
                 product_buttons.append([
                     InlineKeyboardButton(text=f"⬆️x1 {p.name} 💰{upgrade_cost:,}", callback_data=f"product:upgrade:{p.id}:1"),
                     InlineKeyboardButton(text=f"⬆️x5 {p.name} 💰{x5_cost:,}", callback_data=f"product:upgrade:{p.id}:5"),
@@ -102,8 +102,8 @@ async def _refresh_product_list(callback: types.CallbackQuery, company_id: int):
         lines.append(
             f"\n📦 创建产品命令:\n"
             f"  /cp_new_product <产品名> <投资金额>\n"
-            f"  投资范围: {fmt_traffic(settings.product_min_investment)} ~ "
-            f"{fmt_traffic(settings.product_max_investment)}"
+            f"  投资范围: {fmt_points(settings.product_min_investment)} ~ "
+            f"{fmt_points(settings.product_max_investment)}"
         )
         text = "\n".join(lines)
 
@@ -174,7 +174,7 @@ async def cb_product_list(callback: types.CallbackQuery, company_id: int | None 
             upgrade_cost = int(settings.product_upgrade_cost_base * (1.3 ** (p.version - 1)))
             remaining = min(5, MAX_PRODUCT_VERSION - p.version)
             x5_cost = sum(int(settings.product_upgrade_cost_base * (1.3 ** (p.version - 1 + i))) for i in range(remaining)) if remaining > 0 else 0
-            lines.append(f"• {p.name} v{p.version} — {fmt_traffic(p.daily_income)}/日 (品质:{p.quality})")
+            lines.append(f"• {p.name} v{p.version} — {fmt_points(p.daily_income)}/日 (品质:{p.quality})")
             product_buttons.append([
                 InlineKeyboardButton(text=f"⬆️x1 {p.name} 💰{upgrade_cost:,}", callback_data=f"product:upgrade:{p.id}:1"),
                 InlineKeyboardButton(text=f"⬆️x5 {p.name} 💰{x5_cost:,}", callback_data=f"product:upgrade:{p.id}:5"),
@@ -186,8 +186,8 @@ async def cb_product_list(callback: types.CallbackQuery, company_id: int | None 
     lines.append(
         f"\n📦 创建产品命令:\n"
         f"  /cp_new_product <产品名> <投资金额>\n"
-        f"  投资范围: {fmt_traffic(settings.product_min_investment)} ~ "
-        f"{fmt_traffic(settings.product_max_investment)}"
+        f"  投资范围: {fmt_points(settings.product_min_investment)} ~ "
+        f"{fmt_points(settings.product_max_investment)}"
     )
     text = "\n".join(lines)
     all_buttons = product_buttons

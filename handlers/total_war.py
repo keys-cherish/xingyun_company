@@ -12,7 +12,7 @@ from db.engine import async_session
 from keyboards.menus import tag_kb
 from services.company_service import get_companies_by_owner, get_company_by_id
 from services.user_service import add_self_points_by_tg_id, get_self_points, get_user_by_tg_id
-from utils.formatters import fmt_traffic
+from utils.formatters import fmt_points
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -166,7 +166,7 @@ async def on_total_war_mention(message: types.Message):
         "⚔️🔥 全面商战 — 终极宣战 🔥⚔️",
         f"{'─' * 28}",
         f"🏢 {my_company.name}  战力: {my_power:,.0f}",
-        f"💰 积分: {fmt_traffic(my_company.cp_points)}",
+        f"💰 积分: {fmt_points(my_company.cp_points)}",
         f"👷 员工: {my_company.employee_count}人",
         f"{'─' * 28}",
         f"🎯 宣战对象: {len(targets)} 家公司",
@@ -184,7 +184,7 @@ async def on_total_war_mention(message: types.Message):
         f"{'─' * 28}",
         "💸 全面商战代价:",
         f"  🏅 积分消耗: {WAR_POINT_COST}（当前: {current_points}）",
-        f"  💰 积分消耗: {fmt_traffic(fund_cost)}（公司积分的{int(WAR_FUND_RATE*100)}%）",
+        f"  💰 积分消耗: {fmt_points(fund_cost)}（公司积分的{int(WAR_FUND_RATE*100)}%）",
         f"  👷 预计员工损失: 3-8%",
         f"  ⭐ 预计声望损失: 每战 1-5",
         "",
@@ -205,13 +205,13 @@ async def on_total_war_mention(message: types.Message):
         if current_points < WAR_POINT_COST:
             lines.append(f"❌ 积分不足！需要 {WAR_POINT_COST}，当前 {current_points}")
         if my_company.cp_points < fund_cost:
-            lines.append(f"❌ 积分不足！需要 {fmt_traffic(fund_cost)}")
+            lines.append(f"❌ 积分不足！需要 {fmt_points(fund_cost)}")
 
     buttons = []
     if can_afford:
         buttons.append([
             InlineKeyboardButton(
-                text=f"⚔️ 确认全面宣战（{WAR_POINT_COST}积分 + {fmt_traffic(fund_cost)}）",
+                text=f"⚔️ 确认全面宣战（{WAR_POINT_COST}积分 + {fmt_points(fund_cost)}）",
                 callback_data=f"totalwar:confirm:{my_company.id}",
             ),
         ])
@@ -360,7 +360,7 @@ async def cb_total_war_confirm(callback: types.CallbackQuery):
 
         result_lines.extend([
             f"{'─' * 28}",
-            f"💸 总消耗: {WAR_POINT_COST}积分 + {fmt_traffic(fund_cost)}",
+            f"💸 总消耗: {WAR_POINT_COST}积分 + {fmt_points(fund_cost)}",
         ])
         if wins > 0:
             result_lines.append(

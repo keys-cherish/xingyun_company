@@ -56,7 +56,7 @@ from services.company_service import (
     upgrade_company,
 )
 from services.user_service import add_self_points_by_user_id, get_or_create_user, get_user_by_tg_id
-from utils.formatters import compact_number, fmt_quota, fmt_traffic
+from utils.formatters import compact_number, fmt_quota, fmt_points
 from utils.panel_owner import mark_panel
 from utils.validators import validate_name
 
@@ -84,8 +84,8 @@ async def cmd_list_company(message: types.Message):
         emoji = type_info["emoji"] if type_info else "🏢"
         lines.append(
             f"{i}. {emoji} {c.name} (ID:{c.id})\n"
-            f"   Lv.{c.level} | 积分余额:{fmt_traffic(c.cp_points)} | "
-            f"日营收:{fmt_traffic(c.daily_revenue)} | 👷{c.employee_count}人"
+            f"   Lv.{c.level} | 积分余额:{fmt_points(c.cp_points)} | "
+            f"日营收:{fmt_points(c.daily_revenue)} | 👷{c.employee_count}人"
         )
 
     await message.answer("\n".join(lines))
@@ -300,9 +300,9 @@ async def cmd_create_company(message: types.Message, state: FSMContext):
 
     welcome = ""
     if created:
-        welcome = f"欢迎加入 商业帝国! 当前个人积分: {fmt_traffic(user.self_points)}\n\n"
+        welcome = f"欢迎加入 商业帝国! 当前个人积分: {fmt_points(user.self_points)}\n\n"
     else:
-        welcome = f"当前个人积分: {fmt_traffic(user.self_points)}\n\n"
+        welcome = f"当前个人积分: {fmt_points(user.self_points)}\n\n"
 
     await _start_company_type_selection(message, state, welcome)
 
@@ -419,9 +419,9 @@ async def cb_upgrade(callback: types.CallbackQuery):
 
     # 积分
     if company.cp_points >= cost:
-        checks.append(f"✅ 积分: {fmt_traffic(company.cp_points)} / {fmt_traffic(cost)}")
+        checks.append(f"✅ 积分: {fmt_points(company.cp_points)} / {fmt_points(cost)}")
     else:
-        checks.append(f"❌ 积分: {fmt_traffic(company.cp_points)} / {fmt_traffic(cost)}")
+        checks.append(f"❌ 积分: {fmt_points(company.cp_points)} / {fmt_points(cost)}")
         all_pass = False
 
     # 员工
@@ -451,9 +451,9 @@ async def cb_upgrade(callback: types.CallbackQuery):
     # 日营收
     if min_revenue > 0:
         if company.daily_revenue >= min_revenue:
-            checks.append(f"✅ 日营收: {fmt_traffic(company.daily_revenue)} / {fmt_traffic(min_revenue)}")
+            checks.append(f"✅ 日营收: {fmt_points(company.daily_revenue)} / {fmt_points(min_revenue)}")
         else:
-            checks.append(f"❌ 日营收: {fmt_traffic(company.daily_revenue)} / {fmt_traffic(min_revenue)}")
+            checks.append(f"❌ 日营收: {fmt_points(company.daily_revenue)} / {fmt_points(min_revenue)}")
             all_pass = False
 
     # 构建文本
@@ -471,7 +471,7 @@ async def cb_upgrade(callback: types.CallbackQuery):
     # 升级好处
     lines.append(f"")
     lines.append(f"🎁 升级后获得:")
-    lines.append(f"  📈 永久日营收加成: +{fmt_traffic(next_info['daily_revenue_bonus'])}")
+    lines.append(f"  📈 永久日营收加成: +{fmt_points(next_info['daily_revenue_bonus'])}")
     lines.append(f"  👷 员工上限提升: +{next_info['employee_limit_bonus']}")
     if next_info.get('description'):
         lines.append(f"  📝 {next_info['description']}")
@@ -568,7 +568,7 @@ async def cmd_rename(message: types.Message):
             rename_cost = max(RENAME_MIN_COST, int(company.cp_points * RENAME_COST_RATE))
             ok = await add_funds(session, company_id, -rename_cost)
             if not ok:
-                await message.answer(f"❌ 公司资金不足，改名需要 {fmt_traffic(rename_cost)}")
+                await message.answer(f"❌ 公司资金不足，改名需要 {fmt_points(rename_cost)}")
                 return
 
             old_name = company.name
@@ -580,7 +580,7 @@ async def cmd_rename(message: types.Message):
 
     await message.answer(
         f"✅ 改名成功! {old_name} → {new_name}\n"
-        f"💰 花费: {fmt_traffic(rename_cost)}\n"
+        f"💰 花费: {fmt_points(rename_cost)}\n"
         f"📉 当日营收降低 {int(RENAME_REVENUE_PENALTY * 100)}%，次日恢复"
     )
 

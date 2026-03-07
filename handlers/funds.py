@@ -10,8 +10,8 @@ from config import settings
 from db.engine import async_session
 from services.company_service import get_companies_by_owner, get_company_by_id
 from services.fundlog_service import format_log_entry, get_fund_logs
-from services.user_service import add_traffic, get_user_by_tg_id
-from utils.formatters import fmt_traffic
+from services.user_service import add_points, get_user_by_tg_id
+from utils.formatters import fmt_points
 
 router = Router()
 
@@ -137,8 +137,8 @@ async def cmd_transfer(message: types.Message):
             if sender.self_points < amount:
                 await message.answer(
                     f"❌ 余额不足！\n"
-                    f"需要: {fmt_traffic(amount)}\n"
-                    f"当前: {fmt_traffic(sender.self_points)}"
+                    f"需要: {fmt_points(amount)}\n"
+                    f"当前: {fmt_points(sender.self_points)}"
                 )
                 return
 
@@ -151,7 +151,7 @@ async def cmd_transfer(message: types.Message):
             sender_name = message.from_user.full_name or f"User {tg_id}"
             receiver_name = target_tg_user.full_name or f"User {target_tg_user.id}"
 
-            ok = await add_traffic(
+            ok = await add_points(
                 session, sender.id, -amount,
                 reason=f"转账给 {receiver_name}"
             )
@@ -160,13 +160,13 @@ async def cmd_transfer(message: types.Message):
                 return
 
             # 给接收方（税后）
-            ok = await add_traffic(
+            ok = await add_points(
                 session, receiver.id, net_amount,
                 reason=f"来自 {sender_name} 的转账"
             )
             if not ok:
                 # 回滚
-                await add_traffic(session, sender.id, amount, reason="转账失败退款")
+                await add_points(session, sender.id, amount, reason="转账失败退款")
                 await message.answer("❌ 转账失败，已退款")
                 return
 
@@ -174,8 +174,8 @@ async def cmd_transfer(message: types.Message):
         f"✅ 转账成功!\n"
         f"{'─' * 24}\n"
         f"👤 收款人: {receiver_name}\n"
-        f"💸 转账金额: {fmt_traffic(amount)}\n"
+        f"💸 转账金额: {fmt_points(amount)}\n"
         f"📊 转账税率: {int(TRANSFER_TAX_RATE * 100)}%\n"
-        f"🏛️ 税金扣除: {fmt_traffic(tax)}\n"
-        f"💰 实际到账: {fmt_traffic(net_amount)}"
+        f"🏛️ 税金扣除: {fmt_points(tax)}\n"
+        f"💰 实际到账: {fmt_points(net_amount)}"
     )

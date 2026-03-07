@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Company, Product, ResearchProgress
 from services.company_service import get_level_info, get_max_level
-from utils.formatters import fmt_traffic
+from utils.formatters import fmt_points
 from utils.rules import Rule, RuleViolation
 
 
@@ -92,7 +92,7 @@ async def check_upgrade_funds(
             code="INSUFFICIENT_FUNDS",
             actual=company.cp_points,
             expected=cost,
-            message=f"积分: {fmt_traffic(company.cp_points)}/{fmt_traffic(cost)}",
+            message=f"积分: {fmt_points(company.cp_points)}/{fmt_points(cost)}",
         )
     return None
 
@@ -183,7 +183,7 @@ async def check_upgrade_revenue(
             code="INSUFFICIENT_REVENUE",
             actual=company.daily_revenue,
             expected=min_revenue,
-            message=f"日营收: {fmt_traffic(company.daily_revenue)}/{fmt_traffic(min_revenue)}",
+            message=f"日营收: {fmt_points(company.daily_revenue)}/{fmt_points(min_revenue)}",
         )
     return None
 

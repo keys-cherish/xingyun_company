@@ -19,8 +19,8 @@ from db.models import DailyReport, User
 from keyboards.menus import tag_kb
 from services.company_service import add_funds, get_company_by_id, get_companies_by_owner
 from services.shareholder_service import get_shareholders
-from services.user_service import add_traffic, get_user_by_tg_id
-from utils.formatters import fmt_shares, fmt_traffic
+from services.user_service import add_points, get_user_by_tg_id
+from utils.formatters import fmt_shares, fmt_points
 
 router = Router()
 
@@ -53,7 +53,7 @@ def _dividend_amount_kb(company_id: int, tg_id: int) -> InlineKeyboardMarkup:
     amounts = [a for a in [1000, 5000, 10000, 50000] if a <= max_div]
     buttons = [
         [InlineKeyboardButton(
-            text=f"💸 分红 {fmt_traffic(a)}",
+            text=f"💸 分红 {fmt_points(a)}",
             callback_data=f"dividend:confirm:{company_id}:{a}",
         )]
         for a in amounts
@@ -79,10 +79,10 @@ async def _execute_dividend(
         return False, "公司不存在", []
 
     if amount > settings.max_daily_dividend:
-        return False, f"单次分红不可超过 {fmt_traffic(settings.max_daily_dividend)}", []
+        return False, f"单次分红不可超过 {fmt_points(settings.max_daily_dividend)}", []
 
     if company.cp_points < amount:
-        return False, f"公司积分不足，当前: {fmt_traffic(company.cp_points)}", []
+        return False, f"公司积分不足，当前: {fmt_points(company.cp_points)}", []
 
     shareholders = await get_shareholders(session, company_id)
     if not shareholders:
@@ -106,7 +106,7 @@ async def _execute_dividend(
             total_tax += tax
 
             if net_amount > 0:
-                success = await add_traffic(session, sh.user_id, net_amount)
+                success = await add_points(session, sh.user_id, net_amount)
                 if success:
                     u = await session.get(User, sh.user_id)
                     name = u.tg_name if u else "未知"
@@ -122,7 +122,7 @@ async def _execute_dividend(
     total_gross = sum(d[2] for d in distributions)
     actual_tax = total_gross - total_distributed
 
-    return True, f"分红成功！税后实发: {fmt_traffic(total_distributed)}，税金: {fmt_traffic(actual_tax)}", distributions
+    return True, f"分红成功！税后实发: {fmt_points(total_distributed)}，税金: {fmt_points(actual_tax)}", distributions
 
 
 # ---- /cp_dividend 命令 ----
@@ -153,7 +153,7 @@ async def cmd_dividend(message: types.Message):
 
     if amount > settings.max_daily_dividend:
         await message.answer(
-            f"❌ 单次分红不可超过 {fmt_traffic(settings.max_daily_dividend)}"
+            f"❌ 单次分红不可超过 {fmt_points(settings.max_daily_dividend)}"
         )
         return
 
@@ -181,19 +181,19 @@ async def cmd_dividend(message: types.Message):
     lines = [
         f"✅ {company.name} 分红发放成功!",
         f"{'─' * 24}",
-        f"💸 分红总额: {fmt_traffic(amount)}",
+        f"💸 分红总额: {fmt_points(amount)}",
         f"📊 分红税率: {int(DIVIDEND_TAX_RATE * 100)}%",
         f"",
         f"👥 分配详情 (税后到账):",
     ]
     for name, shares, gross, net in distributions:
-        lines.append(f"  • {name} ({fmt_shares(shares)}): {fmt_traffic(gross)} → {fmt_traffic(net)}")
+        lines.append(f"  • {name} ({fmt_shares(shares)}): {fmt_points(gross)} → {fmt_points(net)}")
 
     total_net = sum(d[3] for d in distributions)
     total_tax = sum(d[2] - d[3] for d in distributions)
     lines.append(f"")
-    lines.append(f"💰 实际到账: {fmt_traffic(total_net)}")
-    lines.append(f"🏛️ 税金扣除: {fmt_traffic(total_tax)}")
+    lines.append(f"💰 实际到账: {fmt_points(total_net)}")
+    lines.append(f"🏛️ 税金扣除: {fmt_points(total_tax)}")
 
     await message.answer("\n".join(lines))
 
@@ -225,7 +225,7 @@ async def cb_dividend_distribute(callback: types.CallbackQuery):
             "💸 发放分红",
             "─" * 24,
             f"🏢 公司: {company.name}",
-            f"🏦 公司积分: {fmt_traffic(company.cp_points)}",
+            f"🏦 公司积分: {fmt_points(company.cp_points)}",
             f"📊 分红税率: {int(DIVIDEND_TAX_RATE * 100)}%",
             "",
             "👥 股东持股比例:",
@@ -262,7 +262,7 @@ async def cb_dividend_confirm(callback: types.CallbackQuery):
             await callback.answer("只有老板才能发放分红", show_alert=True)
             return
         if company.cp_points < amount:
-            await callback.answer(f"公司积分不足，当前: {fmt_traffic(company.cp_points)}", show_alert=True)
+            await callback.answer(f"公司积分不足，当前: {fmt_points(company.cp_points)}", show_alert=True)
             return
 
         shareholders = await get_shareholders(session, company_id)
@@ -273,7 +273,7 @@ async def cb_dividend_confirm(callback: types.CallbackQuery):
         lines = [
             "💸 分红确认",
             "─" * 24,
-            f"分红总额: {fmt_traffic(amount)}",
+            f"分红总额: {fmt_points(amount)}",
             f"分红税率: {int(DIVIDEND_TAX_RATE * 100)}%",
             "",
             "👥 各股东将获得 (税后):",
@@ -288,12 +288,12 @@ async def cb_dividend_confirm(callback: types.CallbackQuery):
             net = gross - tax
             total_tax += tax
             total_net += net
-            lines.append(f"  • {name} ({fmt_shares(sh.shares)}): {fmt_traffic(gross)} → {fmt_traffic(net)}")
+            lines.append(f"  • {name} ({fmt_shares(sh.shares)}): {fmt_points(gross)} → {fmt_points(net)}")
 
         lines.append("")
-        lines.append(f"💰 税后实发: {fmt_traffic(total_net)}")
-        lines.append(f"🏛️ 税金扣除: {fmt_traffic(total_tax)}")
-        lines.append(f"🏦 公司积分: {fmt_traffic(company.cp_points)} → {fmt_traffic(company.cp_points - amount)}")
+        lines.append(f"💰 税后实发: {fmt_points(total_net)}")
+        lines.append(f"🏛️ 税金扣除: {fmt_points(total_tax)}")
+        lines.append(f"🏦 公司积分: {fmt_points(company.cp_points)} → {fmt_points(company.cp_points - amount)}")
 
     kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -335,19 +335,19 @@ async def cb_dividend_execute(callback: types.CallbackQuery):
     lines = [
         "✅ 分红发放成功!",
         "─" * 24,
-        f"💸 分红总额: {fmt_traffic(amount)}",
+        f"💸 分红总额: {fmt_points(amount)}",
         f"📊 分红税率: {int(DIVIDEND_TAX_RATE * 100)}%",
         "",
         "👥 分配详情 (税后到账):",
     ]
     for name, shares, gross, net in distributions:
-        lines.append(f"  • {name} ({fmt_shares(shares)}): {fmt_traffic(gross)} → {fmt_traffic(net)}")
+        lines.append(f"  • {name} ({fmt_shares(shares)}): {fmt_points(gross)} → {fmt_points(net)}")
 
     total_net = sum(d[3] for d in distributions)
     total_tax = sum(d[2] - d[3] for d in distributions)
     lines.append(f"")
-    lines.append(f"💰 实际到账: {fmt_traffic(total_net)}")
-    lines.append(f"🏛️ 税金扣除: {fmt_traffic(total_tax)}")
+    lines.append(f"💰 实际到账: {fmt_points(total_net)}")
+    lines.append(f"🏛️ 税金扣除: {fmt_points(total_tax)}")
 
     kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 返回股东列表", callback_data=f"shareholder:list:{company_id}")],
@@ -457,19 +457,19 @@ async def on_custom_dividend_amount(message: types.Message, state: FSMContext):
     lines = [
         "✅ 分红发放成功!",
         "─" * 24,
-        f"💸 分红总额: {fmt_traffic(amount)}",
+        f"💸 分红总额: {fmt_points(amount)}",
         f"📊 分红税率: {int(DIVIDEND_TAX_RATE * 100)}%",
         "",
         "👥 分配详情 (税后到账):",
     ]
     for name, shares, gross, net in distributions:
-        lines.append(f"  • {name} ({fmt_shares(shares)}): {fmt_traffic(gross)} → {fmt_traffic(net)}")
+        lines.append(f"  • {name} ({fmt_shares(shares)}): {fmt_points(gross)} → {fmt_points(net)}")
 
     total_net = sum(d[3] for d in distributions)
     total_tax = sum(d[2] - d[3] for d in distributions)
     lines.append("")
-    lines.append(f"💰 实际到账: {fmt_traffic(total_net)}")
-    lines.append(f"🏛️ 税金扣除: {fmt_traffic(total_tax)}")
+    lines.append(f"💰 实际到账: {fmt_points(total_net)}")
+    lines.append(f"🏛️ 税金扣除: {fmt_points(total_tax)}")
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔙 返回股东列表", callback_data=f"shareholder:list:{company_id}")],
@@ -504,10 +504,10 @@ async def cb_dividend_history(callback: types.CallbackQuery):
             for r in reports:
                 profit = r.total_income - r.operating_cost
                 lines.append(f"📅 {r.date}")
-                lines.append(f"  收入: {fmt_traffic(r.total_income)}")
-                lines.append(f"  成本: -{fmt_traffic(r.operating_cost)}")
-                lines.append(f"  利润: {fmt_traffic(profit)}")
-                lines.append(f"  分红: {fmt_traffic(r.dividend_paid)}")
+                lines.append(f"  收入: {fmt_points(r.total_income)}")
+                lines.append(f"  成本: -{fmt_points(r.operating_cost)}")
+                lines.append(f"  利润: {fmt_points(profit)}")
+                lines.append(f"  分红: {fmt_points(r.dividend_paid)}")
                 lines.append("")
         else:
             lines.append("暂无结算记录")

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Company, ResearchProgress, User
 from services.company_service import get_effective_employee_count_for_progress
-from utils.formatters import fmt_traffic
+from utils.formatters import fmt_points
 from utils.rules import Rule, RuleViolation
 
 
@@ -225,7 +225,7 @@ async def check_research_funds(
             code="INSUFFICIENT_FUNDS",
             actual=company.cp_points,
             expected=research_cost,
-            message=f"公司积分不足，需要 {fmt_traffic(research_cost)}",
+            message=f"公司积分不足，需要 {fmt_points(research_cost)}",
         )
     return None
 

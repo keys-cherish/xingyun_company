@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
 from db.models import Company, Shareholder
 from services.company_service import add_funds, get_company_valuation
-from services.user_service import add_traffic
+from services.user_service import add_points
 
 # 单次注资上限，防止溢出
 MAX_SINGLE_INVESTMENT = 10_000_000
@@ -31,7 +31,7 @@ async def invest(
         return False, "公司不存在"
 
     # 扣除流量
-    ok = await add_traffic(session, user_id, -amount)
+    ok = await add_points(session, user_id, -amount)
     if not ok:
         return False, "积分不足"
 
@@ -48,7 +48,7 @@ async def invest(
         new_owner_pct = (owner_sh.shares / total_after) * 100
         if new_owner_pct < settings.min_owner_share_pct:
             # 回滚流量
-            await add_traffic(session, user_id, amount)
+            await add_points(session, user_id, amount)
             max_invest = _max_investable(valuation, owner_sh.shares)
             return False, f"此注资会导致老板持股低于{settings.min_owner_share_pct}%，最多可注资{max_invest}积分"
 
@@ -99,7 +99,7 @@ async def invest(
     fund_ok = await add_funds(session, company_id, amount)
     if not fund_ok:
         # 回滚流量
-        await add_traffic(session, user_id, amount)
+        await add_points(session, user_id, amount)
         return False, "公司积分更新失败，请重试"
 
     await session.flush()

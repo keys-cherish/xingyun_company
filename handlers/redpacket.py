@@ -29,8 +29,8 @@ from services.redpacket_service import (
     has_password,
     save_grabber_display_name,
 )
-from services.user_service import add_traffic, get_or_create_user, get_user_by_tg_id
-from utils.formatters import fmt_traffic
+from services.user_service import add_points, get_or_create_user, get_user_by_tg_id
+from utils.formatters import fmt_points
 from utils.panel_owner import mark_panel
 
 router = Router()
@@ -194,8 +194,8 @@ async def cmd_redpacket(message: types.Message):
             )
             if not deduct_ok:
                 await message.answer(
-                    f"❌ 公司积分不足！需要 {fmt_traffic(total_amount)}，"
-                    f"当前余额 {fmt_traffic(company.cp_points)}"
+                    f"❌ 公司积分不足！需要 {fmt_points(total_amount)}，"
+                    f"当前余额 {fmt_points(company.cp_points)}"
                 )
                 return
 
@@ -299,7 +299,7 @@ async def on_password_input(message: types.Message, state: FSMContext):
                 await add_funds(session, companies[0].id, amount, reason="抢红包")
                 dest = f"「{companies[0].name}」"
             else:
-                await add_traffic(session, user.id, amount, reason="抢红包")
+                await add_points(session, user.id, amount, reason="抢红包")
                 dest = "个人账户"
 
     await message.answer(f"🧧 口令正确！抢到 {amount:,} 积分！\n已存入{dest}")
@@ -336,7 +336,7 @@ async def _check_and_announce_lucky(packet_id: str):
                 if lk_companies:
                     await add_funds(session, lk_companies[0].id, bonus, reason="手气最佳奖金")
                 else:
-                    await add_traffic(session, lucky_user.id, bonus, reason="手气最佳奖金")
+                    await add_points(session, lucky_user.id, bonus, reason="手气最佳奖金")
 
 
 @router.callback_query(F.data.startswith("rp:grab:"))
@@ -367,7 +367,7 @@ async def cb_grab_redpacket(callback: types.CallbackQuery):
                 await add_funds(session, companies[0].id, amount, reason="抢红包")
                 dest = f"「{companies[0].name}」"
             else:
-                await add_traffic(session, user.id, amount, reason="抢红包")
+                await add_points(session, user.id, amount, reason="抢红包")
                 dest = "个人账户"
 
     # Check if packet is fully claimed
@@ -390,7 +390,7 @@ async def cb_grab_redpacket(callback: types.CallbackQuery):
                             if lk_companies:
                                 await add_funds(session, lk_companies[0].id, bonus, reason="手气最佳奖金")
                             else:
-                                await add_traffic(session, lucky_user.id, bonus, reason="手气最佳奖金")
+                                await add_points(session, lucky_user.id, bonus, reason="手气最佳奖金")
 
         await _refresh_detail_message_if_needed(callback, packet_id, force=True)
     else:

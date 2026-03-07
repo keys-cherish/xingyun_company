@@ -350,22 +350,22 @@ async def settle_all(session: AsyncSession) -> list[tuple[Company, DailyReport, 
 
 def format_daily_report(company: Company, report: DailyReport, events: list[str] | None = None) -> str:
     """Format a daily report for display."""
-    from utils.formatters import fmt_traffic
+    from utils.formatters import fmt_points
     profit = report.total_income - report.operating_cost
     lines = [
         f"📊 【{company.name}】每日结算报告",
         f"日期: {report.date}",
         f"{'─' * 24}",
-        f"产品收入: {fmt_traffic(report.product_income)}",
-        f"👷 人力产出: +{fmt_traffic(report.employee_income)}",
-        f"合作加成: +{fmt_traffic(report.cooperation_bonus)}",
-        f"地产收入: +{fmt_traffic(report.realestate_income)}",
-        f"声望加成: +{fmt_traffic(report.reputation_buff_income)}",
+        f"产品收入: {fmt_points(report.product_income)}",
+        f"👷 人力产出: +{fmt_points(report.employee_income)}",
+        f"合作加成: +{fmt_points(report.cooperation_bonus)}",
+        f"地产收入: +{fmt_points(report.realestate_income)}",
+        f"声望加成: +{fmt_points(report.reputation_buff_income)}",
         f"{'─' * 24}",
-        f"总收入: {fmt_traffic(report.total_income)}",
-        f"运营成本(含税/薪/社保): -{fmt_traffic(report.operating_cost)}",
-        f"净利润: {fmt_traffic(profit)}",
-        f"分红支出: {fmt_traffic(report.dividend_paid)}",
+        f"总收入: {fmt_points(report.total_income)}",
+        f"运营成本(含税/薪/社保): -{fmt_points(report.operating_cost)}",
+        f"净利润: {fmt_points(profit)}",
+        f"分红支出: {fmt_points(report.dividend_paid)}",
         f"{'─' * 24}",
     ]
     if events:

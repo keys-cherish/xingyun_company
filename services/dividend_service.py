@@ -8,7 +8,7 @@ from config import settings
 from db.models import Company
 from services.company_service import add_funds
 from services.shareholder_service import get_shareholders
-from services.user_service import add_reputation, add_traffic, add_self_points
+from services.user_service import add_reputation, add_points, add_self_points
 
 
 async def distribute_dividends(
@@ -50,7 +50,7 @@ async def distribute_dividends(
     distributions: list[tuple[int, int]] = []
     failed_total = 0
     for user_id, share_amount in planned:
-        ok = await add_traffic(session, user_id, share_amount)
+        ok = await add_points(session, user_id, share_amount)
         if not ok:
             failed_total += share_amount
             continue

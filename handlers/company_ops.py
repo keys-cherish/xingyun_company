@@ -29,7 +29,7 @@ from services.operations_service import (
     start_training,
 )
 from services.user_service import get_user_by_tg_id
-from utils.formatters import fmt_traffic
+from utils.formatters import fmt_points
 
 router = Router()
 
@@ -332,18 +332,18 @@ async def cb_ops_train(callback: types.CallbackQuery):
     lines.extend([
         f"👥 当前员工：{company.employee_count}人",
         f"💰 费用 = {company.employee_count}人 × {info['hourly_cost']}金/时 × {info['duration_hours']}h",
-        f"💰 总计：{fmt_traffic(total_cost)}",
-        f"🏦 公司积分：{fmt_traffic(company.cp_points)}",
+        f"💰 总计：{fmt_points(total_cost)}",
+        f"🏦 公司积分：{fmt_points(company.cp_points)}",
         f"{'─' * 24}",
         f"🎭 开始培训额外+4文化值",
     ])
 
     if total_cost > company.cp_points:
-        lines.append(f"❌ 积分不足！还差 {fmt_traffic(total_cost - company.cp_points)}")
+        lines.append(f"❌ 积分不足！还差 {fmt_points(total_cost - company.cp_points)}")
 
     kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text=f"✅ 确认培训（{fmt_traffic(total_cost)}）", callback_data=f"ops:xtrain:{cid}:{level}"),
+            InlineKeyboardButton(text=f"✅ 确认培训（{fmt_points(total_cost)}）", callback_data=f"ops:xtrain:{cid}:{level}"),
             InlineKeyboardButton(text="🔙 取消", callback_data=f"ops:menu:{cid}"),
         ],
     ]), tg_id)

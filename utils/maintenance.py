@@ -58,7 +58,9 @@ class MaintenanceModeMiddleware(BaseMiddleware):
             cmd = parse_command_name(event.text)
             if is_super_admin(uid) and cmd in {CMD_MAINTAIN, CMD_COMPENSATE}:
                 return await handler(event, data)
-            await event.answer("🔧 系统维护中，暂时暂停所有命令和操作，请稍后再试。")
+            # Only reply to bot commands, silently ignore normal messages
+            if cmd and cmd.startswith("cp_"):
+                await event.answer("🔧 系统维护中，暂时暂停所有命令和操作，请稍后再试。")
             return None
 
         if isinstance(event, types.CallbackQuery):

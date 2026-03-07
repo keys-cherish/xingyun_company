@@ -13,7 +13,7 @@ from cache.redis_client import get_redis
 from db.models import Company, Product, ResearchProgress, User
 from services.company_service import add_funds
 from services.operations_service import get_or_create_profile
-from utils.formatters import fmt_traffic
+from utils.formatters import fmt_points
 
 # Cooldown base: 1 battle per user every 30 minutes
 BATTLE_COOLDOWN_SECONDS = 1800
@@ -431,7 +431,7 @@ async def do_battle(
         lines += [
             f"{'─' * 24}",
             f"🏆 胜者: {winner.name}",
-            f"💰 训练奖金: {fmt_traffic(loot)}（系统发放，败者无损失）",
+            f"💰 训练奖金: {fmt_points(loot)}（系统发放，败者无损失）",
             "",
             f"🎓 公司成立不满{TRAINING_MODE_DAYS}天，自动进入训练模式:",
             "  • 胜者获半额奖金（系统发放）",
@@ -514,15 +514,15 @@ async def do_battle(
     ]
 
     if loot > 0:
-        lines.append(f"💰 掠夺: {fmt_traffic(loot)} (从 {loser.name})")
+        lines.append(f"💰 掠夺: {fmt_points(loot)} (从 {loser.name})")
     else:
         lines.append("💸 对方积分不足，未能掠夺")
 
     lines += [
         "",
         "🩸 双边战损",
-        f"• {attacker_company.name}: 积分-{fmt_traffic(a_fund_loss)} | 员工-{a_emp_loss} | 声望-{a_rep_loss}",
-        f"• {defender_company.name}: 积分-{fmt_traffic(d_fund_loss)} | 员工-{d_emp_loss} | 声望-{d_rep_loss}",
+        f"• {attacker_company.name}: 积分-{fmt_points(a_fund_loss)} | 员工-{a_emp_loss} | 声望-{a_rep_loss}",
+        f"• {defender_company.name}: 积分-{fmt_points(d_fund_loss)} | 员工-{d_emp_loss} | 声望-{d_rep_loss}",
         "",
         "🧨 商战后遗症",
         f"⏳ 你的下次商战冷却: {mins}分{secs}秒",

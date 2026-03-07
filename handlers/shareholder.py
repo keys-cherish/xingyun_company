@@ -22,7 +22,7 @@ from services.company_service import get_companies_by_owner, get_company_by_id
 from services.shareholder_service import get_shareholders, invest
 from utils.panel_owner import mark_panel
 from services.user_service import get_user_by_tg_id
-from utils.formatters import fmt_shares, fmt_traffic
+from utils.formatters import fmt_shares, fmt_points
 
 router = Router()
 
@@ -103,7 +103,7 @@ async def _create_invest_approval_request(
                 "💼 收到一条注资请求\n"
                 f"投资人：{investor_name}\n"
                 f"目标公司：{target_company_name}\n"
-                f"注资金额：{fmt_traffic(amount)}\n\n"
+                f"注资金额：{fmt_points(amount)}\n\n"
                 f"请在 {INVEST_APPROVAL_TTL_SECONDS // 3600} 小时内处理："
             ),
             reply_markup=_approval_kb(token),
@@ -118,7 +118,7 @@ async def _create_invest_approval_request(
     return True, (
         f"📨 注资请求已发送给对方私聊，等待同意。\n"
         f"目标公司：{target_company_name}\n"
-        f"金额：{fmt_traffic(amount)}\n"
+        f"金额：{fmt_points(amount)}\n"
         f"有效期：3小时"
     )
 
@@ -154,7 +154,7 @@ async def _handle_reply_invest(message: types.Message, amount: int):
             investor_quota = int(investor_company.cp_points)
             if amount > investor_quota:
                 await message.answer(
-                    f"公司资金不足，当前可用：{fmt_traffic(investor_quota)}。"
+                    f"公司资金不足，当前可用：{fmt_points(investor_quota)}。"
                 )
                 return
 
@@ -260,7 +260,7 @@ async def cb_invest_approval(callback: types.CallbackQuery):
             await callback.message.edit_text(
                 "❌ 你已拒绝该注资请求。\n"
                 f"目标公司：{target_company_name}\n"
-                f"金额：{fmt_traffic(amount)}"
+                f"金额：{fmt_points(amount)}"
             )
             await _notify_investor(
                 callback.bot,
@@ -268,7 +268,7 @@ async def cb_invest_approval(callback: types.CallbackQuery):
                 (
                     "❌ 对方拒绝了你的注资请求。\n"
                     f"目标公司：{target_company_name}\n"
-                    f"金额：{fmt_traffic(amount)}"
+                    f"金额：{fmt_points(amount)}"
                 ),
             )
             await callback.answer("已拒绝")
@@ -300,7 +300,7 @@ async def cb_invest_approval(callback: types.CallbackQuery):
         await callback.message.edit_text(
             "✅ 你已同意该注资请求。\n"
             f"目标公司：{target_company_name}\n"
-            f"金额：{fmt_traffic(amount)}"
+            f"金额：{fmt_points(amount)}"
         )
         await _notify_investor(
             callback.bot,
@@ -375,7 +375,7 @@ async def _refresh_shareholder_list(callback: types.CallbackQuery, company_id: i
                 from db.models import User
                 u = await session.get(User, sh.user_id)
                 name = u.tg_name if u else "未知"
-                lines.append(f"• {name}: {fmt_shares(sh.shares)} (注资: {fmt_traffic(sh.invested_amount)})")
+                lines.append(f"• {name}: {fmt_shares(sh.shares)} (注资: {fmt_points(sh.invested_amount)})")
         await callback.message.edit_text(
             "\n".join(lines),
             reply_markup=shareholder_list_kb(company_id, tg_id=tg_id, is_owner=is_owner),
@@ -400,7 +400,7 @@ async def cb_shareholders(callback: types.CallbackQuery):
             from db.models import User
             u = await session.get(User, sh.user_id)
             name = u.tg_name if u else "未知"
-            lines.append(f"• {name}: {fmt_shares(sh.shares)} (注资: {fmt_traffic(sh.invested_amount)})")
+            lines.append(f"• {name}: {fmt_shares(sh.shares)} (注资: {fmt_points(sh.invested_amount)})")
     await callback.message.edit_text(
         "\n".join(lines),
         reply_markup=shareholder_list_kb(company_id, tg_id=tg_id, is_owner=is_owner),

@@ -256,7 +256,7 @@ async def cleanup_excess_funds(session: AsyncSession) -> list[str]:
     return msgs
 
 
-async def cleanup_excess_user_traffic(session: AsyncSession) -> list[str]:
+async def cleanup_excess_user_points(session: AsyncSession) -> list[str]:
     """Cap user self_points at dynamic max (base + per_level * company_level)."""
     from services.user_service import get_user_max_points
     msgs = []
@@ -411,7 +411,7 @@ async def run_all_checks(session: AsyncSession | None = None) -> list[str]:
         ("负数积分", cleanup_negative_funds),
         ("地产超限", cleanup_excess_estates),
         ("积分超限", cleanup_excess_funds),
-        ("个人积分超限", cleanup_excess_user_traffic),
+        ("个人积分超限", cleanup_excess_user_points),
     ]
     msgs = []
     for name, check_fn in checks:

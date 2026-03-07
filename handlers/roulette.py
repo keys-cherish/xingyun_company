@@ -34,7 +34,7 @@ from services.roulette_service import (
     render_game_panel,
     start_game,
 )
-from services.user_service import add_traffic_by_tg_id, get_traffic_by_tg_id
+from services.user_service import add_points_by_tg_id, get_points_by_tg_id
 from utils.panel_owner import mark_panel
 
 router = Router()
@@ -278,7 +278,7 @@ async def cmd_cp_demon(message: types.Message):
             return
 
     if bet <= 0:
-        pts = await get_traffic_by_tg_id(tg_id)
+        pts = await get_points_by_tg_id(tg_id)
         text = (
             f"😈 恶魔轮盘赌\n{'━' * 20}\n"
             f"💎 可下注余额: {pts:,}\n"
@@ -290,7 +290,7 @@ async def cmd_cp_demon(message: types.Message):
 
     deducted = await consume_self_points(tg_id, bet)
     if not deducted:
-        pts = await get_traffic_by_tg_id(tg_id)
+        pts = await get_points_by_tg_id(tg_id)
         if pts < bet:
             await message.answer(f"❌ 积分不足 (当前 {pts:,}，需要 {bet:,})")
         else:
@@ -306,7 +306,7 @@ async def cmd_cp_demon(message: types.Message):
         bet=bet,
     )
     if not ok:
-        await add_traffic_by_tg_id(tg_id, bet, reason="roulette_create_failed_refund")
+        await add_points_by_tg_id(tg_id, bet, reason="roulette_create_failed_refund")
         await message.answer(msg)
         return
 
@@ -336,7 +336,7 @@ async def cb_roulette_start(callback: types.CallbackQuery):
             await callback.answer()
             return
 
-    pts = await get_traffic_by_tg_id(tg_id)
+    pts = await get_points_by_tg_id(tg_id)
     text = (
         f"😈 恶魔轮盘赌\n{'━' * 20}\n"
         f"💎 可下注余额: {pts:,}\n"
@@ -377,7 +377,7 @@ async def cb_roulette_create(callback: types.CallbackQuery):
 
     ok = await consume_self_points(tg_id, bet)
     if not ok:
-        pts = await get_traffic_by_tg_id(tg_id)
+        pts = await get_points_by_tg_id(tg_id)
         if pts < bet:
             await callback.answer(f"积分不足 (当前 {pts:,}，需要 {bet:,})", show_alert=True)
         else:
@@ -394,7 +394,7 @@ async def cb_roulette_create(callback: types.CallbackQuery):
     )
 
     if not ok:
-        await add_traffic_by_tg_id(tg_id, bet, reason="roulette_create_failed_refund")
+        await add_points_by_tg_id(tg_id, bet, reason="roulette_create_failed_refund")
         await callback.answer(msg, show_alert=True)
         return
 
@@ -439,7 +439,7 @@ async def cb_roulette_join(callback: types.CallbackQuery):
 
     ok = await consume_self_points(tg_id, bet)
     if not ok:
-        pts = await get_traffic_by_tg_id(tg_id)
+        pts = await get_points_by_tg_id(tg_id)
         await callback.answer(f"积分不足 (当前 {pts:,}，需要 {bet:,})", show_alert=True)
         return
 
@@ -450,7 +450,7 @@ async def cb_roulette_join(callback: types.CallbackQuery):
         player_name=player_name,
     )
     if not ok:
-        await add_traffic_by_tg_id(tg_id, bet, reason="roulette_join_failed_refund")
+        await add_points_by_tg_id(tg_id, bet, reason="roulette_join_failed_refund")
         await callback.answer(msg, show_alert=True)
         return
 

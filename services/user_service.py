@@ -406,13 +406,13 @@ async def sync_all_users_to_shared_points() -> tuple[int, int]:
 
 # --------- Backward-compatible aliases ---------
 
-async def add_traffic(session: AsyncSession, user_id: int, amount: int, reason: str = "未知") -> bool:
+async def add_points(session: AsyncSession, user_id: int, amount: int, reason: str = "未知") -> bool:
     return await add_self_points_by_user_id(session, user_id, amount, reason=reason)
 
 
-async def get_traffic_by_tg_id(tg_id: int) -> int:
+async def get_points_by_tg_id(tg_id: int) -> int:
     return await get_self_points(tg_id)
 
 
-async def add_traffic_by_tg_id(tg_id: int, amount: int, *, reason: str = "unknown") -> bool:
+async def add_points_by_tg_id(tg_id: int, amount: int, *, reason: str = "unknown") -> bool:
     return await add_self_points_by_tg_id(tg_id, amount, reason=reason)

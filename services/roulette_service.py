@@ -54,9 +54,9 @@ async def consume_self_points(tg_id: int, amount: int) -> bool:
     """Atomically deduct user self_points balance for roulette bet."""
     if amount <= 0:
         return True
-    from services.user_service import add_traffic_by_tg_id
+    from services.user_service import add_points_by_tg_id
 
-    return await add_traffic_by_tg_id(
+    return await add_points_by_tg_id(
         tg_id,
         -amount,
         reason="roulette_bet",
@@ -938,14 +938,14 @@ async def cancel_game(
         if tg_id != state.creator_tg_id:
             return False, "❌ 只有房主可以关闭等待中的房间"
         # Full refund for everyone.
-        from services.user_service import add_traffic_by_tg_id
+        from services.user_service import add_points_by_tg_id
 
         if state.bet > 0:
             for p in state.players:
                 if p.get("is_devil"):
                     continue
                 try:
-                    await add_traffic_by_tg_id(
+                    await add_points_by_tg_id(
                         p["tg_id"],
                         state.bet,
                         reason="roulette_waiting_cancel_refund",
@@ -966,10 +966,10 @@ async def cancel_game(
 
         refund = state.bet // 2
         if refund > 0:
-            from services.user_service import add_traffic_by_tg_id
+            from services.user_service import add_points_by_tg_id
 
             try:
-                await add_traffic_by_tg_id(
+                await add_points_by_tg_id(
                     tg_id,
                     refund,
                     reason="roulette_forfeit_refund",
@@ -1008,25 +1008,25 @@ async def _settle_game(state: GameState) -> str:
     is_draw = False
 
     if state.winner_tg_id == 0 and len(_alive_players(state)) > 1:
-        from services.user_service import add_traffic_by_tg_id
+        from services.user_service import add_points_by_tg_id
 
         alive_humans = [p for p in _alive_players(state) if not p.get("is_devil")]
         per_player = state.bet
         for p in alive_humans:
             try:
-                await add_traffic_by_tg_id(p["tg_id"], per_player, reason="roulette_draw_refund")
+                await add_points_by_tg_id(p["tg_id"], per_player, reason="roulette_draw_refund")
             except Exception:
                 logger.exception("Failed to refund draw for tg_id=%s", p["tg_id"])
         msgs.append(f"平局! 各退回 {per_player:,} 积分")
         is_draw = True
     elif winner and not winner.get("is_devil"):
-        from services.user_service import add_traffic_by_tg_id, add_reputation, get_user_by_tg_id
+        from services.user_service import add_points_by_tg_id, add_reputation, get_user_by_tg_id, get_self_points
 
         winnings = total_pot
         reputation_gain = 5 + len(human_players) * 3
 
         try:
-            await add_traffic_by_tg_id(winner["tg_id"], winnings, reason="roulette_winnings")
+            await add_points_by_tg_id(winner["tg_id"], winnings, reason="roulette_winnings")
         except Exception:
             logger.exception("Failed to settle roulette winnings (self_points)")
 
@@ -1041,7 +1041,11 @@ async def _settle_game(state: GameState) -> str:
         except Exception:
             logger.exception("Failed to add roulette reputation")
 
-        msgs.append(f"结算: {winner['name']} +{winnings:,}积分 +{reputation_gain}声望")
+        new_balance = await get_self_points(winner["tg_id"])
+        msgs.append(
+            f"结算: {winner['name']} +{winnings:,}积分 +{reputation_gain}声望"
+            f" (余额: {new_balance:,})"
+        )
     elif winner and winner.get("is_devil"):
         msgs.append("魔鬼获胜! 积分被吞噬")
     else:
@@ -1116,10 +1120,10 @@ async def leave_room(
 
     # Refund bet
     if state.bet > 0:
-        from services.user_service import add_traffic_by_tg_id
+        from services.user_service import add_points_by_tg_id
 
         try:
-            await add_traffic_by_tg_id(
+            await add_points_by_tg_id(
                 tg_id,
                 state.bet,
                 reason="roulette_leave_refund",

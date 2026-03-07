@@ -21,7 +21,7 @@ from services.ai_rd_service import (
 from services.company_service import add_funds, get_company_by_id
 from services.product_service import get_company_products
 from services.user_service import get_user_by_tg_id
-from utils.formatters import fmt_duration, fmt_traffic
+from utils.formatters import fmt_duration, fmt_points
 from utils.panel_owner import mark_panel
 
 router = Router()
@@ -157,9 +157,9 @@ async def cb_aird_confirm(callback: types.CallbackQuery):
         f"🧪 产品迭代确认",
         f"{'─' * 24}",
         f"产品：{product.name} v{product.version}",
-        f"当前日收入：{fmt_traffic(product.daily_income)}",
-        f"迭代费用：{fmt_traffic(cost)}",
-        f"🏦 公司积分：{fmt_traffic(company.cp_points)}",
+        f"当前日收入：{fmt_points(product.daily_income)}",
+        f"迭代费用：{fmt_points(cost)}",
+        f"🏦 公司积分：{fmt_points(company.cp_points)}",
         f"{'─' * 24}",
         f"📦 小幅改进(40%) | 📈 稳步提升(30%)",
         f"🌟 重大突破(20%) | 🏆 创新飞跃(10%)",
@@ -169,12 +169,12 @@ async def cb_aird_confirm(callback: types.CallbackQuery):
     if _rd_company_cd_seconds() > 0:
         lines.append(f"🏢 公司冷却：{fmt_duration(_rd_company_cd_seconds())}")
     if cost > company.cp_points:
-        lines.append(f"❌ 积分不足！还差 {fmt_traffic(cost - company.cp_points)}")
+        lines.append(f"❌ 积分不足！还差 {fmt_points(cost - company.cp_points)}")
 
     kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
-                text=f"✅ 确认迭代（{fmt_traffic(cost)}）",
+                text=f"✅ 确认迭代（{fmt_points(cost)}）",
                 callback_data=f"aird:exec:{product_id}:{company_id}",
             ),
             InlineKeyboardButton(text="🔙 返回", callback_data=f"aird:start:{company_id}"),
@@ -236,7 +236,7 @@ async def cb_aird_exec(callback: types.CallbackQuery):
             cost = get_rd_cost(product)
             ok = await add_funds(session, company_id, -cost)
             if not ok:
-                await callback.answer(f"公司积分不足，需要 {fmt_traffic(cost)}", show_alert=True)
+                await callback.answer(f"公司积分不足，需要 {fmt_points(cost)}", show_alert=True)
                 return
 
             # 执行迭代
@@ -275,7 +275,7 @@ async def cb_aird_exec(callback: types.CallbackQuery):
         f"🧪 迭代完成！\n"
         f"{'─' * 24}\n"
         f"{msg}\n"
-        f"💰 花费：{fmt_traffic(cost)}\n"
+        f"💰 花费：{fmt_points(cost)}\n"
         f"{'─' * 24}\n"
         f"💬 {blurb}",
         reply_markup=result_kb,

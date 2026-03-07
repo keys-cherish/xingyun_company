@@ -23,7 +23,7 @@ class GameEvent:
     name: str
     description: str
     category: str  # employee / market / pr / lucky
-    effect_type: str  # income_pct / flat_traffic / reputation / product_quality / employee
+    effect_type: str  # income_pct / flat_points / reputation / product_quality / employee
     effect_value: float  # positive = good, negative = bad
     weight: int  # probability weight
 
@@ -42,8 +42,8 @@ EVENTS: list[GameEvent] = [
     # Market events
     GameEvent("行业利好", "政策扶持，行业迎来增长", "market", "income_pct", 0.15, 8),
     GameEvent("市场低迷", "经济下行，市场需求萎缩", "market", "income_pct", -0.12, 8),
-    GameEvent("竞品暴雷", "主要竞争对手出了大问题，客户涌入", "market", "flat_traffic", 1000, 5),
-    GameEvent("供应链中断", "上游供应链出现问题，运营成本增加", "market", "flat_traffic", -500, 10),
+    GameEvent("竞品暴雷", "主要竞争对手出了大问题，客户涌入", "market", "flat_points", 1000, 5),
+    GameEvent("供应链中断", "上游供应链出现问题，运营成本增加", "market", "flat_points", -500, 10),
 
     # PR events
     GameEvent("媒体正面报道", "知名媒体发布了关于公司的正面文章", "pr", "reputation", 8, 10),
@@ -51,9 +51,9 @@ EVENTS: list[GameEvent] = [
     GameEvent("CEO演讲走红", "公司CEO的演讲视频意外走红", "pr", "reputation", 12, 5),
 
     # Lucky events
-    GameEvent("天降横财", "意外收到一笔投资", "lucky", "flat_traffic", 2000, 3),
+    GameEvent("天降横财", "意外收到一笔投资", "lucky", "flat_points", 2000, 3),
     GameEvent("中了行业大奖", "公司产品获得年度行业大奖", "lucky", "reputation", 20, 2),
-    GameEvent("服务器故障", "服务器出现严重故障，紧急修复花费不少", "lucky", "flat_traffic", -800, 7),
+    GameEvent("服务器故障", "服务器出现严重故障，紧急修复花费不少", "lucky", "flat_points", -800, 7),
 
     # Product events
     GameEvent("产品好评如潮", "用户反馈极好，产品口碑传播", "market", "product_quality", 3, 10),
@@ -62,16 +62,16 @@ EVENTS: list[GameEvent] = [
 
 # Ethics-exclusive events
 HIGH_ETHICS_EVENTS: list[GameEvent] = [
-    GameEvent("政府补贴", "道德标杆企业获得政府专项补贴", "lucky", "flat_traffic", 3000, 15),
+    GameEvent("政府补贴", "道德标杆企业获得政府专项补贴", "lucky", "flat_points", 3000, 15),
     GameEvent("ESG大奖", "公司荣获ESG最佳实践奖，声望大增", "pr", "reputation", 15, 12),
     GameEvent("人才慕名而来", "行业优秀人才被公司口碑吸引，主动加入", "employee", "employee", 2, 10),
     GameEvent("绿色合作", "环保机构邀请合作，品牌价值提升", "pr", "reputation", 10, 10),
 ]
 
 LOW_ETHICS_EVENTS: list[GameEvent] = [
-    GameEvent("内部举报", "员工向监管部门举报公司违规操作", "pr", "flat_traffic", -2000, 15),
+    GameEvent("内部举报", "员工向监管部门举报公司违规操作", "pr", "flat_points", -2000, 15),
     GameEvent("消费者抵制", "网民发起抵制运动，产品口碑暴跌", "market", "product_quality", -5, 12),
-    GameEvent("监管调查", "监管部门对公司进行专项调查", "pr", "flat_traffic", -1500, 10),
+    GameEvent("监管调查", "监管部门对公司进行专项调查", "pr", "flat_points", -1500, 10),
     GameEvent("人才流失潮", "优秀员工因公司风评离职", "employee", "employee", -2, 10),
 ]
 
@@ -217,7 +217,7 @@ async def _apply_event(session: AsyncSession, company: Company, event: GameEvent
         sign = "+" if change >= 0 else ""
         effect_desc = f"积分变动: {sign}{change}"
 
-    elif event.effect_type == "flat_traffic":
+    elif event.effect_type == "flat_points":
         amount = int(event.effect_value)
         await add_funds(session, company.id, amount)
         effect_desc = f"积分{'+' if amount > 0 else ''}{amount}"

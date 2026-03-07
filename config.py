@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # Telegram
     bot_token: str = ""
@@ -61,7 +61,7 @@ class Settings(BaseSettings):
 
     # Game constants
     shared_initial_points: int = 20_000  # 跨bot共享积分：首次注册赠送
-    initial_traffic: int = 30_000
+    initial_points: int = 30_000
     company_creation_cost: int = 15_000
     min_owner_share_pct: int = 30  # owner must hold >= 30%
     valuation_fund_coeff: float = 1.0

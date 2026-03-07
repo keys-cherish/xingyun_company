@@ -24,7 +24,7 @@ from services.realestate_service import (
     upgrade_estate,
 )
 from services.user_service import get_user_by_tg_id
-from utils.formatters import fmt_traffic
+from utils.formatters import fmt_points
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -42,7 +42,7 @@ def _estate_list_kb(estates, buildings, company_id: int, tg_id: int, owned_count
                 bld = get_building_info(e.building_type)
                 cost = calc_upgrade_cost(bld, e.level) if bld else 0
                 buttons.append([InlineKeyboardButton(
-                    text=f"⬆️ {bld['name'] if bld else e.building_type} Lv.{e.level}→{e.level+1} ({fmt_traffic(cost)})",
+                    text=f"⬆️ {bld['name'] if bld else e.building_type} Lv.{e.level}→{e.level+1} ({fmt_points(cost)})",
                     callback_data=f"realestate:upg:{company_id}:{e.id}",
                 )])
 
@@ -53,7 +53,7 @@ def _estate_list_kb(estates, buildings, company_id: int, tg_id: int, owned_count
             max_c = b.get("max_count", 99)
             if owned < max_c:
                 buttons.append([InlineKeyboardButton(
-                    text=f"🏪 {b['name']} ({fmt_traffic(b['purchase_price'])}) [{owned}/{max_c}]",
+                    text=f"🏪 {b['name']} ({fmt_points(b['purchase_price'])}) [{owned}/{max_c}]",
                     callback_data=f"realestate:buy:{company_id}:{b['key']}",
                 )])
 
@@ -71,9 +71,9 @@ async def _render_estate_list(company, estates, owned_counts: dict, total_count:
         for e in sorted_estates:
             bld = get_building_info(e.building_type)
             name = bld["name"] if bld else e.building_type
-            lines.append(f"• {name} Lv.{e.level} — {fmt_traffic(e.daily_dividend)}/日")
+            lines.append(f"• {name} Lv.{e.level} — {fmt_points(e.daily_dividend)}/日")
             total_income += e.daily_dividend
-        lines.append(f"\n💰 总地产收入: {fmt_traffic(total_income)}/日")
+        lines.append(f"\n💰 总地产收入: {fmt_points(total_income)}/日")
     else:
         lines.append("暂无地产")
 
@@ -86,8 +86,8 @@ async def _render_estate_list(company, estates, owned_counts: dict, total_count:
         max_c = b.get("max_count", 99)
         roi_days = b["purchase_price"] // b["daily_dividend"] if b["daily_dividend"] > 0 else 999
         lines.append(
-            f"  {b['name']} — {fmt_traffic(b['purchase_price'])} → "
-            f"{fmt_traffic(b['daily_dividend'])}/日 (回本{roi_days}天) [{owned}/{max_c}]"
+            f"  {b['name']} — {fmt_points(b['purchase_price'])} → "
+            f"{fmt_points(b['daily_dividend'])}/日 (回本{roi_days}天) [{owned}/{max_c}]"
         )
     return "\n".join(lines)
 
@@ -205,24 +205,24 @@ async def cb_buy_building(callback: types.CallbackQuery):
         f"{'─' * 24}",
         f"🏢 {bld['name']} — {bld['description']}",
         f"{'─' * 24}",
-        f"💰 购买价格：{fmt_traffic(bld['purchase_price'])}",
-        f"📈 日收益：{fmt_traffic(bld['daily_dividend'])}",
+        f"💰 购买价格：{fmt_points(bld['purchase_price'])}",
+        f"📈 日收益：{fmt_points(bld['daily_dividend'])}",
         f"📅 回本周期：约{roi_days}天",
         f"⬆️ 可升级至 Lv.{MAX_BUILDING_LEVEL}（每级+50%基础收益）",
         f"{'─' * 24}",
         f"📦 已拥有：{owned}/{max_c}",
         f"🏗 地产总数：{total_count}/{settings.max_total_estates}",
-        f"🏦 公司积分：{fmt_traffic(company.cp_points)}",
+        f"🏦 公司积分：{fmt_points(company.cp_points)}",
     ]
     if total_count >= settings.max_total_estates:
         lines.append(f"❌ 地产总数已达上限（{settings.max_total_estates}栋）")
     elif bld["purchase_price"] > company.cp_points:
-        lines.append(f"❌ 积分不足！还差 {fmt_traffic(bld['purchase_price'] - company.cp_points)}")
+        lines.append(f"❌ 积分不足！还差 {fmt_points(bld['purchase_price'] - company.cp_points)}")
 
     kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
-                text=f"✅ 确认购买（{fmt_traffic(bld['purchase_price'])}）",
+                text=f"✅ 确认购买（{fmt_points(bld['purchase_price'])}）",
                 callback_data=f"realestate:xbuy:{company_id}:{building_key}",
             ),
             InlineKeyboardButton(text="🔙 取消", callback_data=f"realestate:list:{company_id}"),
@@ -296,19 +296,19 @@ async def cb_upgrade_estate(callback: types.CallbackQuery):
         f"{'─' * 24}",
         f"🏢 {bld['name']} Lv.{estate.level} → Lv.{estate.level + 1}",
         f"{'─' * 24}",
-        f"💰 升级费用：{fmt_traffic(cost)}",
-        f"📈 当前日收益：{fmt_traffic(estate.daily_dividend)}",
-        f"📈 升级后日收益：{fmt_traffic(new_income)}（+{fmt_traffic(income_increase)}）",
+        f"💰 升级费用：{fmt_points(cost)}",
+        f"📈 当前日收益：{fmt_points(estate.daily_dividend)}",
+        f"📈 升级后日收益：{fmt_points(new_income)}（+{fmt_points(income_increase)}）",
         f"{'─' * 24}",
-        f"🏦 公司积分：{fmt_traffic(company.cp_points)}",
+        f"🏦 公司积分：{fmt_points(company.cp_points)}",
     ]
     if cost > company.cp_points:
-        lines.append(f"❌ 积分不足！还差 {fmt_traffic(cost - company.cp_points)}")
+        lines.append(f"❌ 积分不足！还差 {fmt_points(cost - company.cp_points)}")
 
     kb = tag_kb(InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
-                text=f"✅ 确认升级（{fmt_traffic(cost)}）",
+                text=f"✅ 确认升级（{fmt_points(cost)}）",
                 callback_data=f"realestate:xupg:{company_id}:{estate_id}",
             ),
             InlineKeyboardButton(text="🔙 取消", callback_data=f"realestate:list:{company_id}"),

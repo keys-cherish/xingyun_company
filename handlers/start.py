@@ -43,7 +43,7 @@ from db.engine import async_session
 from keyboards.menus import main_menu_kb, tag_kb
 from services.company_service import get_companies_by_owner
 from services.user_service import get_or_create_user
-from utils.formatters import fmt_traffic, compact_number
+from utils.formatters import fmt_points, compact_number
 from utils.panel_owner import mark_panel
 
 router = Router()
@@ -140,7 +140,7 @@ async def cmd_start(message: types.Message):
     if created:
         sent = await message.reply(
             f"欢迎加入 商业帝国!\n"
-            f"当前个人积分: {fmt_traffic(self_points)}\n\n"
+            f"当前个人积分: {fmt_points(self_points)}\n\n"
             f"使用下方菜单开始游戏:",
             reply_markup=main_menu_kb(tg_id=tg_id),
         )
@@ -186,7 +186,7 @@ async def cb_menu_profile(callback: types.CallbackQuery):
     text = (
         f"📊 个人面板 — {callback.from_user.full_name}\n"
         f"{'─' * 24}\n"
-        f"💰 个人积分: {fmt_traffic(self_points)} / {fmt_traffic(max_points)}\n"
+        f"💰 个人积分: {fmt_points(self_points)} / {fmt_points(max_points)}\n"
         f"⭐ 声望: {reputation}\n"
         f"🏢 公司: {company_names}\n"
     )

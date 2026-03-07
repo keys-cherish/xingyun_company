@@ -134,12 +134,12 @@ async def cb_quest_detail(callback: types.CallbackQuery):
         await callback.answer("任务不存在", show_alert=True)
         return
 
-    from utils.formatters import fmt_traffic
+    from utils.formatters import fmt_points
     reward_parts = []
     if q["reward_points"]:
         reward_parts.append(f"积分+{q['reward_points']}")
     if q["reward_currency"]:
-        reward_parts.append(f"+{fmt_traffic(q['reward_currency'])}")
+        reward_parts.append(f"+{fmt_points(q['reward_currency'])}")
 
     await callback.answer(
         f"{q['name']}: {q['description']}\n奖励: {' | '.join(reward_parts)}",

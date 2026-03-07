@@ -10,8 +10,8 @@ def fmt_currency(amount: int) -> str:
     return f"{amount:,} {CURRENCY_NAME}"
 
 
-def fmt_traffic(amount: int) -> str:
-    """Format user/company credits (legacy name kept for compatibility)."""
+def fmt_points(amount: int) -> str:
+    """Format user/company points amount."""
     return fmt_currency(amount)
 
 

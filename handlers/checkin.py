@@ -10,7 +10,7 @@ from commands import CMD_CHECKIN
 from db.engine import async_session
 from keyboards.menus import tag_kb
 from services.checkin_service import do_checkin
-from services.user_service import get_or_create_user, add_traffic
+from services.user_service import get_or_create_user, add_points
 from utils.panel_owner import mark_panel
 
 router = Router()
@@ -71,7 +71,7 @@ async def _do_checkin(event: types.Message | types.CallbackQuery, tg_id: int, *,
                 user = await get_user_by_tg_id(session, tg_id)
                 if user:
                     # 打卡奖励发到个人积分
-                    await add_traffic(session, user.id, reward, reason="每日打卡")
+                    await add_points(session, user.id, reward, reason="每日打卡")
                     msg += "\n\n💰 奖励已存入个人账户"
 
     kb = InlineKeyboardMarkup(inline_keyboard=[

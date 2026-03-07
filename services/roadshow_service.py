@@ -13,7 +13,7 @@ from config import settings
 from db.models import Roadshow
 from services.company_service import add_funds
 from services.user_service import add_self_points, add_reputation
-from utils.formatters import fmt_traffic
+from utils.formatters import fmt_points
 
 ROADSHOW_TYPES = ["技术展会", "投资峰会", "媒体发布会", "行业论坛"]
 ROADSHOW_DAILY_KEY_PREFIX = "roadshow_daily"
@@ -27,7 +27,7 @@ REWARD_TABLE = [
     {"weight": 10, "type": "jackpot", "min": 2000, "max": 5000},
 ]
 
-STORIES_TRAFFIC = [
+STORIES_CP_POINTS = [
     "台下两位对手当场抬价抢人，原本冷清的会场突然像拍卖厅。",
     "演示中设备几乎失控，但你硬把失误说成“反脆弱设计”，全场居然买账。",
     "你刚讲完第三页，后排投资人直接把意向书拍到桌上，要求今天就签。",
@@ -56,7 +56,7 @@ STORIES_JACKPOT = [
 ]
 
 STORIES_BY_TYPE = {
-    "cp_points": STORIES_TRAFFIC,
+    "cp_points": STORIES_CP_POINTS,
     "reputation": STORIES_REPUTATION,
     "self_points": STORIES_POINTS,
     "jackpot": STORIES_JACKPOT,
@@ -187,7 +187,7 @@ async def do_roadshow(
 
     ok = await add_funds(session, company_id, -settings.roadshow_cost)
     if not ok:
-        return False, f"公司积分不足，路演需要 {fmt_traffic(settings.roadshow_cost)}"
+        return False, f"公司积分不足，路演需要 {fmt_points(settings.roadshow_cost)}"
 
     rs_type = random.choice(ROADSHOW_TYPES)
     satire_chance = _clamp_rate(settings.roadshow_satire_chance)
@@ -209,7 +209,7 @@ async def do_roadshow(
         if rs_multiplier > 1.0:
             amount = int(amount * rs_multiplier)
 
-        story = random.choice(STORIES_BY_TYPE.get(reward["type"], STORIES_TRAFFIC))
+        story = random.choice(STORIES_BY_TYPE.get(reward["type"], STORIES_CP_POINTS))
         score = _normal_score_by_reward(reward["type"])
         review = random.choice(
             [
@@ -224,7 +224,7 @@ async def do_roadshow(
         if reward["type"] in {"cp_points", "jackpot"}:
             await add_funds(session, company_id, amount)
             bonus = amount
-            reward_line = f"💵 积分 +{fmt_traffic(amount)}"
+            reward_line = f"💵 积分 +{fmt_points(amount)}"
         elif reward["type"] == "reputation":
             await add_reputation(session, owner_user_id, amount)
             rep_gained = amount

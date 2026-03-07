@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from db.models import Company, Product, Shareholder, User
-from services.user_service import add_traffic
+from services.user_service import add_points
 
 _company_types: dict | None = None
 
@@ -52,14 +52,14 @@ async def create_company(
     if exists.scalar_one_or_none():
         return None, "公司名称已存在"
 
-    # 先保存owner_id，因为add_traffic会expire owner对象
+    # 先保存owner_id，因为add_points会expire owner对象
     owner_id = owner.id
 
     # Deduct self_points
-    ok = await add_traffic(session, owner_id, -settings.company_creation_cost)
+    ok = await add_points(session, owner_id, -settings.company_creation_cost)
     if not ok:
-        from utils.formatters import fmt_traffic
-        return None, f"积分不足，创建公司需要 {fmt_traffic(settings.company_creation_cost)}"
+        from utils.formatters import fmt_points
+        return None, f"积分不足，创建公司需要 {fmt_points(settings.company_creation_cost)}"
 
     type_info = types[company_type]
     company = Company(
@@ -270,7 +270,7 @@ async def upgrade_company(
     company_id: int,
 ) -> tuple[bool, str]:
     """Upgrade company to next level. Requires funds + employees + products + techs + revenue."""
-    from utils.formatters import fmt_traffic
+    from utils.formatters import fmt_points
     from services.rules.company_rules import UPGRADE_GUARD_RULES, UPGRADE_REQUIREMENT_RULES
     from utils.rules import check_rules_sequential, check_rules_parallel
 
@@ -311,6 +311,6 @@ async def upgrade_company(
     return True, (
         f"🎉 升级成功! {company.name} → Lv.{next_level}「{next_info['name']}」\n"
         f"{'─' * 24}\n"
-        f"永久日营收加成: +{fmt_traffic(next_info['daily_revenue_bonus'])}\n"
+        f"永久日营收加成: +{fmt_points(next_info['daily_revenue_bonus'])}\n"
         f"员工上限: +{next_info['employee_limit_bonus']}"
     )

@@ -120,19 +120,30 @@ def extract_image_urls(text: str) -> list[str]:
 
 # ── XML Tool Call Fallback (for models that emit <xtoolcall> in text) ────
 
+# Format 1: <xtoolcall name="fn_name">{"arg": "val"}</xtoolcall>
 _XTOOLCALL_RE = _re.compile(
     r'<xtoolcall\s+name="([^"]+)"[^>]*>(.*?)</xtoolcall>',
     _re.DOTALL,
 )
 
+# Format 2: <xtool_call>{"name": "fn_name", "arguments": {...}}</xtool_call>
+_XTOOL_CALL_JSON_RE = _re.compile(
+    r'<xtool_call>(.*?)</xtool_call>',
+    _re.DOTALL,
+)
+
 
 def _parse_xml_tool_calls(text: str) -> list[dict] | None:
-    """Parse <xtoolcall> XML-style tool calls from model text content."""
-    matches = _XTOOLCALL_RE.findall(text)
-    if not matches:
-        return None
+    """Parse XML-style tool calls from model text content.
+
+    Supports two formats:
+    1. <xtoolcall name="fn">args_json</xtoolcall>
+    2. <xtool_call>{"name": "fn", "arguments": {...}}</xtool_call>
+    """
     tool_calls = []
-    for i, (name, args_str) in enumerate(matches):
+
+    # Format 1
+    for i, (name, args_str) in enumerate(_XTOOLCALL_RE.findall(text)):
         args_str = args_str.strip()
         try:
             args = json.loads(args_str) if args_str else {}
@@ -141,12 +152,28 @@ def _parse_xml_tool_calls(text: str) -> list[dict] | None:
         tool_calls.append({
             "id": f"xml_tc_{i}",
             "type": "function",
-            "function": {
-                "name": name,
-                "arguments": json.dumps(args),
-            },
+            "function": {"name": name, "arguments": json.dumps(args)},
         })
-    return tool_calls
+
+    # Format 2 (grok-style)
+    for j, body in enumerate(_XTOOL_CALL_JSON_RE.findall(text)):
+        body = body.strip()
+        try:
+            parsed = json.loads(body)
+            name = parsed.get("name", "")
+            args = parsed.get("arguments", {})
+            if isinstance(args, str):
+                args = json.loads(args)
+            if name:
+                tool_calls.append({
+                    "id": f"xml_tc2_{j}",
+                    "type": "function",
+                    "function": {"name": name, "arguments": json.dumps(args)},
+                })
+        except Exception:
+            pass
+
+    return tool_calls if tool_calls else None
 
 
 # ── Company-Related Intent Detection ─────────────────────────────────────

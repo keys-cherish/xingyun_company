@@ -267,7 +267,13 @@ async def cleanup_excess_user_traffic(session: AsyncSession) -> list[str]:
 
     for user in over_users:
         overflow = user.self_points - max_traffic
-        user.self_points = max_traffic
+        from services.user_service import add_self_points_by_user_id
+        await add_self_points_by_user_id(
+            session,
+            user.id,
+            -overflow,
+            reason="integrity_cap_self_points",
+        )
 
         # Try to invest overflow into user's company
         if overflow > 0:

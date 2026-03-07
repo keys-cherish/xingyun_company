@@ -59,7 +59,11 @@ async def get_or_create_user(session: AsyncSession, tg_id: int, tg_name: str) ->
 
 async def get_user_by_tg_id(session: AsyncSession, tg_id: int) -> User | None:
     result = await session.execute(select(User).where(User.tg_id == tg_id))
-    return result.scalar_one_or_none()
+    user = result.scalar_one_or_none()
+    if user is None:
+        return None
+    await _sync_user_points_with_shared(session, user, reason="shared_points_sync_lookup")
+    return user
 
 
 async def add_self_points_by_user_id(
@@ -194,31 +198,48 @@ async def _migrate_legacy_honor_points(session: AsyncSession, user: User) -> int
 
 
 async def _merge_local_points_into_shared_once(user: User) -> float:
-    """One-way merge on first sync: shared += local self_points (no data loss)."""
+    """Merge local points into shared safely.
+
+    - First sync: shared += local self_points (historical bootstrap)
+    - Later syncs: if local > shared_ceiling, patch shared by the positive delta
+      to avoid any data loss caused by legacy local-only writes.
+    """
     r = await get_points_redis()
     lua = """
 local points_key = KEYS[1]
 local mark_key = KEYS[2]
 local local_points = tonumber(ARGV[1]) or 0
 
-local merged
+local function ceil_pos(x)
+    if x <= 0 then
+        return 0
+    end
+    return math.ceil(x)
+end
+
+local merged_num
 if redis.call('SETNX', mark_key, '1') == 1 then
     if local_points ~= 0 then
-        merged = redis.call('INCRBYFLOAT', points_key, local_points)
+        merged_num = tonumber(redis.call('INCRBYFLOAT', points_key, local_points) or '0')
     else
         if redis.call('EXISTS', points_key) == 0 then
             redis.call('SET', points_key, '0')
         end
-        merged = redis.call('GET', points_key)
+        merged_num = tonumber(redis.call('GET', points_key) or '0')
     end
 else
-    merged = redis.call('GET', points_key)
-    if not merged then
-        merged = '0'
-        redis.call('SET', points_key, merged)
+    merged_num = tonumber(redis.call('GET', points_key) or '0')
+    if merged_num == nil then
+        merged_num = 0
+        redis.call('SET', points_key, '0')
+    end
+    local shared_int = ceil_pos(merged_num)
+    if local_points > shared_int then
+        local delta = local_points - shared_int
+        merged_num = tonumber(redis.call('INCRBYFLOAT', points_key, delta) or merged_num)
     end
 end
-return tostring(merged)
+return tostring(merged_num)
 """
     raw = await r.eval(lua, 2, _shared_points_key(user.tg_id), _shared_sync_mark_key(user.tg_id), user.self_points)
     return float(raw or 0.0)
@@ -287,6 +308,12 @@ async def _mirror_shared_to_local(
     return int(user.self_points)
 
 
+async def _sync_user_points_with_shared(session: AsyncSession, user: User, *, reason: str) -> int:
+    await _migrate_legacy_honor_points(session, user)
+    shared = await _merge_local_points_into_shared_once(user)
+    return await _mirror_shared_to_local(session, user, reason=reason, shared_value=shared)
+
+
 async def get_self_points(tg_id: int) -> int:
     """Get personal points by Telegram ID."""
     from db.engine import async_session
@@ -296,9 +323,7 @@ async def get_self_points(tg_id: int) -> int:
             user = await get_user_by_tg_id(session, tg_id)
             if user is None:
                 return 0
-            await _migrate_legacy_honor_points(session, user)
-            await _merge_local_points_into_shared_once(user)
-            return await _mirror_shared_to_local(session, user, reason="shared_points_sync_read")
+            return await _sync_user_points_with_shared(session, user, reason="shared_points_sync_read")
 
 
 async def add_self_points_by_tg_id(
@@ -315,7 +340,6 @@ async def add_self_points_by_tg_id(
             user = await get_user_by_tg_id(session, tg_id)
             if user is None:
                 return False
-            await _migrate_legacy_honor_points(session, user)
             return await add_self_points_by_user_id(session, user.id, amount, reason=reason)
 
 
@@ -334,7 +358,7 @@ async def add_self_points(
         user = await session.get(User, tg_id_or_user_id)
         if user is None:
             return 0
-        await _migrate_legacy_honor_points(session, user)
+        await _sync_user_points_with_shared(session, user, reason="shared_points_sync_session_add")
         ok = await add_self_points_by_user_id(session, user.id, amount, reason=reason)
         return int(user.self_points) if ok else 0
 
@@ -361,9 +385,14 @@ async def sync_all_users_to_shared_points() -> tuple[int, int]:
             total = len(users)
             for user in users:
                 await _migrate_legacy_honor_points(session, user)
-                await _merge_local_points_into_shared_once(user)
+                shared = await _merge_local_points_into_shared_once(user)
                 before = int(user.self_points)
-                after = await _mirror_shared_to_local(session, user, reason="shared_points_backfill")
+                after = await _mirror_shared_to_local(
+                    session,
+                    user,
+                    reason="shared_points_backfill",
+                    shared_value=shared,
+                )
                 if after != before:
                     changed += 1
     return total, changed

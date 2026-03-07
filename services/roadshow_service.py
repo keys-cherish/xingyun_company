@@ -209,6 +209,13 @@ async def do_roadshow(
         if rs_multiplier > 1.0:
             amount = int(amount * rs_multiplier)
 
+        # Research buff: roadshow_bonus
+        from services.research_service import get_research_buffs
+        research_buffs = await get_research_buffs(session, company_id)
+        rs_research_bonus = research_buffs.get("roadshow_bonus", 0.0)
+        if rs_research_bonus > 0:
+            amount = int(amount * (1.0 + rs_research_bonus))
+
         story = random.choice(STORIES_BY_TYPE.get(reward["type"], STORIES_CP_POINTS))
         score = _normal_score_by_reward(reward["type"])
         review = random.choice(

@@ -193,12 +193,21 @@ async def roll_daily_events(session: AsyncSession, company: Company) -> list[str
     from services.shop_service import should_skip_negative_event, consume_buff
     has_hedge = await should_skip_negative_event(company.id)
 
+    # Research buff: event_protection reduces negative events
+    from services.research_service import get_research_buffs
+    research_buffs = await get_research_buffs(session, company.id)
+    event_prot = research_buffs.get("event_protection", 0.0)
+
     for event in unique:
-        if has_hedge and event.effect_value < 0:
-            await consume_buff(company.id, "risk_hedge")
-            messages.append(f"🛡 【风险对冲】成功抵御了「{event.name}」!")
-            has_hedge = False
-            continue
+        if event.effect_value < 0:
+            if has_hedge:
+                await consume_buff(company.id, "risk_hedge")
+                messages.append(f"🛡 【风险对冲】成功抵御了「{event.name}」!")
+                has_hedge = False
+                continue
+            if event_prot > 0 and random.random() < event_prot:
+                messages.append(f"🔬 【科研防护】规避了「{event.name}」!")
+                continue
         msg = await _apply_event(session, company, event)
         if is_newbie and event.effect_value > 0 and not any("新手高光" in m for m in messages):
             messages.append(f"🌟 【新手高光】好运降临新公司！")

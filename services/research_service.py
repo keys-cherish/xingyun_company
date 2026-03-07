@@ -31,44 +31,52 @@ RESEARCH_SYNC_MIN_INTERVAL_SECONDS = 15
 
 COMPANY_RESEARCH_DIRECTIONS: dict[str, list[dict[str, list[str] | str]]] = {
     "tech": [
-        {"name": "AI智能方向", "tech_ids": ["social_platform", "big_data", "ai_recommend"]},
-        {"name": "云算力方向", "tech_ids": ["cloud_computing", "quantum_computing"]},
-        {"name": "未来生态方向", "tech_ids": ["blockchain", "metaverse", "agi"]},
+        {"name": "AI智能方向", "tech_ids": ["social_platform", "big_data", "ai_recommend", "smart_marketing", "advanced_analytics", "ai_automation"]},
+        {"name": "云算力方向", "tech_ids": ["cloud_computing", "quantum_computing", "cloud_security"]},
+        {"name": "未来生态方向", "tech_ids": ["blockchain", "metaverse", "agi", "distributed_ledger"]},
+        {"name": "企业提升", "tech_ids": ["efficiency_mgmt", "talent_network"]},
     ],
     "finance": [
-        {"name": "金融科技方向", "tech_ids": ["blockchain", "ai_recommend"]},
-        {"name": "风控数据方向", "tech_ids": ["big_data", "cloud_computing"]},
-        {"name": "资产数字化方向", "tech_ids": ["ecommerce", "metaverse", "agi"]},
+        {"name": "金融科技方向", "tech_ids": ["blockchain", "ai_recommend", "distributed_ledger", "ai_automation"]},
+        {"name": "风控数据方向", "tech_ids": ["big_data", "cloud_computing", "advanced_analytics", "cloud_security"]},
+        {"name": "资产数字化方向", "tech_ids": ["ecommerce", "metaverse", "agi", "supply_chain_opt"]},
+        {"name": "企业提升", "tech_ids": ["efficiency_mgmt", "talent_network"]},
     ],
     "media": [
-        {"name": "内容分发方向", "tech_ids": ["social_platform", "ai_recommend"]},
-        {"name": "商业变现方向", "tech_ids": ["ecommerce", "big_data"]},
-        {"name": "沉浸互动方向", "tech_ids": ["metaverse", "cloud_computing", "quantum_computing"]},
+        {"name": "内容分发方向", "tech_ids": ["social_platform", "ai_recommend", "smart_marketing", "ai_automation"]},
+        {"name": "商业变现方向", "tech_ids": ["ecommerce", "big_data", "supply_chain_opt", "advanced_analytics"]},
+        {"name": "沉浸互动方向", "tech_ids": ["metaverse", "cloud_computing", "quantum_computing", "cloud_security"]},
+        {"name": "企业提升", "tech_ids": ["efficiency_mgmt", "talent_network"]},
     ],
     "manufacturing": [
-        {"name": "工业上云方向", "tech_ids": ["cloud_computing", "big_data"]},
-        {"name": "供应链方向", "tech_ids": ["ecommerce", "blockchain"]},
-        {"name": "智能工厂方向", "tech_ids": ["ai_recommend", "quantum_computing", "agi"]},
+        {"name": "工业上云方向", "tech_ids": ["cloud_computing", "big_data", "cloud_security", "advanced_analytics"]},
+        {"name": "供应链方向", "tech_ids": ["ecommerce", "blockchain", "supply_chain_opt", "distributed_ledger"]},
+        {"name": "智能工厂方向", "tech_ids": ["ai_recommend", "quantum_computing", "agi", "ai_automation"]},
+        {"name": "企业提升", "tech_ids": ["efficiency_mgmt", "talent_network"]},
     ],
     "realestate": [
-        {"name": "智慧楼宇方向", "tech_ids": ["cloud_computing", "big_data"]},
-        {"name": "资产交易方向", "tech_ids": ["blockchain", "ecommerce"]},
-        {"name": "虚拟地产方向", "tech_ids": ["metaverse", "ai_recommend", "agi"]},
+        {"name": "智慧楼宇方向", "tech_ids": ["cloud_computing", "big_data", "cloud_security", "advanced_analytics"]},
+        {"name": "资产交易方向", "tech_ids": ["blockchain", "ecommerce", "distributed_ledger", "supply_chain_opt"]},
+        {"name": "虚拟地产方向", "tech_ids": ["metaverse", "ai_recommend", "agi", "ai_automation"]},
+        {"name": "企业提升", "tech_ids": ["efficiency_mgmt", "talent_network"]},
     ],
     "biotech": [
-        {"name": "生物数据方向", "tech_ids": ["big_data", "cloud_computing"]},
-        {"name": "智能研发方向", "tech_ids": ["ai_recommend", "quantum_computing"]},
-        {"name": "前沿医学方向", "tech_ids": ["blockchain", "metaverse", "agi"]},
+        {"name": "生物数据方向", "tech_ids": ["big_data", "cloud_computing", "advanced_analytics", "cloud_security"]},
+        {"name": "智能研发方向", "tech_ids": ["ai_recommend", "quantum_computing", "ai_automation"]},
+        {"name": "前沿医学方向", "tech_ids": ["blockchain", "metaverse", "agi", "distributed_ledger"]},
+        {"name": "企业提升", "tech_ids": ["efficiency_mgmt", "talent_network"]},
     ],
     "gaming": [
-        {"name": "社交玩法方向", "tech_ids": ["social_platform", "metaverse"]},
-        {"name": "数据运营方向", "tech_ids": ["big_data", "ai_recommend"]},
-        {"name": "云游戏方向", "tech_ids": ["cloud_computing", "blockchain", "quantum_computing"]},
+        {"name": "社交玩法方向", "tech_ids": ["social_platform", "metaverse", "smart_marketing"]},
+        {"name": "数据运营方向", "tech_ids": ["big_data", "ai_recommend", "advanced_analytics", "ai_automation"]},
+        {"name": "云游戏方向", "tech_ids": ["cloud_computing", "blockchain", "quantum_computing", "cloud_security", "distributed_ledger"]},
+        {"name": "企业提升", "tech_ids": ["efficiency_mgmt", "talent_network"]},
     ],
     "consulting": [
-        {"name": "数据咨询方向", "tech_ids": ["big_data", "ai_recommend"]},
-        {"name": "数字化方向", "tech_ids": ["cloud_computing", "ecommerce"]},
-        {"name": "创新战略方向", "tech_ids": ["blockchain", "metaverse", "agi"]},
+        {"name": "数据咨询方向", "tech_ids": ["big_data", "ai_recommend", "advanced_analytics", "ai_automation"]},
+        {"name": "数字化方向", "tech_ids": ["cloud_computing", "ecommerce", "cloud_security", "supply_chain_opt"]},
+        {"name": "创新战略方向", "tech_ids": ["blockchain", "metaverse", "agi", "distributed_ledger"]},
+        {"name": "企业提升", "tech_ids": ["efficiency_mgmt", "talent_network"]},
     ],
 }
 
@@ -133,12 +141,15 @@ def get_company_direction_product_lines(company_type: str) -> list[dict[str, lis
     return direction_lines
 
 
-def get_effective_research_duration_seconds(tech: dict, company_type: str, tech_id: str) -> int:
+def get_effective_research_duration_seconds(
+    tech: dict, company_type: str, tech_id: str, *, research_buffs: dict[str, float] | None = None,
+) -> int:
     base = int(tech.get("duration_seconds", settings.base_research_seconds))
     type_info = get_company_type_info(company_type)
     speed_bonus = float(type_info.get("research_speed_bonus", 0.0)) if type_info else 0.0
     focus_bonus = 0.15 if tech_id in get_company_focus_tech_ids(company_type) else 0.0
-    multiplier = max(0.35, 1.0 - speed_bonus - focus_bonus)
+    tech_buff_bonus = float((research_buffs or {}).get("research_speed", 0.0))
+    multiplier = max(0.25, 1.0 - speed_bonus - focus_bonus - tech_buff_bonus)
     return max(300, int(base * multiplier))
 
 
@@ -147,6 +158,8 @@ def get_effective_research_cost(
     completed_count: int,
     company_type: str,
     tech_id: str,
+    *,
+    research_buffs: dict[str, float] | None = None,
 ) -> int:
     """Calculate dynamic research cost for both UI display and actual deduction."""
     base_cost = int(tech.get("cost", settings.base_research_cost))
@@ -154,6 +167,9 @@ def get_effective_research_cost(
     cost = max(base_cost, scaled_cost)
     if tech_id in get_company_focus_tech_ids(company_type):
         cost = int(cost * 0.9)
+    cost_reduction = float((research_buffs or {}).get("research_cost_reduction", 0.0))
+    if cost_reduction > 0:
+        cost = max(base_cost, int(cost * (1.0 - cost_reduction)))
     return cost
 
 
@@ -211,6 +227,7 @@ async def get_available_techs(session: AsyncSession, company_id: int) -> list[di
 
     company = await session.get(Company, company_id)
     company_type = company.company_type if company else "tech"
+    buffs = await get_research_buffs(session, company_id)
     available = []
     for tech_id, info in tree.items():
         if not is_tech_allowed_for_company(company_type, tech_id):
@@ -221,13 +238,14 @@ async def get_available_techs(session: AsyncSession, company_id: int) -> list[di
         if all(p in completed for p in prereqs):
             tech = {"tech_id": tech_id, **info}
             tech["effective_duration_seconds"] = get_effective_research_duration_seconds(
-                info, company_type, tech_id
+                info, company_type, tech_id, research_buffs=buffs,
             )
             tech["research_cost"] = get_effective_research_cost(
                 info,
                 completed_count,
                 company_type,
                 tech_id,
+                research_buffs=buffs,
             )
             available.append(tech)
     return available
@@ -257,13 +275,15 @@ async def start_research(
     company = await session.get(Company, company_id)
     tech = tree.get(tech_id, {})
 
-    # 计算科研成本
+    # 计算科研成本（含研发buff）
     company_type = company.company_type if company else "tech"
+    buffs = await get_research_buffs(session, company_id)
     research_cost = get_effective_research_cost(
         tech,
         completed_count,
         company_type,
         tech_id,
+        research_buffs=buffs,
     )
 
     # 构建上下文
@@ -310,7 +330,7 @@ async def start_research(
     from utils.formatters import fmt_duration
     # 重新获取公司信息（可能已被刷新）
     company = await session.get(Company, company_id)
-    duration_sec = get_effective_research_duration_seconds(tech, company.company_type, tech_id)
+    duration_sec = get_effective_research_duration_seconds(tech, company.company_type, tech_id, research_buffs=buffs)
     duration_str = fmt_duration(duration_sec)
     return True, (
         f"开始研究「{tech['name']}」，预计{duration_str}完成 "
@@ -377,3 +397,20 @@ def get_tech_tree_display() -> list[dict]:
     """Return the full tech tree for display purposes."""
     tree = _load_tech_tree()
     return [{"tech_id": k, **v} for k, v in tree.items()]
+
+
+async def get_research_buffs(session: AsyncSession, company_id: int) -> dict[str, float]:
+    """Get accumulated buff effects from completed research.
+
+    Returns dict mapping buff_type -> total_value, e.g.:
+        {"income_bonus": 0.08, "cost_reduction": 0.05, "employee_limit": 15}
+    """
+    tree = _load_tech_tree()
+    completed = await get_completed_techs(session, company_id)
+    buffs: dict[str, float] = {}
+    for tech_id in completed:
+        tech = tree.get(tech_id, {})
+        buff = tech.get("buff")
+        if buff:
+            buffs[buff["type"]] = buffs.get(buff["type"], 0) + float(buff["value"])
+    return buffs

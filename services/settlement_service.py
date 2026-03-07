@@ -195,6 +195,8 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
     await update_quest_progress(session, company.owner_id, "employee_count", current_value=company.employee_count)
 
     # 步骤3: 计算成本
+    from services.research_service import get_research_buffs
+    research_buffs = await get_research_buffs(session, company.id)
     type_info = get_company_type_info(company.company_type)
     extra_costs = calc_extra_operating_costs(
         profile,
@@ -207,7 +209,8 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
     reg_audit = run_regulation_audit(profile, income.total, now_utc)
     fine = int(reg_audit["fine"])
 
-    costs = compute_costs(income, company, profile, type_info, extra_costs, fine)
+    costs = compute_costs(income, company, profile, type_info, extra_costs, fine,
+                          research_buffs=research_buffs)
 
     # 步骤4: 最终结算
     result = await finalize_settlement(session, company, income, penalties, costs)

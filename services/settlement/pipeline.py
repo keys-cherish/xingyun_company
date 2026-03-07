@@ -104,6 +104,13 @@ async def compute_base_income(
     if immoral_mult > 1.0:
         breakdown.immoral_buff = int(breakdown.product_income * (immoral_mult - 1.0))
 
+    # 12. Research buff (科研加成)
+    from services.research_service import get_research_buffs
+    research_buffs = await get_research_buffs(session, company.id)
+    income_bonus = research_buffs.get("income_bonus", 0.0)
+    if income_bonus > 0:
+        breakdown.research_buff = int(breakdown.product_income * income_bonus)
+
     return breakdown
 
 
@@ -182,6 +189,8 @@ def compute_costs(
     type_info: dict | None,
     extra_costs: dict,
     regulation_fine: int,
+    *,
+    research_buffs: dict[str, float] | None = None,
 ) -> CostBreakdown:
     """步骤3: 计算成本（纯函数）。
 
@@ -223,6 +232,13 @@ def compute_costs(
 
     # Regulation fine
     breakdown.regulation_fine = regulation_fine
+
+    # Research buff: cost reduction
+    cost_reduction = float((research_buffs or {}).get("cost_reduction", 0.0))
+    if cost_reduction > 0:
+        reducible = breakdown.base_operating + breakdown.office_cost + breakdown.training_cost
+        saving = int(reducible * cost_reduction)
+        breakdown.base_operating = max(0, breakdown.base_operating - saving)
 
     return breakdown
 

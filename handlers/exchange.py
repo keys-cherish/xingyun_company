@@ -180,10 +180,35 @@ async def cb_shop_select(callback: types.CallbackQuery):
         return
 
     if len(companies) == 1:
-        async with async_session() as session:
-            async with session.begin():
-                ok, msg = await buy_item(session, tg_id, companies[0].id, item_key)
-        await callback.answer(msg, show_alert=True)
+        # Show confirmation before buying
+        item = items[item_key]
+        price = item["price"]
+        price_note = ""
+        if item_key == "speed_research":
+            r = await get_redis()
+            count_str = await r.get(f"research_accel_count:{companies[0].id}")
+            accel_count = int(count_str) if count_str else 0
+            if accel_count >= 3:
+                await callback.answer("本轮研发加速已达上限（最多3次）", show_alert=True)
+                return
+            price = item["price"] * (2 ** accel_count)
+            price_note = f"\n(第{accel_count + 1}次加速)"
+
+        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+        buttons = [
+            [InlineKeyboardButton(
+                text=f"确认购买 ({price:,} 积分)",
+                callback_data=f"shop:buy:{item_key}:{companies[0].id}:{source_token}",
+            )],
+            [InlineKeyboardButton(text="取消", callback_data=f"shop:list:{source_token}")],
+        ]
+        await callback.message.edit_text(
+            f"确认购买 {item['name']}?\n"
+            f"价格: {price:,} 积分{price_note}\n"
+            f"{item['description']}",
+            reply_markup=tag_kb(InlineKeyboardMarkup(inline_keyboard=buttons), tg_id),
+        )
+        await callback.answer()
         return
 
     # Multiple companies

@@ -109,8 +109,11 @@ async def cb_research_list(callback: types.CallbackQuery, company_id: int | None
     if completed:
         lines.append("✅ 已完成科技:")
         for tid in completed:
-            name = tree.get(tid, {}).get("name", tid)
-            lines.append(f"  • {name}")
+            info = tree.get(tid, {})
+            name = info.get("name", tid)
+            buff = info.get("buff")
+            buff_label = f" [{buff['label']}]" if buff else ""
+            lines.append(f"  • {name}{buff_label}")
 
     if in_progress:
         lines.append("")
@@ -143,6 +146,10 @@ async def cb_research_list(callback: types.CallbackQuery, company_id: int | None
     lines.append("")
     if available:
         lines.append("🆕 可研究科技:")
+        for t in available:
+            buff = t.get("buff")
+            if buff:
+                lines.append(f"  • {t['name']}: {buff['label']}")
     else:
         lines.append("暂无可研究科技")
 

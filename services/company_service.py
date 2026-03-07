@@ -213,7 +213,7 @@ def get_level_employee_bonus(level: int) -> int:
     return total
 
 
-def get_company_employee_limit(level: int, company_type: str | None = None) -> int:
+def get_company_employee_limit(level: int, company_type: str | None = None, *, research_employee_bonus: int = 0) -> int:
     """Calculate company employee limit with level curve and hard cap."""
     max_level = max(1, get_max_level())
     safe_level = max(1, min(level, max_level))
@@ -231,7 +231,7 @@ def get_company_employee_limit(level: int, company_type: str | None = None) -> i
     )
 
     linear_legacy = settings.employee_limit_per_level * (safe_level - 1)
-    total = scaled_limit + linear_legacy + get_level_employee_bonus(safe_level)
+    total = scaled_limit + linear_legacy + get_level_employee_bonus(safe_level) + research_employee_bonus
     if company_type:
         type_info = get_company_type_info(company_type)
         if type_info and type_info.get("extra_employee_limit"):

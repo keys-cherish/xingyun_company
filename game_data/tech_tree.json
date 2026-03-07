@@ -16,7 +16,8 @@
       "duration_seconds": 7200,
       "prerequisites": ["basic_internet"],
       "reputation_reward": 10,
-      "unlocks_products": ["social_app"]
+      "unlocks_products": ["social_app"],
+      "buff": {"type": "income_bonus", "value": 0.03, "label": "产品收入+3%"}
     },
     "ecommerce": {
       "name": "电子商务",
@@ -25,7 +26,8 @@
       "duration_seconds": 10800,
       "prerequisites": ["basic_internet"],
       "reputation_reward": 10,
-      "unlocks_products": ["online_shop"]
+      "unlocks_products": ["online_shop"],
+      "buff": {"type": "cost_reduction", "value": 0.03, "label": "运营成本-3%"}
     },
     "cloud_computing": {
       "name": "云计算",
@@ -34,7 +36,8 @@
       "duration_seconds": 14400,
       "prerequisites": ["basic_internet"],
       "reputation_reward": 15,
-      "unlocks_products": ["cloud_service"]
+      "unlocks_products": ["cloud_service"],
+      "buff": {"type": "research_speed", "value": 0.05, "label": "研发速度+5%"}
     },
     "big_data": {
       "name": "大数据",
@@ -43,7 +46,8 @@
       "duration_seconds": 18000,
       "prerequisites": ["social_platform", "ecommerce"],
       "reputation_reward": 15,
-      "unlocks_products": ["data_platform"]
+      "unlocks_products": ["data_platform"],
+      "buff": {"type": "product_quality", "value": 3, "label": "产品品质+3"}
     },
     "ai_recommend": {
       "name": "AI推荐系统",
@@ -52,7 +56,8 @@
       "duration_seconds": 21600,
       "prerequisites": ["big_data"],
       "reputation_reward": 20,
-      "unlocks_products": ["ai_engine"]
+      "unlocks_products": ["ai_engine"],
+      "buff": {"type": "income_bonus", "value": 0.05, "label": "产品收入+5%"}
     },
     "blockchain": {
       "name": "区块链",
@@ -61,7 +66,8 @@
       "duration_seconds": 18000,
       "prerequisites": ["cloud_computing"],
       "reputation_reward": 15,
-      "unlocks_products": ["defi_platform"]
+      "unlocks_products": ["defi_platform"],
+      "buff": {"type": "cost_reduction", "value": 0.05, "label": "运营成本-5%"}
     },
     "metaverse": {
       "name": "元宇宙",
@@ -70,7 +76,8 @@
       "duration_seconds": 36000,
       "prerequisites": ["ai_recommend", "blockchain"],
       "reputation_reward": 50,
-      "unlocks_products": ["metaverse_world"]
+      "unlocks_products": ["metaverse_world"],
+      "buff": {"type": "employee_limit", "value": 20, "label": "员工上限+20"}
     },
     "quantum_computing": {
       "name": "量子计算",
@@ -79,7 +86,8 @@
       "duration_seconds": 43200,
       "prerequisites": ["cloud_computing", "ai_recommend"],
       "reputation_reward": 60,
-      "unlocks_products": ["quantum_service"]
+      "unlocks_products": ["quantum_service"],
+      "buff": {"type": "research_speed", "value": 0.10, "label": "研发速度+10%"}
     },
     "agi": {
       "name": "通用人工智能",
@@ -88,7 +96,89 @@
       "duration_seconds": 86400,
       "prerequisites": ["quantum_computing", "metaverse"],
       "reputation_reward": 100,
-      "unlocks_products": ["agi_platform"]
+      "unlocks_products": ["agi_platform"],
+      "buff": {"type": "income_bonus", "value": 0.15, "label": "产品收入+15%"}
+    },
+
+    "efficiency_mgmt": {
+      "name": "高效管理",
+      "description": "优化企业运营流程，降低日常运营成本",
+      "cost": 2000,
+      "duration_seconds": 5400,
+      "prerequisites": ["basic_internet"],
+      "reputation_reward": 5,
+      "unlocks_products": [],
+      "buff": {"type": "cost_reduction", "value": 0.05, "label": "运营成本-5%"}
+    },
+    "talent_network": {
+      "name": "人才网络",
+      "description": "建设高效人才招聘与培养体系",
+      "cost": 2500,
+      "duration_seconds": 5400,
+      "prerequisites": ["basic_internet"],
+      "reputation_reward": 5,
+      "unlocks_products": [],
+      "buff": {"type": "employee_limit", "value": 15, "label": "员工上限+15"}
+    },
+    "smart_marketing": {
+      "name": "智能营销",
+      "description": "精准营销与用户增长策略",
+      "cost": 4000,
+      "duration_seconds": 10800,
+      "prerequisites": ["social_platform"],
+      "reputation_reward": 8,
+      "unlocks_products": [],
+      "buff": {"type": "roadshow_bonus", "value": 0.20, "label": "路演奖励+20%"}
+    },
+    "supply_chain_opt": {
+      "name": "供应链优化",
+      "description": "物流与供应链智能管理",
+      "cost": 5000,
+      "duration_seconds": 10800,
+      "prerequisites": ["ecommerce"],
+      "reputation_reward": 8,
+      "unlocks_products": [],
+      "buff": {"type": "research_cost_reduction", "value": 0.10, "label": "研发成本-10%"}
+    },
+    "advanced_analytics": {
+      "name": "高级数据分析",
+      "description": "深度数据挖掘与商业智能决策",
+      "cost": 7000,
+      "duration_seconds": 14400,
+      "prerequisites": ["big_data"],
+      "reputation_reward": 12,
+      "unlocks_products": [],
+      "buff": {"type": "product_quality", "value": 5, "label": "产品品质+5"}
+    },
+    "cloud_security": {
+      "name": "云安全架构",
+      "description": "企业级安全防护与灾备体系",
+      "cost": 6000,
+      "duration_seconds": 14400,
+      "prerequisites": ["cloud_computing"],
+      "reputation_reward": 10,
+      "unlocks_products": [],
+      "buff": {"type": "event_protection", "value": 0.25, "label": "负面事件概率-25%"}
+    },
+    "ai_automation": {
+      "name": "AI自动化运营",
+      "description": "AI驱动的全流程自动化管理",
+      "cost": 10000,
+      "duration_seconds": 21600,
+      "prerequisites": ["ai_recommend"],
+      "reputation_reward": 15,
+      "unlocks_products": [],
+      "buff": {"type": "research_speed", "value": 0.15, "label": "研发速度+15%"}
+    },
+    "distributed_ledger": {
+      "name": "分布式账本",
+      "description": "去中心化金融与信任基础设施",
+      "cost": 9000,
+      "duration_seconds": 18000,
+      "prerequisites": ["blockchain"],
+      "reputation_reward": 12,
+      "unlocks_products": [],
+      "buff": {"type": "income_bonus", "value": 0.10, "label": "产品收入+10%"}
     }
   }
 }

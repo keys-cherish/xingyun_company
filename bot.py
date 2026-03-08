@@ -244,7 +244,7 @@ async def main():
                 drop_pending_updates=True,   # 重启后不处理积压消息，避免限流
             )
     finally:
-        # 关闭前强制备份数据库并上传 WebDAV（热重载时跳过）
+        # 关闭前备份并上传 WebDAV（不保留本地，定时备份才留本地）
         # 覆盖: Ctrl+C / 异常崩溃 / 正常退出
         if not _RELOAD_MODE:
             try:
@@ -252,10 +252,14 @@ async def main():
                 total_rows = sum(table_counts.values())
                 logger.info("关闭前备份完成: %s (共%d行)", file_path, total_rows)
                 if await _upload_to_webdav(file_path):
-                    logger.info("关闭前备份已上传 WebDAV: db_backup/%s/%s",
-                                file_path.name[:8], file_path.name)
+                    logger.info("关闭前备份已上传 WebDAV")
+                    # 上传成功后删除本地临时文件（本地只保留定时备份）
+                    try:
+                        file_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
                 else:
-                    logger.warning("关闭前备份 WebDAV 上传失败")
+                    logger.warning("关闭前备份 WebDAV 上传失败，本地文件保留: %s", file_path)
             except Exception:
                 logger.exception("关闭前备份失败")
 

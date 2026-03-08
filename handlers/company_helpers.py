@@ -140,6 +140,11 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
         # 获取进行中的科研
         await sync_research_progress_if_due(session, company_id)
         in_progress_research = await get_in_progress_research(session, company_id)
+        # LOCALTIMESTAMP matches started_at storage timezone
+        from sqlalchemy import text as sa_text
+        now_db = (await session.execute(select(sa_text("LOCALTIMESTAMP")))).scalar()
+        if now_db is None:
+            now_db = dt.datetime.utcnow()
 
     type_info = get_company_type_info(company.company_type)
     type_display = f"{type_info['emoji']} {type_info['name']}" if type_info else company.company_type
@@ -287,14 +292,15 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
     research_block = ""
     if in_progress_research:
         tree = {t["tech_id"]: t for t in get_tech_tree_display()}
-        now = dt.datetime.utcnow()
         rlines = []
         for rp in in_progress_research:
             tech_info = tree.get(rp.tech_id, {})
             name = tech_info.get("name", rp.tech_id)
-            duration_sec = tech_info.get("duration_seconds", 3600)
+            duration_sec = get_effective_research_duration_seconds(
+                tech_info, company.company_type, rp.tech_id,
+            )
             started = rp.started_at.replace(tzinfo=None) if rp.started_at.tzinfo else rp.started_at
-            elapsed = (now - started).total_seconds()
+            elapsed = (now_db - started).total_seconds()
             remaining = max(0, int(duration_sec - elapsed))
             if remaining > 0:
                 rlines.append(f"  • {name} — 剩余 {fmt_duration(remaining)}")

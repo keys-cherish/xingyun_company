@@ -56,7 +56,7 @@ def _rotate_old_backups(keep_files: int):
 
 
 async def _upload_to_webdav(file_path: Path) -> bool:
-    """Upload a backup file to WebDAV. Returns True on success."""
+    """Upload a backup file to WebDAV under db_backup/YYYYMMDD/."""
     url = settings.webdav_backup_url
     if not url or not settings.webdav_backup_username:
         return False
@@ -64,32 +64,29 @@ async def _upload_to_webdav(file_path: Path) -> bool:
     import aiohttp
     import base64
 
-    remote_url = f"{url.rstrip('/')}/db_backup/{file_path.name}"
+    date_dir = dt.datetime.now(BJ_TZ).strftime("%Y%m%d")
+    remote_url = f"{url.rstrip('/')}/db_backup/{date_dir}/{file_path.name}"
     creds = base64.b64encode(
         f"{settings.webdav_backup_username}:{settings.webdav_backup_password}".encode()
     ).decode()
+    auth_header = {"Authorization": f"Basic {creds}"}
 
     try:
         async with aiohttp.ClientSession() as session:
-            # Ensure db_backup directory exists on WebDAV (MKCOL)
-            dir_url = f"{url.rstrip('/')}/db_backup/"
-            async with session.request(
-                "MKCOL", dir_url,
-                headers={"Authorization": f"Basic {creds}"},
-                timeout=aiohttp.ClientTimeout(total=30),
-            ) as dir_resp:
-                # 201=created, 405/409=already exists — both fine
-                pass
+            # Ensure db_backup/ and db_backup/YYYYMMDD/ exist
+            for d in [f"{url.rstrip('/')}/db_backup/", f"{url.rstrip('/')}/db_backup/{date_dir}/"]:
+                async with session.request(
+                    "MKCOL", d, headers=auth_header,
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as _:
+                    pass  # 201=created, 405/409=already exists
 
             with open(file_path, "rb") as f:
                 data = f.read()
             async with session.put(
                 remote_url,
                 data=data,
-                headers={
-                    "Authorization": f"Basic {creds}",
-                    "Content-Type": "application/gzip",
-                },
+                headers={**auth_header, "Content-Type": "application/gzip"},
                 timeout=aiohttp.ClientTimeout(total=120),
             ) as resp:
                 if resp.status in (200, 201, 204):

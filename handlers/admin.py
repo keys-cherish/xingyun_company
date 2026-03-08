@@ -682,18 +682,18 @@ async def cmd_cleanup(message: types.Message):
         await r.delete(*battle_keys)
         cleaned.append(f"战斗冷却键: {len(battle_keys)} 个")
 
-    # 6. 数据库：修复科研时间异常（started_at 在未来的记录，重置为当前时间）
+    # 6. 数据库：修复科研时间异常
     from sqlalchemy import select, func as sqlfunc, text as sql_text
     from sqlalchemy import delete as sql_delete
     from db.models import Company, User, Shareholder, ResearchProgress
     research_fixed = 0
+    research_force_completed = 0
     async with async_session() as session:
         async with session.begin():
-            # LOCALTIMESTAMP matches started_at storage (both naive, same timezone)
             db_now = (await session.execute(select(sql_text("LOCALTIMESTAMP")))).scalar()
 
-            # 查找 started_at 在未来的科研记录
             if db_now:
+                # 6a. started_at 在未来的记录 → 重置为当前时间
                 result = await session.execute(
                     select(ResearchProgress).where(
                         ResearchProgress.status == "researching",
@@ -705,11 +705,39 @@ async def cmd_cleanup(message: types.Message):
                     rp.started_at = db_now
                     research_fixed += 1
 
-                if research_fixed:
+                # 6b. 已超时但未完成的科研 → 强制完成
+                from services.research_service import (
+                    get_effective_research_duration_seconds,
+                    get_tech_tree_display,
+                )
+                tree = {t["tech_id"]: t for t in get_tech_tree_display()}
+                result = await session.execute(
+                    select(ResearchProgress).where(
+                        ResearchProgress.status == "researching",
+                    )
+                )
+                all_researching = list(result.scalars().all())
+                for rp in all_researching:
+                    tech_info = tree.get(rp.tech_id, {})
+                    company = await session.get(Company, rp.company_id)
+                    if not company:
+                        continue
+                    duration_sec = get_effective_research_duration_seconds(
+                        tech_info, company.company_type, rp.tech_id,
+                    )
+                    started = rp.started_at.replace(tzinfo=None) if rp.started_at and rp.started_at.tzinfo else rp.started_at
+                    if started and (db_now - started).total_seconds() >= duration_sec:
+                        rp.status = "completed"
+                        rp.completed_at = db_now
+                        research_force_completed += 1
+
+                if research_fixed or research_force_completed:
                     await session.flush()
 
     if research_fixed:
         cleaned.append(f"科研时间异常修复: {research_fixed} 条（重置为当前时间）")
+    if research_force_completed:
+        cleaned.append(f"超时科研强制完成: {research_force_completed} 条")
 
     # 7. 数据库：清理无公司用户的残留股份
     orphan_count = 0

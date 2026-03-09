@@ -230,6 +230,22 @@ async def main():
             request_handler.register(app, path=settings.webhook_path)
             setup_application(app, dp, bot=bot)
 
+            # 自动杀死占用 webhook 端口的旧进程（必须在 runner.setup() 之前，否则会杀死自己）
+            try:
+                result = subprocess.run(
+                    ["lsof", "-ti", f":{settings.webhook_port}"],
+                    capture_output=True, text=True,
+                )
+                pids = result.stdout.strip()
+                if pids:
+                    my_pid = str(os.getpid())
+                    for pid in pids.split("\n"):
+                        if pid.strip() != my_pid:
+                            subprocess.run(["kill", "-9", pid.strip()], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    logger.info("已杀死端口 %d 上的旧进程: %s", settings.webhook_port, pids.replace("\n", ", "))
+            except FileNotFoundError:
+                pass
+
             runner = web.AppRunner(app)
             await runner.setup()
             ssl_ctx = None
@@ -238,20 +254,6 @@ async def main():
                 ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
                 key_path = settings.webhook_cert_path.replace("public.pem", "private.key")
                 ssl_ctx.load_cert_chain(settings.webhook_cert_path, key_path)
-            # 自动杀死占用 webhook 端口的旧进程
-            try:
-                result = subprocess.run(
-                    ["lsof", "-ti", f":{settings.webhook_port}"],
-                    capture_output=True, text=True,
-                )
-                pids = result.stdout.strip()
-                if pids:
-                    for pid in pids.split("\n"):
-                        subprocess.run(["kill", "-9", pid.strip()], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    logger.info("已杀死端口 %d 上的旧进程: %s", settings.webhook_port, pids.replace("\n", ", "))
-            except FileNotFoundError:
-                pass
-
             site = web.TCPSite(runner, host=settings.webhook_host, port=settings.webhook_port, ssl_context=ssl_ctx)
             await site.start()
             webhook_serving = True

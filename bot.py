@@ -195,6 +195,7 @@ async def main():
 
     # 启动模式：polling / webhook
     runner: web.AppRunner | None = None
+    webhook_serving = False  # 标记 webhook 是否成功启动（仅成功时 finally 才删 webhook）
     configured_mode = (settings.run_mode or "polling").strip().lower()
     if configured_mode not in {"polling", "webhook"}:
         logger.warning("未知 RUN_MODE=%s，已回退到 polling", settings.run_mode)
@@ -238,6 +239,7 @@ async def main():
                 ssl_ctx.load_cert_chain(settings.webhook_cert_path, key_path)
             site = web.TCPSite(runner, host=settings.webhook_host, port=settings.webhook_port, ssl_context=ssl_ctx)
             await site.start()
+            webhook_serving = True
             logger.info(
                 "Webhook started at %s%s (listen %s:%d)",
                 settings.webhook_base_url.rstrip("/"),
@@ -274,7 +276,7 @@ async def main():
             except Exception:
                 logger.exception("关闭前备份失败")
 
-        if effective_mode == "webhook":
+        if effective_mode == "webhook" and webhook_serving:
             try:
                 await bot.delete_webhook(drop_pending_updates=False)
             except Exception:

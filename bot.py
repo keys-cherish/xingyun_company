@@ -230,22 +230,6 @@ async def main():
             request_handler.register(app, path=settings.webhook_path)
             setup_application(app, dp, bot=bot)
 
-            # 自动杀死占用 webhook 端口的旧进程（必须在 runner.setup() 之前，否则会杀死自己）
-            try:
-                result = subprocess.run(
-                    ["lsof", "-ti", f":{settings.webhook_port}"],
-                    capture_output=True, text=True,
-                )
-                pids = result.stdout.strip()
-                if pids:
-                    my_pid = str(os.getpid())
-                    for pid in pids.split("\n"):
-                        if pid.strip() != my_pid:
-                            subprocess.run(["kill", "-9", pid.strip()], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    logger.info("已杀死端口 %d 上的旧进程: %s", settings.webhook_port, pids.replace("\n", ", "))
-            except FileNotFoundError:
-                pass
-
             runner = web.AppRunner(app)
             await runner.setup()
             ssl_ctx = None
@@ -330,6 +314,25 @@ def _install_uvloop() -> bool:
         return False
 
 
+def _kill_port_occupant():
+    """在程序启动前杀死占用 webhook 端口的旧进程。"""
+    if (settings.run_mode or "polling").strip().lower() != "webhook":
+        return
+    port = settings.webhook_port
+    try:
+        result = subprocess.run(
+            ["lsof", "-ti", f":{port}"],
+            capture_output=True, text=True,
+        )
+        pids = result.stdout.strip()
+        if pids:
+            for pid in pids.split("\n"):
+                subprocess.run(["kill", "-9", pid.strip()], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            logger.info("已杀死端口 %d 上的旧进程: %s", port, pids.replace("\n", ", "))
+    except FileNotFoundError:
+        pass
+
+
 if __name__ == "__main__":
     import sys
 
@@ -345,6 +348,7 @@ if __name__ == "__main__":
             watch_filter=lambda change, path: path.endswith(".py"),
         )
     else:
+        _kill_port_occupant()
         if _install_uvloop():
             logger.info("uvloop 已启用（高性能事件循环）")
         asyncio.run(main())

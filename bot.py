@@ -240,11 +240,15 @@ async def main():
                 ssl_ctx.load_cert_chain(settings.webhook_cert_path, key_path)
             # 自动杀死占用 webhook 端口的旧进程
             try:
-                subprocess.run(
-                    ["fuser", "-k", f"{settings.webhook_port}/tcp"],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                result = subprocess.run(
+                    ["lsof", "-ti", f":{settings.webhook_port}"],
+                    capture_output=True, text=True,
                 )
-                logger.info("已清理端口 %d 上的旧进程", settings.webhook_port)
+                pids = result.stdout.strip()
+                if pids:
+                    for pid in pids.split("\n"):
+                        subprocess.run(["kill", "-9", pid.strip()], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    logger.info("已杀死端口 %d 上的旧进程: %s", settings.webhook_port, pids.replace("\n", ", "))
             except FileNotFoundError:
                 pass
 

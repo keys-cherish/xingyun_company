@@ -790,27 +790,28 @@ async def cmd_cleanup(message: types.Message):
 
     # 10. 清理超出上限的产品（每公司最多8个，保留日收入最高的）
     from db.models import Product
-    from services.product_service import MAX_PRODUCTS
+    from services.product_service import get_max_products
     products_removed = 0
     async with async_session() as session:
         async with session.begin():
-            result = await session.execute(select(Company.id))
-            company_ids = [row[0] for row in result.all()]
-            for cid in company_ids:
+            result = await session.execute(select(Company.id, Company.level))
+            company_rows = result.all()
+            for cid, clevel in company_rows:
+                max_prod = get_max_products(clevel)
                 result = await session.execute(
                     select(Product)
                     .where(Product.company_id == cid)
                     .order_by(Product.daily_income.desc())
                 )
                 products = list(result.scalars().all())
-                if len(products) > MAX_PRODUCTS:
-                    for p in products[MAX_PRODUCTS:]:
+                if len(products) > max_prod:
+                    for p in products[max_prod:]:
                         await session.delete(p)
                         products_removed += 1
             if products_removed:
                 await session.flush()
     if products_removed:
-        cleaned.append(f"超限产品清理: {products_removed} 个（保留日收入最高的{MAX_PRODUCTS}个）")
+        cleaned.append(f"超限产品清理: {products_removed} 个（按公司等级上限保留日收入最高的）")
 
     # 11. 清理已注销但残留在数据库中的公司及其关联数据
     from db.models import (

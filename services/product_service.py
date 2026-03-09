@@ -28,7 +28,16 @@ _products_data: dict | None = None
 MAX_PRODUCT_DAILY_INCOME = 500_000
 MAX_PRODUCT_VERSION = 50
 MAX_DAILY_PRODUCT_CREATE = 3
-MAX_PRODUCTS = 8
+BASE_MAX_PRODUCTS = 5
+MAX_PRODUCTS = 15  # absolute cap (max-level company)
+
+
+def get_max_products(level: int) -> int:
+    """Return product slot limit for given company level."""
+    from services.company_service import get_level_info
+    info = get_level_info(level)
+    bonus = info.get("product_limit_bonus", 0) if info else 0
+    return BASE_MAX_PRODUCTS + bonus
 
 # Progressive gate: higher stage requires stronger company capability.
 PRODUCT_CREATE_COST_GROWTH = 0.30
@@ -160,8 +169,9 @@ async def create_product(
         select(sqlfunc.count()).select_from(Product).where(Product.company_id == company_id)
     )
     product_count = product_count_result.scalar() or 0
-    if product_count >= MAX_PRODUCTS:
-        return None, f"产品数量已达上限（{MAX_PRODUCTS}个）"
+    max_products = get_max_products(company.level)
+    if product_count >= max_products:
+        return None, f"产品数量已达上限（{max_products}个）"
 
     # 公司积分检查
     if company.cp_points < investment:

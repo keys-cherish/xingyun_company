@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import subprocess
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -237,6 +238,16 @@ async def main():
                 ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
                 key_path = settings.webhook_cert_path.replace("public.pem", "private.key")
                 ssl_ctx.load_cert_chain(settings.webhook_cert_path, key_path)
+            # 自动杀死占用 webhook 端口的旧进程
+            try:
+                subprocess.run(
+                    ["fuser", "-k", f"{settings.webhook_port}/tcp"],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+                logger.info("已清理端口 %d 上的旧进程", settings.webhook_port)
+            except FileNotFoundError:
+                pass
+
             site = web.TCPSite(runner, host=settings.webhook_host, port=settings.webhook_port, ssl_context=ssl_ctx)
             await site.start()
             webhook_serving = True

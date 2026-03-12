@@ -9,7 +9,7 @@ miniapp/node_modules/
 miniapp/dist/
 miniapp/v10/
 miniapp/.pnpm-store/
-
+v10/
 # Virtual environments
 .venv/
 
@@ -53,7 +53,7 @@ redis_data/
 # Claude Code
 .claude/
 CLAUDE.md
-
+node_modules/
 
 tests/*
 out/*

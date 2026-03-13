@@ -164,7 +164,11 @@ async def cb_emp_manage(callback: types.CallbackQuery):
         hire_cost_per = int(hire_cost_per * 1.50)
         ethics_effect = "道德<30，招聘+50%"
 
-    emp_base, emp_eff = calc_employee_income(company.employee_count, company.daily_revenue)
+    emp_base, emp_eff = calc_employee_income(
+        company.employee_count,
+        company.daily_revenue,
+        employee_limit=max_emp,
+    )
     emp_total = emp_base + emp_eff
     salary_total = company.employee_count * cfg.employee_salary_base
     net_emp = emp_total - salary_total
@@ -237,9 +241,17 @@ async def cb_hire(callback: types.CallbackQuery):
     daily_salary = hire_count * cfg.employee_salary_base
 
     # 计算招聘前后的人力产出对比
-    old_base, old_eff = calc_employee_income(company.employee_count, company.daily_revenue)
+    old_base, old_eff = calc_employee_income(
+        company.employee_count,
+        company.daily_revenue,
+        employee_limit=max_emp,
+    )
     old_emp_total = old_base + old_eff
-    new_base, new_eff = calc_employee_income(company.employee_count + hire_count, company.daily_revenue)
+    new_base, new_eff = calc_employee_income(
+        company.employee_count + hire_count,
+        company.daily_revenue,
+        employee_limit=max_emp,
+    )
     new_emp_total = new_base + new_eff
     income_increase = new_emp_total - old_emp_total
 

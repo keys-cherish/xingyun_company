@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 from sqlalchemy import select, update
@@ -170,6 +171,8 @@ async def add_funds(
 # ---------- Company levels ----------
 
 _company_levels: dict | None = None
+EMPLOYEE_DIMINISH_START_RATIO = 0.8
+EMPLOYEE_DIMINISH_CURVE = 0.4
 
 
 def load_company_levels() -> dict:
@@ -240,7 +243,26 @@ def get_company_employee_limit(level: int, company_type: str | None = None, *, r
     return max(settings.base_employee_limit, min(total, settings.max_employee_limit))
 
 
-def calc_employee_income(employee_count: int, revenue: int) -> tuple[int, int]:
+def calc_effective_employee_count(employee_count: int, employee_limit: int | None = None) -> int:
+    """Effective workforce with diminishing marginal returns after 80% of capacity."""
+    if employee_count <= 0:
+        return 0
+    if employee_limit is None or employee_limit <= 0:
+        return employee_count
+
+    capped_count = min(employee_count, employee_limit)
+    decay_start = min(employee_limit, max(1, math.ceil(employee_limit * EMPLOYEE_DIMINISH_START_RATIO)))
+    if capped_count <= decay_start:
+        return capped_count
+
+    decay_span = max(1, employee_limit - decay_start)
+    overflow = capped_count - decay_start
+    overflow_effective = overflow - (EMPLOYEE_DIMINISH_CURVE * overflow * overflow / decay_span)
+    effective = decay_start + overflow_effective
+    return max(decay_start, int(round(effective)))
+
+
+def calc_employee_income(employee_count: int, revenue: int, *, employee_limit: int | None = None) -> tuple[int, int]:
     """Calculate employee workforce income contribution.
 
     Returns (base_output, efficiency_bonus).
@@ -248,20 +270,23 @@ def calc_employee_income(employee_count: int, revenue: int) -> tuple[int, int]:
     if employee_count <= 0:
         return (0, 0)
 
-    # Base output: each employee produces 1.5x their salary
-    base_output = int(employee_count * settings.employee_salary_base * 1.5)
+    effective_employee_count = calc_effective_employee_count(employee_count, employee_limit)
 
-    # Efficiency bonus: proportional to revenue, diminishing past soft cap
-    effective = min(employee_count, settings.employee_effective_cap_for_progress)
-    efficiency_bonus = int(revenue * effective * 0.002)
+    # Base output: each employee produces 1.5x their salary
+    base_output = int(effective_employee_count * settings.employee_salary_base * 1.5)
+
+    # Efficiency bonus: proportional to revenue, with diminishing returns near employee cap
+    efficiency_bonus = int(revenue * effective_employee_count * 0.002)
 
     return (base_output, efficiency_bonus)
 
 
-def get_effective_employee_count_for_progress(employee_count: int) -> int:
-    """Soft-cap effective workforce used by progression gates."""
+def get_effective_employee_count_for_progress(employee_count: int, employee_limit: int | None = None) -> int:
+    """Effective workforce used by progression gates."""
     if employee_count <= 0:
         return 0
+    if employee_limit is not None and employee_limit > 0:
+        return calc_effective_employee_count(employee_count, employee_limit)
     return min(employee_count, settings.employee_effective_cap_for_progress)
 
 

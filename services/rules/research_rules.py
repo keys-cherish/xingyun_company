@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Company, ResearchProgress, User
-from services.company_service import get_effective_employee_count_for_progress
+from services.company_service import get_company_employee_limit, get_effective_employee_count_for_progress
 from utils.formatters import fmt_points
 from utils.rules import Rule, RuleViolation
 
@@ -166,7 +166,10 @@ async def check_research_employees(
     required_employees = int(
         tech.get("required_employees", max(1, 1 + completed_count * employee_step))
     )
-    effective_employees = get_effective_employee_count_for_progress(company.employee_count)
+    effective_employees = get_effective_employee_count_for_progress(
+        company.employee_count,
+        get_company_employee_limit(company.level, company.company_type),
+    )
     if effective_employees < required_employees:
         return RuleViolation(
             code="INSUFFICIENT_EMPLOYEES",

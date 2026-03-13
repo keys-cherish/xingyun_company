@@ -12,7 +12,7 @@ import random
 
 from cache.redis_client import get_redis
 from config import settings
-from utils.timezone import BJ_TZ
+from utils.timezone import BJ_TZ, naive_utc_to_bj
 
 _KEY_STREAK = "checkin:streak:{tg_id}"
 _KEY_LAST = "checkin:last:{tg_id}"
@@ -25,6 +25,36 @@ def _parse_streak_rewards() -> list[int]:
 
 def _parse_bonus_pool() -> list[int]:
     return [int(x.strip()) for x in settings.checkin_streak_bonus_pool.split(",") if x.strip()]
+
+
+async def get_last_checkin_date(tg_id: int) -> dt.date | None:
+    r = await get_redis()
+    raw = await r.get(_KEY_LAST.format(tg_id=tg_id))
+    if not raw:
+        return None
+    if not isinstance(raw, str):
+        raw = raw.decode()
+    try:
+        return dt.date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+async def get_checkin_inactivity_days(
+    tg_id: int,
+    *,
+    fallback_at: dt.datetime | None = None,
+    today_bj: dt.date | None = None,
+) -> int:
+    today = today_bj or dt.datetime.now(BJ_TZ).date()
+    last_checkin = await get_last_checkin_date(tg_id)
+    if last_checkin is not None:
+        return max(0, (today - last_checkin).days)
+
+    if fallback_at is None:
+        return 0
+
+    return max(0, (today - naive_utc_to_bj(fallback_at).date()).days)
 
 
 async def do_checkin(tg_id: int) -> tuple[bool, str, int]:

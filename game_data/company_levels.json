@@ -19,7 +19,7 @@
       "min_products": 1,
       "min_techs": 1,
       "min_daily_revenue": 0,
-      "daily_revenue_bonus": 100,
+      "daily_revenue_bonus": 200,
       "employee_limit_bonus": 2,
       "product_limit_bonus": 1,
       "description": "需要: 5千积分 + 2员工 + 1产品 + 1科技"
@@ -31,7 +31,7 @@
       "min_products": 2,
       "min_techs": 2,
       "min_daily_revenue": 100,
-      "daily_revenue_bonus": 200,
+      "daily_revenue_bonus": 400,
       "employee_limit_bonus": 3,
       "product_limit_bonus": 2,
       "description": "需要: 1.2万积分 + 5员工 + 2产品 + 2科技 + 日营收≥100"
@@ -43,7 +43,7 @@
       "min_products": 3,
       "min_techs": 3,
       "min_daily_revenue": 500,
-      "daily_revenue_bonus": 500,
+      "daily_revenue_bonus": 1000,
       "employee_limit_bonus": 4,
       "product_limit_bonus": 3,
       "description": "需要: 3万积分 + 10员工 + 3产品 + 3科技 + 日营收≥500"
@@ -55,7 +55,7 @@
       "min_products": 4,
       "min_techs": 4,
       "min_daily_revenue": 1000,
-      "daily_revenue_bonus": 1000,
+      "daily_revenue_bonus": 2000,
       "employee_limit_bonus": 6,
       "product_limit_bonus": 4,
       "description": "需要: 8万积分 + 18员工 + 4产品 + 4科技 + 日营收≥1000"
@@ -67,7 +67,7 @@
       "min_products": 5,
       "min_techs": 5,
       "min_daily_revenue": 3000,
-      "daily_revenue_bonus": 2500,
+      "daily_revenue_bonus": 5000,
       "employee_limit_bonus": 8,
       "product_limit_bonus": 5,
       "description": "需要: 20万积分 + 28员工 + 5产品 + 5科技 + 日营收≥3000"
@@ -79,7 +79,7 @@
       "min_products": 6,
       "min_techs": 6,
       "min_daily_revenue": 6000,
-      "daily_revenue_bonus": 5000,
+      "daily_revenue_bonus": 10000,
       "employee_limit_bonus": 12,
       "product_limit_bonus": 6,
       "description": "需要: 50万积分 + 40员工 + 6产品 + 6科技 + 日营收≥6000"
@@ -91,7 +91,7 @@
       "min_products": 7,
       "min_techs": 7,
       "min_daily_revenue": 15000,
-      "daily_revenue_bonus": 10000,
+      "daily_revenue_bonus": 20000,
       "employee_limit_bonus": 18,
       "product_limit_bonus": 7,
       "description": "需要: 100万积分 + 55员工 + 7产品 + 7科技 + 日营收≥1.5万"
@@ -103,7 +103,7 @@
       "min_products": 8,
       "min_techs": 8,
       "min_daily_revenue": 30000,
-      "daily_revenue_bonus": 20000,
+      "daily_revenue_bonus": 40000,
       "employee_limit_bonus": 25,
       "product_limit_bonus": 8,
       "description": "需要: 200万积分 + 75员工 + 8产品 + 8科技 + 日营收≥3万"
@@ -115,7 +115,7 @@
       "min_products": 10,
       "min_techs": 9,
       "min_daily_revenue": 60000,
-      "daily_revenue_bonus": 40000,
+      "daily_revenue_bonus": 80000,
       "employee_limit_bonus": 35,
       "product_limit_bonus": 10,
       "description": "需要: 400万积分 + 100员工 + 10产品 + 9科技 + 日营收≥6万"

@@ -1007,8 +1007,15 @@ async def start_game(
 
     state.phase = "playing"
     state.current_round = 0
-    state.turn_order = [p["tg_id"] for p in state.players]
-    random.shuffle(state.turn_order)
+    if state.game_mode == "hell":
+        human_turn_order = [p["tg_id"] for p in state.players if not p.get("is_devil")]
+        devil_turn_order = [p["tg_id"] for p in state.players if p.get("is_devil")]
+        random.shuffle(human_turn_order)
+        random.shuffle(devil_turn_order)
+        state.turn_order = [*human_turn_order, *devil_turn_order]
+    else:
+        state.turn_order = [p["tg_id"] for p in state.players]
+        random.shuffle(state.turn_order)
 
     init_msgs = _init_round(state)
     state.action_log = list(init_msgs)

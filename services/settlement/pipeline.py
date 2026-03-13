@@ -43,15 +43,18 @@ async def compute_base_income(
     from services.ad_service import get_ad_boost
     from services.company_service import (
         calc_employee_income,
+        get_company_employee_limit,
         get_company_type_info,
         get_level_revenue_bonus,
     )
     from services.cooperation_service import get_cooperation_bonus
     from services.realestate_service import get_total_estate_income
+    from services.research_service import get_research_buffs
     from services.shop_service import get_income_buff_multiplier
     from utils.formatters import reputation_buff_multiplier
 
     breakdown = IncomeBreakdown()
+    research_buffs = await get_research_buffs(session, company.id)
 
     # 1. Product income (base)
     breakdown.product_income = int(
@@ -93,8 +96,15 @@ async def compute_base_income(
     breakdown.type_bonus = int(breakdown.product_income * type_income_bonus)
 
     # 10. Employee workforce income
+    employee_limit = get_company_employee_limit(
+        company.level,
+        company.company_type,
+        research_employee_bonus=int(research_buffs.get("employee_limit", 0)),
+    )
     emp_base_output, emp_efficiency_bonus = calc_employee_income(
-        company.employee_count, breakdown.product_income
+        company.employee_count,
+        breakdown.product_income,
+        employee_limit=employee_limit,
     )
     breakdown.employee_income = emp_base_output + emp_efficiency_bonus
 
@@ -105,8 +115,6 @@ async def compute_base_income(
         breakdown.immoral_buff = int(breakdown.product_income * (immoral_mult - 1.0))
 
     # 12. Research buff (科研加成)
-    from services.research_service import get_research_buffs
-    research_buffs = await get_research_buffs(session, company.id)
     income_bonus = research_buffs.get("income_bonus", 0.0)
     if income_bonus > 0:
         breakdown.research_buff = int(breakdown.product_income * income_bonus)

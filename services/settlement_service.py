@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import random
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
-from db.models import Company, DailyReport, Product
-from services.company_service import get_company_type_info, update_daily_revenue
+from db.models import Company, DailyReport, Product, User
+from services.checkin_service import get_checkin_inactivity_days
+from services.company_service import add_funds, get_company_type_info, update_daily_revenue
 from services.random_events import roll_daily_events
 from services.research_service import check_and_complete_research
 from services.settlement.pipeline import (
@@ -31,10 +33,18 @@ from services.operations_service import (
     settle_profile_daily,
 )
 from cache.redis_client import update_leaderboard
+from utils.timezone import BJ_TZ
 
 import json as _json
 
 logger = logging.getLogger(__name__)
+
+CHECKIN_INACTIVE_THRESHOLD_DAYS = 7
+CHECKIN_INACTIVE_FUNDS_RATE = 0.01
+CHECKIN_INACTIVE_PRODUCT_RATE = 0.01
+CHECKIN_INACTIVE_REGULATION_DELTA = 5
+CHECKIN_INACTIVE_EMPLOYEE_LOSS_MIN = 3
+CHECKIN_INACTIVE_EMPLOYEE_LOSS_MAX = 6
 
 
 async def _decay_brand_conflicts(session: AsyncSession, company_id: int) -> list[str]:
@@ -100,6 +110,82 @@ async def _decay_brand_conflicts(session: AsyncSession, company_id: int) -> list
     return msgs
 
 
+async def _apply_owner_checkin_inactivity_penalty(
+    session: AsyncSession,
+    company: Company,
+    owner: User | None,
+    profile,
+    *,
+    today_bj: dt.date,
+) -> list[str]:
+    if owner is None:
+        return []
+
+    inactive_days = await get_checkin_inactivity_days(
+        owner.tg_id,
+        fallback_at=owner.created_at,
+        today_bj=today_bj,
+    )
+    if inactive_days < CHECKIN_INACTIVE_THRESHOLD_DAYS:
+        return []
+
+    product_result = await session.execute(select(Product).where(Product.company_id == company.id))
+    products = list(product_result.scalars().all())
+
+    product_loss_total = 0
+    changed_products = 0
+    for product in products:
+        if product.daily_income <= 0:
+            continue
+        loss = max(1, int(product.daily_income * CHECKIN_INACTIVE_PRODUCT_RATE))
+        loss = min(loss, product.daily_income)
+        if loss <= 0:
+            continue
+        product.daily_income -= loss
+        product_loss_total += loss
+        changed_products += 1
+
+    employee_loss = 0
+    if company.employee_count > 1:
+        employee_loss = min(
+            random.randint(CHECKIN_INACTIVE_EMPLOYEE_LOSS_MIN, CHECKIN_INACTIVE_EMPLOYEE_LOSS_MAX),
+            company.employee_count - 1,
+        )
+        company.employee_count = max(1, company.employee_count - employee_loss)
+
+    old_regulation = int(profile.regulation_pressure)
+    profile.regulation_pressure = min(100, old_regulation + CHECKIN_INACTIVE_REGULATION_DELTA)
+    regulation_delta = int(profile.regulation_pressure) - old_regulation
+
+    await session.flush()
+
+    funds_loss = 0
+    if company.cp_points > 0:
+        funds_loss = max(1, int(company.cp_points * CHECKIN_INACTIVE_FUNDS_RATE))
+        funds_loss = min(funds_loss, company.cp_points)
+        ok = await add_funds(session, company.id, -funds_loss, reason="owner_checkin_inactive_decay")
+        if not ok:
+            funds_loss = 0
+
+    msgs = [
+        f"😴 老板连续 {inactive_days} 天未打卡，公司进入懈怠状态：",
+        f"• 公司资金流失: -{funds_loss:,}" if funds_loss > 0 else "• 公司资金流失: 0",
+        f"• 员工流失: -{employee_loss}" if employee_loss > 0 else "• 员工流失: 0",
+        (
+            f"• 产品线老化: {changed_products} 个产品合计 -{product_loss_total:,}/日"
+            if product_loss_total > 0 else
+            "• 产品线老化: 暂无可衰减产品"
+        ),
+        (
+            f"• 监管压力上升: +{regulation_delta}（{old_regulation}→{profile.regulation_pressure}）"
+            if regulation_delta > 0 else
+            f"• 监管压力维持高位: {profile.regulation_pressure}"
+        ),
+        "• 基础营收衰减: -1%",
+    ]
+    return msgs
+
+
 async def settle_company(session: AsyncSession, company: Company) -> tuple[DailyReport | None, list[str]]:
     """结算单个公司的每日收支（流水线版本）。
 
@@ -123,11 +209,21 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
     if completed_techs:
         logger.info("Company %s completed research: %s", company.name, completed_techs)
 
+    now_utc = dt.datetime.now(dt.UTC)
+    today_bj = now_utc.astimezone(BJ_TZ).date()
+    owner = await session.get(User, company.owner_id)
+    profile = await get_or_create_profile(session, company.id)
+    inactivity_msgs = await _apply_owner_checkin_inactivity_penalty(
+        session,
+        company,
+        owner,
+        profile,
+        today_bj=today_bj,
+    )
+
     # Recalculate daily revenue
     await update_daily_revenue(session, company.id)
     await session.refresh(company)
-    now_utc = dt.datetime.now(dt.UTC)
-    profile = await get_or_create_profile(session, company.id)
     multipliers = get_operation_multipliers(profile, now_utc)
     market = get_market_trend(company, now_utc)
 
@@ -136,17 +232,23 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
 
     # 步骤2: 应用惩罚
     penalties, adjusted_product_income = await apply_penalties(company.id, income.product_income)
+    inactive_revenue_penalty = 0
+    if inactivity_msgs and adjusted_product_income > 0:
+        inactive_revenue_penalty = max(1, int(adjusted_product_income * CHECKIN_INACTIVE_FUNDS_RATE))
+        inactive_revenue_penalty = min(inactive_revenue_penalty, adjusted_product_income)
+        adjusted_product_income = max(0, adjusted_product_income - inactive_revenue_penalty)
+        inactivity_msgs[-1] = f"• 基础营收衰减: -1% (-{inactive_revenue_penalty:,})"
 
     # 用调整后的收入重新计算相关项
     # 惩罚只影响产品收入，所以需要重新计算基于产品收入的加成
-    if penalties.total > 0:
+    if penalties.total > 0 or inactive_revenue_penalty > 0:
         # 重新计算受产品收入影响的加成项
         from services.ad_service import get_ad_boost
-        from services.company_service import calc_employee_income
+        from services.company_service import calc_employee_income, get_company_employee_limit
         from services.cooperation_service import get_cooperation_bonus
+        from services.research_service import get_research_buffs
         from services.shop_service import get_income_buff_multiplier
         from utils.formatters import reputation_buff_multiplier
-        from db.models import User
 
         # 更新产品收入为惩罚后的值
         income.product_income = adjusted_product_income
@@ -156,7 +258,6 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
         income.cooperation_bonus = int(adjusted_product_income * coop_bonus_rate)
 
         # 重新计算声望加成
-        owner = await session.get(User, company.owner_id)
         rep_multiplier = reputation_buff_multiplier(owner.reputation) if owner else 1.0
         income.reputation_buff = int(adjusted_product_income * (rep_multiplier - 1.0))
 
@@ -180,8 +281,16 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
         income.type_bonus = int(adjusted_product_income * type_income_bonus)
 
         # 重新计算员工收入
+        research_buffs = await get_research_buffs(session, company.id)
+        employee_limit = get_company_employee_limit(
+            company.level,
+            company.company_type,
+            research_employee_bonus=int(research_buffs.get("employee_limit", 0)),
+        )
         emp_base_output, emp_efficiency_bonus = calc_employee_income(
-            company.employee_count, adjusted_product_income
+            company.employee_count,
+            adjusted_product_income,
+            employee_limit=employee_limit,
         )
         income.employee_income = emp_base_output + emp_efficiency_bonus
 
@@ -216,7 +325,8 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
     result = await finalize_settlement(session, company, income, penalties, costs)
 
     # Roll random events
-    event_messages = await roll_daily_events(session, company)
+    event_messages = list(inactivity_msgs)
+    event_messages.extend(await roll_daily_events(session, company))
     if market["income_mult"] > 1.0:
         event_messages.append(
             f"📈 行业景气加成：{market['label']}（营收+{(market['income_mult'] - 1.0) * 100:.0f}%）"

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cache.redis_client import get_redis
 from db.models import Company, Product, User
-from services.company_service import get_effective_employee_count_for_progress
+from services.company_service import get_company_employee_limit, get_effective_employee_count_for_progress
 from utils.formatters import fmt_points
 from utils.rules import Rule, RuleViolation
 from utils.validators import validate_name
@@ -204,7 +204,10 @@ async def check_product_create_employees(
     if not company:
         return None
     required_employees = max(1, 1 + existing_count * employee_step)
-    effective_employees = get_effective_employee_count_for_progress(company.employee_count)
+    effective_employees = get_effective_employee_count_for_progress(
+        company.employee_count,
+        get_company_employee_limit(company.level, company.company_type),
+    )
     if effective_employees < required_employees:
         return RuleViolation(
             code="INSUFFICIENT_EMPLOYEES",
@@ -408,7 +411,10 @@ async def check_product_upgrade_employees(
         return None
     target_version = product.version + 1
     required_employees = max(1, target_version * employee_step)
-    effective_employees = get_effective_employee_count_for_progress(company.employee_count)
+    effective_employees = get_effective_employee_count_for_progress(
+        company.employee_count,
+        get_company_employee_limit(company.level, company.company_type),
+    )
     if effective_employees < required_employees:
         return RuleViolation(
             code="INSUFFICIENT_EMPLOYEES",

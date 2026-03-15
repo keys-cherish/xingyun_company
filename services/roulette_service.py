@@ -1307,6 +1307,39 @@ async def _settle_game(state: GameState) -> str:
     from services.user_service import add_points_by_tg_id, add_reputation, get_user_by_tg_id, get_self_points
 
     human_players = [p for p in state.players if not p.get("is_devil")]
+
+    # Demon event rooms (bet=0): skip point/reputation settlement,
+    # just record stats and show outcome. Actual rewards handled by demon_event handler.
+    if state.bet == 0:
+        winner = _get_player(state, state.winner_tg_id)
+        msgs: list[str] = []
+        human_winners: list[dict] = []
+        if winner and winner.get("is_devil"):
+            msgs.append("👹 恶魔获胜！等待结算...")
+        elif winner:
+            alive_humans = [p for p in human_players if p.get("alive")]
+            human_winners = alive_humans
+            names = ", ".join(p["name"] for p in alive_humans)
+            msgs.append(f"🎉 人类获胜！{names} 存活！等待结算...")
+        else:
+            msgs.append("全灭...")
+
+        # Update stats only
+        r = await get_redis()
+        for p in human_players:
+            tid = p["tg_id"]
+            stats_key = f"roulette_stats:{tid}"
+            raw = await r.get(stats_key)
+            stats = json.loads(raw) if raw else {"wins": 0, "losses": 0, "draws": 0}
+            if any(w["tg_id"] == tid for w in human_winners):
+                stats["wins"] = stats.get("wins", 0) + 1
+            else:
+                stats["losses"] = stats.get("losses", 0) + 1
+            await r.set(stats_key, json.dumps(stats))
+
+        await _cleanup_room(state.room_id, [p["tg_id"] for p in state.players])
+        return "\n".join(msgs)
+
     base_pot = state.bet * len(human_players)
     round_reached = state.current_round  # 0-indexed
 

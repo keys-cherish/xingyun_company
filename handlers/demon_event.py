@@ -161,9 +161,10 @@ async def _trigger_demon_event_for_random_target(
     text = _build_challenge_text(company_dict, tier)
     kb = _challenge_kb(company_id)
 
+    sent_msg = None
     if chat_id:
         try:
-            await _bot_ref.send_message(
+            sent_msg = await _bot_ref.send_message(
                 chat_id, text, reply_markup=kb, parse_mode="HTML",
                 message_thread_id=thread_id,
             )
@@ -172,11 +173,48 @@ async def _trigger_demon_event_for_random_target(
     else:
         for cid in (settings.allowed_chat_id_set or []):
             try:
-                await _bot_ref.send_message(cid, text, reply_markup=kb, parse_mode="HTML")
+                sent_msg = await _bot_ref.send_message(cid, text, reply_markup=kb, parse_mode="HTML")
             except Exception:
                 logger.exception("Failed to send demon event to chat %s", cid)
 
+    # Schedule auto-decline after 90 seconds
+    if sent_msg:
+        asyncio.create_task(_auto_decline_after(company_id, owner_tg_id, tier, sent_msg))
+
     return "ok"
+
+
+async def _auto_decline_after(company_id: int, owner_tg_id: int, tier: dict, msg: types.Message):
+    """Wait 90 seconds, then auto-decline if nobody responded."""
+    await asyncio.sleep(90)
+
+    state = await peek_event_state(company_id)
+    if state is None:
+        return  # already accepted/declined
+
+    # Consume the event
+    await load_event_state(company_id)
+    await _delete_rally(company_id)
+
+    from db.engine import async_session
+    from db.models import Company
+    async with async_session() as session:
+        company = await session.get(Company, company_id)
+        owner_user_id = company.owner_id if company else 0
+
+    if owner_user_id:
+        result_msg = await apply_decline_penalty(company_id, owner_user_id, tier)
+    else:
+        result_msg = "⏰ 无人应战，恶魔离去。"
+
+    result_msg = f"⏰ 90秒已过，无人应战！\n\n{result_msg}"
+    try:
+        await msg.edit_text(result_msg)
+    except Exception:
+        try:
+            await msg.answer(result_msg)
+        except Exception:
+            pass
 
 
 def _build_challenge_text(company_dict: dict, tier: dict) -> str:
@@ -192,8 +230,8 @@ def _build_challenge_text(company_dict: dict, tier: dict) -> str:
         f"👥 召集股东 → 邀请股东一起打（90秒等待）",
         f"🏳️ 拒绝挑战 → 恶魔报复",
         "",
-        f"  胜利: +积分{int(tier['win_funds_pct']*100)}% | 声望+{tier['win_reputation']} | 营收+{int(tier['win_revenue_buff']*100)}%",
-        f"  拒绝/失败: 积分-{int(tier['decline_funds_pct']*100)}% | 员工-{tier['decline_employee_min']}~{tier['decline_employee_max']}人",
+        f"  胜利: 公司积分+{int(tier['win_funds_pct']*100)}% | 声望+{tier['win_reputation']} | 营收Buff+{int(tier['win_revenue_buff']*100)}%（至次日结算）",
+        f"  拒绝/失败: 公司积分-{int(tier['decline_funds_pct']*100)}% | 员工-{tier['decline_employee_min']}~{tier['decline_employee_max']}人 | 声望-{tier['decline_reputation']}",
         "",
         f"📢 {mention}，恶魔在等你！股东也可代为迎战",
         f"⏰ 90秒内未选择视为拒绝",

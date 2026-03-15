@@ -137,6 +137,10 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
         roadshow_penalty_rate = float(_roadshow_pen_str) if _roadshow_pen_str else 0.0
         _totalwar_str = await _r.get(f"totalwar_buff:{company_id}")
         totalwar_buff_rate = float(_totalwar_str) if _totalwar_str else 0.0
+        # Demon event buff/debuff
+        from services.demon_event_service import get_demon_revenue_buff, get_demon_revenue_debuff
+        demon_buff_rate = await get_demon_revenue_buff(company_id)
+        demon_debuff_rate = await get_demon_revenue_debuff(company_id)
         profile = await get_or_create_profile(session, company_id)
         # 获取进行中的科研
         await sync_research_progress_if_due(session, company_id)
@@ -242,7 +246,9 @@ async def render_company_detail(company_id: int, tg_id: int) -> tuple[str, Inlin
         type_income_bonus,                        # company type income bonus
         (immoral_mult - 1.0) if immoral_mult > 1.0 else 0.0,
         totalwar_buff_rate,                       # total war temporary buff
+        demon_buff_rate,                          # demon event buff
         -battle_debuff_rate,                      # battle debuff
+        -demon_debuff_rate,                       # demon event debuff
         -rename_penalty_rate,                     # rename penalty
         -roadshow_penalty_rate,                   # roadshow penalty
     ]

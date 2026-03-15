@@ -64,6 +64,18 @@ class TopicGateMiddleware(BaseMiddleware):
         if not _restriction_enabled():
             return await handler(event, data)
 
+        # Private chat: allow callbacks (invest approval, etc.) but block
+        # company panel commands that make no sense outside groups.
+        if isinstance(event, Message) and event.chat.type == "private":
+            return await handler(event, data)
+        if isinstance(event, CallbackQuery) and event.message and event.message.chat.type == "private":
+            # Block company:view callbacks in private chat to prevent panel navigation
+            cb_data = event.data or ""
+            if cb_data.startswith("company:view:") or cb_data.startswith("company:ops:"):
+                await event.answer("请在群组中操作公司面板", show_alert=True)
+                return None
+            return await handler(event, data)
+
         if isinstance(event, Message):
             chat = event.chat
             thread_id = event.message_thread_id

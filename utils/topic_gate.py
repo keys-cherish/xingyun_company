@@ -67,14 +67,22 @@ class TopicGateMiddleware(BaseMiddleware):
         if isinstance(event, Message):
             chat = event.chat
             thread_id = event.message_thread_id
-            if chat.type not in ("group", "supergroup") or not _is_allowed_group_topic(
+            if chat.type not in ("group", "supergroup", "channel") or not _is_allowed_group_topic(
                 chat.id,
                 chat.username,
                 thread_id,
             ):
                 text = (event.text or "").strip()
                 if text.startswith("/"):
-                    await event.answer("❌ 仅允许在指定话题频道使用本机器人。")
+                    _logger.warning(
+                        "Blocked chat: id=%s username=%s thread=%s type=%s",
+                        chat.id, chat.username, thread_id, chat.type,
+                    )
+                    await event.answer(
+                        f"❌ 仅允许在指定话题频道使用本机器人。\n"
+                        f"当前 chat_id: {chat.id} | thread_id: {thread_id}\n"
+                        f"请管理员更新 .env 中的 ALLOWED_CHAT_IDS"
+                    )
                 return None
 
             # Check per-topic command restriction
@@ -99,12 +107,15 @@ class TopicGateMiddleware(BaseMiddleware):
         if isinstance(event, CallbackQuery) and event.message:
             chat = event.message.chat
             thread_id = event.message.message_thread_id
-            if chat.type not in ("group", "supergroup") or not _is_allowed_group_topic(
+            if chat.type not in ("group", "supergroup", "channel") or not _is_allowed_group_topic(
                 chat.id,
                 chat.username,
                 thread_id,
             ):
-                await event.answer("❌ 仅允许在指定话题频道使用本机器人。", show_alert=True)
+                await event.answer(
+                    f"❌ 仅允许在指定频道使用。chat_id: {chat.id}",
+                    show_alert=True,
+                )
                 return None
             # Callbacks in restricted topics are allowed (buttons come from allowed commands)
             return await handler(event, data)

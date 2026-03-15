@@ -137,33 +137,20 @@ async def demon_event_trigger_job():
 
 async def _trigger_demon_event_for_random_target(
     *,
-    force_company_id: int | None = None,
-    force_tg_id: int | None = None,
     chat_id: int | None = None,
+    thread_id: int | None = None,
 ):
+    """Pick a random qualifying company and send the challenge.
+
+    chat_id/thread_id: where to send the panel (for manual triggers).
+    If not provided, sends to all allowed chats.
+    """
     from config import settings
 
-    if force_company_id and force_tg_id:
-        from db.engine import async_session
-        from db.models import Company
-        async with async_session() as session:
-            company = await session.get(Company, force_company_id)
-        if not company:
-            return
-        tier = get_event_tier(company.cp_points)
-        if not tier:
-            tier = DEMON_EVENT_TIERS[0]
-        company_dict = {
-            "id": company.id, "name": company.name,
-            "owner_id": company.owner_id, "owner_tg_id": force_tg_id,
-            "cp_points": company.cp_points, "employee_count": company.employee_count,
-            "level": company.level,
-        }
-    else:
-        result = await pick_target_company()
-        if not result:
-            return
-        company_dict, tier = result
+    result = await pick_target_company()
+    if not result:
+        return "no_target"
+    company_dict, tier = result
 
     company_id = company_dict["id"]
     owner_tg_id = company_dict["owner_tg_id"]
@@ -174,17 +161,22 @@ async def _trigger_demon_event_for_random_target(
     text = _build_challenge_text(company_dict, tier)
     kb = _challenge_kb(company_id)
 
-    # Determine where to send
     if chat_id:
-        target_chats = [chat_id]
-    else:
-        target_chats = list(settings.allowed_chat_id_set or [])
-
-    for cid in target_chats:
         try:
-            await _bot_ref.send_message(cid, text, reply_markup=kb, parse_mode="HTML")
+            await _bot_ref.send_message(
+                chat_id, text, reply_markup=kb, parse_mode="HTML",
+                message_thread_id=thread_id,
+            )
         except Exception:
-            logger.exception("Failed to send demon event to chat %s", cid)
+            logger.exception("Failed to send demon event to chat %s", chat_id)
+    else:
+        for cid in (settings.allowed_chat_id_set or []):
+            try:
+                await _bot_ref.send_message(cid, text, reply_markup=kb, parse_mode="HTML")
+            except Exception:
+                logger.exception("Failed to send demon event to chat %s", cid)
+
+    return "ok"
 
 
 def _build_challenge_text(company_dict: dict, tier: dict) -> str:
@@ -231,29 +223,17 @@ def _rally_kb(company_id: int, players: list[dict]) -> InlineKeyboardMarkup:
 
 @router.message(Command("cp_demonevent"))
 async def cmd_demon_event(message: types.Message):
-    tg_id = message.from_user.id
-    from db.engine import async_session
-    from services.company_service import get_companies_by_owner
-    from services.user_service import get_user_by_tg_id
-
-    async with async_session() as session:
-        user = await get_user_by_tg_id(session, tg_id)
-        if not user:
-            await message.answer("请先注册")
-            return
-        companies = await get_companies_by_owner(session, user.id)
-        if not companies:
-            await message.answer("你还没有公司")
-            return
-        company = companies[0]
-
+    """Manual trigger: randomly pick a company and send the challenge here."""
     global _bot_ref
     if not _bot_ref:
         _bot_ref = message.bot
 
-    await _trigger_demon_event_for_random_target(
-        force_company_id=company.id, force_tg_id=tg_id, chat_id=message.chat.id,
+    result = await _trigger_demon_event_for_random_target(
+        chat_id=message.chat.id,
+        thread_id=message.message_thread_id,
     )
+    if result == "no_target":
+        await message.answer("👹 没有符合条件的公司（积分需 > 5万且不在冷却中）")
 
 
 # ── Decline ──────────────────────────────────────────────────────────────

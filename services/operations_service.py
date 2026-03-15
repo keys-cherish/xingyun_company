@@ -251,7 +251,7 @@ def run_regulation_audit(
     # Deterministic daily RNG per company:
     # same company/day => stable audit outcome, next day => new sample.
     rng = random.Random((now.toordinal() * 97) + profile.company_id)
-    sampled_hours = max(1, min(24, profile.work_hours + rng.randint(-WORK_HOUR_AUDIT_VARIANCE, WORK_HOUR_AUDIT_VARIANCE)))
+    sampled_hours = profile.work_hours
     overtime_hours = max(0, sampled_hours - LEGAL_WORK_HOURS)
 
     # Risk is driven by ethics + regulation pressure, then sharply increased by overtime.

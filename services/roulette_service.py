@@ -520,7 +520,7 @@ def _use_item(state: GameState, user_tg_id: int, item_key: str, target_tg_id: in
             msgs.append(f"{name} 用放大镜 → 弹夹空了，无效")
 
     elif item_key == "cigarette":
-        max_hp = player.get("max_hp", ROUND_CONFIG[state.current_round]["hp"])
+        max_hp = player.get("max_hp", ROUND_CONFIG[min(state.current_round, len(ROUND_CONFIG) - 1)]["hp"])
         if player["hp"] < max_hp:
             player["hp"] += 1
             msgs.append(f"{name} 抽烟回血 +1HP ({player['hp']}/{max_hp})")
@@ -625,7 +625,7 @@ def _use_item(state: GameState, user_tg_id: int, item_key: str, target_tg_id: in
 
     elif item_key == "pill":
         if random.random() < 0.5:
-            max_hp = player.get("max_hp", ROUND_CONFIG[state.current_round]["hp"])
+            max_hp = player.get("max_hp", ROUND_CONFIG[min(state.current_round, len(ROUND_CONFIG) - 1)]["hp"])
             player["hp"] = min(player["hp"] + 2, max_hp)
             msgs.append(f"{name} 吃药 → 运气好! +2HP ({player['hp']}/{max_hp})")
         else:

@@ -46,7 +46,7 @@ my_company_backup_*.json
 db_backup/
 backup.*
 
-# Docker persistent data
+# Local service data
 postgres_data/
 redis_data/
 

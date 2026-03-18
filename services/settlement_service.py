@@ -351,11 +351,9 @@ async def settle_company(session: AsyncSession, company: Company) -> tuple[Daily
 
     # 惩罚事件消息
     if penalties.roadshow_penalty > 0:
-        r = await get_redis()
-        roadshow_penalty_str = await r.get(f"roadshow_penalty:{company.id}")
-        roadshow_penalty_rate = float(roadshow_penalty_str) if roadshow_penalty_str else 0.0
+        pct = int(penalties.roadshow_penalty * 100 / max(1, income.product_income))
         event_messages.append(
-            f"🎭 路演翻车反噬：当日营收 -{int(roadshow_penalty_rate * 100)}% "
+            f"🎭 路演翻车反噬：当日营收 -{pct}% "
             f"(-{penalties.roadshow_penalty:,})"
         )
 

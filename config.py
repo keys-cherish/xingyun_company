@@ -11,6 +11,21 @@ class Settings(BaseSettings):
     proxy_url: str = ""  # HTTP代理，如 http://127.0.0.1:7890
     use_uvloop: bool = True
     app_timezone: str = "Asia/Shanghai"
+    # Logging (performance-first defaults)
+    log_level: str = "INFO"
+    log_format: str = "plain"  # plain | json
+    log_dir: str = "logs"  # relative paths resolve from current working directory
+    log_file_enabled: bool = True
+    log_error_file_enabled: bool = True
+    log_file_max_bytes: int = 20 * 1024 * 1024
+    log_file_backup_count: int = 10
+    log_queue_enabled: bool = True
+    log_queue_size: int = 20000
+    log_queue_drop_notice_every: int = 1000
+    log_httpx_level: str = "WARNING"
+    log_httpcore_level: str = "WARNING"
+    log_aiogram_level: str = "INFO"
+    uvicorn_access_log: bool = False
     api_host: str = "0.0.0.0"
     api_port: int = 8090
     # Comma-separated list of allowed chat_ids (group/subchannel) where commands work.

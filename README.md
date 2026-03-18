@@ -10,26 +10,7 @@
 - **缓存**: Redis（热数据/分布式锁/排行榜/冷却计时/管理员认证/道具Buff）
 - **定时任务**: APScheduler（每日结算 + 自动备份）
 - **配置**: pydantic-settings（类型安全）
-- **部署**: Docker Compose（推荐）/ 本地 Python 运行
-
-## 快速开始（Docker，推荐）
-
-```bash
-# 1. 克隆项目
-git clone https://github.com/keys-cherish/my_company.git
-cd my_company
-
-# 2. 配置环境变量
-cp .env.example .env
-# 编辑 .env 填入 BOT_TOKEN、管理员ID/超管ID、群组和话题限制等配置
-
-# 3. 启动（bot + postgres + redis）
-docker compose up -d --build
-
-# 4. 查看状态
-docker compose ps
-docker compose logs -f bot
-```
+- **部署**: 本地 Python 运行
 
 ## 快速开始（本地 Python）
 

@@ -23,8 +23,9 @@ from scheduler.daily_settlement import (
     start_scheduler,
     stop_scheduler,
 )
+from utils.logging_setup import setup_logging
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
+setup_logging("bot")
 logger = logging.getLogger(__name__)
 
 # Set by --reload runner child process to skip expensive startup work.
@@ -161,6 +162,18 @@ async def main() -> None:
     if not settings.bot_token:
         logger.error("BOT_TOKEN is empty. Please configure it in .env")
         return
+
+    loop = asyncio.get_running_loop()
+
+    def _log_asyncio_exception(_loop: asyncio.AbstractEventLoop, context: dict) -> None:
+        exc = context.get("exception")
+        message = context.get("message", "Unhandled asyncio exception")
+        if exc is not None:
+            logger.error(message, exc_info=exc)
+        else:
+            logger.error(message)
+
+    loop.set_exception_handler(_log_asyncio_exception)
 
     bot = Bot(
         token=settings.bot_token,

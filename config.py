@@ -9,8 +9,21 @@ class Settings(BaseSettings):
     # Telegram
     bot_token: str = ""
     proxy_url: str = ""  # HTTP代理，如 http://127.0.0.1:7890
+    run_mode: str = "polling"  # polling | webhook
     use_uvloop: bool = True
     app_timezone: str = "Asia/Shanghai"
+    # Bot webhook
+    webhook_base_url: str = ""  # e.g. https://bot.example.com
+    webhook_path: str = "/tg/webhook"
+    webhook_secret_token: str = ""
+    webhook_host: str = "127.0.0.1"
+    webhook_port: int = 8081
+    webhook_set_on_startup: bool = True
+    webhook_drop_pending_updates: bool = True
+    webhook_max_connections: int = 40
+    webhook_delete_on_shutdown: bool = False
+    webhook_ssl_certfile: str = ""  # PEM certificate path for direct HTTPS webhook
+    webhook_ssl_keyfile: str = ""  # PEM private key path for direct HTTPS webhook
     # Logging (performance-first defaults)
     log_level: str = "INFO"
     log_format: str = "plain"  # plain | json

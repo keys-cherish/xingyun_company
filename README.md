@@ -75,7 +75,10 @@ uv run python bot.py
 - `DB_POOL_SIZE` / `DB_MAX_OVERFLOW`：数据库连接池容量（默认 `12/16`，小机更稳）
 - `DB_POOL_TIMEOUT_SECONDS` / `DB_POOL_RECYCLE_SECONDS`：连接池获取超时与连接回收时间
 - `REDIS_URL`：Redis 连接
-- `BOT`：运行模式固定为 `polling`
+- `RUN_MODE`：机器人模式，`polling` / `webhook`（默认 `polling`）
+- `WEBHOOK_BASE_URL` / `WEBHOOK_PATH` / `WEBHOOK_SECRET_TOKEN`：Webhook 地址与安全头配置
+- `WEBHOOK_HOST` / `WEBHOOK_PORT`：Webhook 本地监听地址（建议由 Nginx 反代）
+- `WEBHOOK_SSL_CERTFILE` / `WEBHOOK_SSL_KEYFILE`：无反代直连 webhook 时可选的本地 TLS 证书配置
 - `USE_UVLOOP`：是否启用 uvloop
 - `APP_TIMEZONE`：时区（默认 `Asia/Shanghai`，北京时间）
 - `REDIS_STREAM_ENABLED` / `REDIS_STREAM_KEY`：Redis Stream 事件通道配置
@@ -208,7 +211,7 @@ uv run pytest -q tests/test_regulation_audit.py tests/test_dividend_distribution
 
 低配单机（1C/2G）建议使用以下策略：
 
-1. **单实例**：固定使用 `polling`，同一 token 仅运行一个 bot 进程。
+1. **单实例**：无论 `polling` 还是 `webhook`，同一 token 仅运行一个 bot 进程。
 2. **API 单进程**：Mini App API 保持 `workers=1`（当前已如此）。
 3. **保守连接池**：建议 `DB_POOL_SIZE=4~8`，`DB_MAX_OVERFLOW=4~8`。
 4. **缓存优先**：高频读取走 Redis（预加载/冷却/排行榜）。

@@ -1,16 +1,19 @@
-"""Bot entrypoint (polling only)."""
+"""Bot entrypoint (supports polling and webhook)."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 import os
+import ssl
 
+from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.base import BaseStorage
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 from cache.points_redis_client import close_points_redis
 from cache.redis_client import close_redis
@@ -158,6 +161,129 @@ def _register_routers(dp: Dispatcher) -> None:
     dp.include_router(fallback)
 
 
+def _normalize_run_mode() -> str:
+    mode = (settings.run_mode or "polling").strip().lower()
+    if mode not in {"polling", "webhook"}:
+        logger.warning("Invalid RUN_MODE=%r, fallback to polling", settings.run_mode)
+        return "polling"
+    return mode
+
+
+def _normalize_webhook_path(raw_path: str) -> str:
+    path = (raw_path or "/tg/webhook").strip()
+    if not path:
+        path = "/tg/webhook"
+    if not path.startswith("/"):
+        path = f"/{path}"
+    return path
+
+
+def _build_webhook_url(base_url: str, path: str) -> str:
+    base = (base_url or "").strip().rstrip("/")
+    if not base:
+        return ""
+    return f"{base}{path}"
+
+
+def _build_webhook_ssl_context() -> ssl.SSLContext | None:
+    certfile = (settings.webhook_ssl_certfile or "").strip()
+    keyfile = (settings.webhook_ssl_keyfile or "").strip()
+    if not certfile and not keyfile:
+        return None
+    if not certfile or not keyfile:
+        raise RuntimeError(
+            "WEBHOOK_SSL_CERTFILE and WEBHOOK_SSL_KEYFILE must both be set for direct HTTPS webhook"
+        )
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certfile=certfile, keyfile=keyfile)
+    return context
+
+
+async def _run_polling(bot: Bot, dp: Dispatcher) -> None:
+    logger.info("Bot starting in polling mode...")
+    # Polling startup cleanup to avoid update-mode conflicts on Telegram side.
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        logger.info("Polling mode: startup cleanup completed before getUpdates")
+    except Exception:
+        logger.exception("Polling mode: startup cleanup failed before start_polling")
+
+    await dp.start_polling(
+        bot,
+        polling_timeout=30,
+        backoff_on_timeout=5,
+        drop_pending_updates=True,
+    )
+
+
+async def _run_webhook(bot: Bot, dp: Dispatcher) -> None:
+    path = _normalize_webhook_path(settings.webhook_path)
+    webhook_url = _build_webhook_url(settings.webhook_base_url, path)
+    if not webhook_url:
+        raise RuntimeError("RUN_MODE=webhook but WEBHOOK_BASE_URL is empty")
+
+    secret_token = (settings.webhook_secret_token or "").strip() or None
+    max_connections = max(1, min(100, int(settings.webhook_max_connections)))
+    ssl_context = _build_webhook_ssl_context()
+
+    if settings.webhook_set_on_startup:
+        await bot.set_webhook(
+            url=webhook_url,
+            secret_token=secret_token,
+            drop_pending_updates=bool(settings.webhook_drop_pending_updates),
+            max_connections=max_connections,
+            allowed_updates=dp.resolve_used_update_types(),
+        )
+        logger.info("Webhook configured: %s", webhook_url)
+    else:
+        logger.info("WEBHOOK_SET_ON_STARTUP=false, skip setWebhook")
+
+    app = web.Application()
+    request_handler = SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot,
+        handle_in_background=True,
+        secret_token=secret_token,
+    )
+    request_handler.register(app, path=path)
+    setup_application(app, dp, bot=bot)
+
+    runner = web.AppRunner(app, access_log=None)
+    await runner.setup()
+    site = web.TCPSite(
+        runner,
+        host=settings.webhook_host,
+        port=int(settings.webhook_port),
+        ssl_context=ssl_context,
+    )
+    await site.start()
+
+    logger.info(
+        "Bot starting in webhook mode: listen=%s:%s path=%s",
+        settings.webhook_host,
+        settings.webhook_port,
+        path,
+    )
+    if ssl_context is None:
+        logger.warning(
+            "Webhook server started without local TLS cert. Ensure your platform already terminates HTTPS before forwarding."
+        )
+
+    try:
+        await asyncio.Event().wait()
+    finally:
+        try:
+            await runner.cleanup()
+        except Exception:
+            logger.exception("Webhook server shutdown failed")
+        if settings.webhook_delete_on_shutdown:
+            try:
+                await bot.delete_webhook(drop_pending_updates=False)
+                logger.info("Webhook deleted on shutdown")
+            except Exception:
+                logger.exception("Failed to delete webhook on shutdown")
+
+
 async def main() -> None:
     if not settings.bot_token:
         logger.error("BOT_TOKEN is empty. Please configure it in .env")
@@ -239,20 +365,11 @@ async def main() -> None:
     start_scheduler()
 
     try:
-        logger.info("Bot starting in polling mode...")
-        # Polling startup cleanup to avoid update-mode conflicts on Telegram side.
-        try:
-            await bot.delete_webhook(drop_pending_updates=True)
-            logger.info("Polling mode: startup cleanup completed before getUpdates")
-        except Exception:
-            logger.exception("Polling mode: startup cleanup failed before start_polling")
-
-        await dp.start_polling(
-            bot,
-            polling_timeout=30,
-            backoff_on_timeout=5,
-            drop_pending_updates=True,
-        )
+        mode = _normalize_run_mode()
+        if mode == "webhook":
+            await _run_webhook(bot, dp)
+        else:
+            await _run_polling(bot, dp)
     finally:
         # Create an extra shutdown backup for safer recovery.
         if not _RELOAD_MODE:

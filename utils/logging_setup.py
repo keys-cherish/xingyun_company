@@ -18,6 +18,7 @@ _LOCK = threading.Lock()
 _LISTENER: QueueListener | None = None
 _QUEUE_HANDLER: logging.Handler | None = None
 _DOWNSTREAM_HANDLERS: list[logging.Handler] = []
+_SPECIAL_HANDLERS: list[logging.Handler] = []
 _CONFIGURED = False
 _ATEXIT_REGISTERED = False
 
@@ -89,6 +90,14 @@ def _build_formatter() -> logging.Formatter:
     return _IsoFormatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 
 
+def _resolve_log_dir() -> Path:
+    log_dir = Path(settings.log_dir or "logs")
+    if not log_dir.is_absolute():
+        log_dir = Path.cwd() / log_dir
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir
+
+
 def _build_file_handler(path: Path, level: int, formatter: logging.Formatter) -> logging.Handler:
     max_bytes = max(1024, int(settings.log_file_max_bytes))
     backups = max(1, int(settings.log_file_backup_count))
@@ -114,10 +123,7 @@ def _build_downstream_handlers(service_name: str, root_level: int) -> list[loggi
     handlers.append(stdout_handler)
 
     if settings.log_file_enabled:
-        log_dir = Path(settings.log_dir or "logs")
-        if not log_dir.is_absolute():
-            log_dir = Path.cwd() / log_dir
-        log_dir.mkdir(parents=True, exist_ok=True)
+        log_dir = _resolve_log_dir()
         handlers.append(_build_file_handler(log_dir / f"{service_name}.log", root_level, formatter))
         if settings.log_error_file_enabled:
             handlers.append(
@@ -129,6 +135,32 @@ def _build_downstream_handlers(service_name: str, root_level: int) -> list[loggi
             )
 
     return handlers
+
+
+def _configure_feature_loggers() -> None:
+    if not settings.log_file_enabled:
+        return
+
+    formatter = _build_formatter()
+    log_dir = _resolve_log_dir()
+
+    if settings.log_demon_roulette_enabled:
+        demon_logger = logging.getLogger("demon_roulette")
+        demon_logger.setLevel(_parse_level(settings.log_demon_roulette_level, logging.INFO))
+        demon_logger.propagate = False
+        for handler in demon_logger.handlers[:]:
+            demon_logger.removeHandler(handler)
+            try:
+                handler.close()
+            except Exception:
+                pass
+        demon_handler = _build_file_handler(
+            log_dir / "demon_roulette.log",
+            _parse_level(settings.log_demon_roulette_level, logging.INFO),
+            formatter,
+        )
+        demon_logger.addHandler(demon_handler)
+        _SPECIAL_HANDLERS.append(demon_handler)
 
 
 def _set_library_levels() -> None:
@@ -144,6 +176,7 @@ def setup_logging(service_name: str) -> None:
     global _DOWNSTREAM_HANDLERS
     global _LISTENER
     global _QUEUE_HANDLER
+    global _SPECIAL_HANDLERS
 
     with _LOCK:
         if _CONFIGURED:
@@ -183,6 +216,7 @@ def setup_logging(service_name: str) -> None:
                 root.addHandler(handler)
 
         _set_library_levels()
+        _configure_feature_loggers()
         _CONFIGURED = True
 
         if not _ATEXIT_REGISTERED:
@@ -196,6 +230,7 @@ def shutdown_logging() -> None:
     global _DOWNSTREAM_HANDLERS
     global _LISTENER
     global _QUEUE_HANDLER
+    global _SPECIAL_HANDLERS
 
     with _LOCK:
         if _LISTENER is not None:
@@ -217,4 +252,11 @@ def shutdown_logging() -> None:
             except Exception:
                 pass
         _DOWNSTREAM_HANDLERS = []
+        for handler in _SPECIAL_HANDLERS:
+            try:
+                handler.flush()
+                handler.close()
+            except Exception:
+                pass
+        _SPECIAL_HANDLERS = []
         _CONFIGURED = False

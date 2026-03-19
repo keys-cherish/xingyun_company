@@ -78,7 +78,6 @@ uv run python bot.py
 - `RUN_MODE`：机器人模式，`polling` / `webhook`（默认 `polling`）
 - `WEBHOOK_BASE_URL` / `WEBHOOK_PATH` / `WEBHOOK_SECRET_TOKEN`：Webhook 地址与安全头配置
 - `WEBHOOK_HOST` / `WEBHOOK_PORT`：Webhook 本地监听地址（建议由 Nginx 反代）
-- `WEBHOOK_SSL_CERTFILE` / `WEBHOOK_SSL_KEYFILE`：无反代直连 webhook 时可选的本地 TLS 证书配置
 - `USE_UVLOOP`：是否启用 uvloop
 - `APP_TIMEZONE`：时区（默认 `Asia/Shanghai`，北京时间）
 - `REDIS_STREAM_ENABLED` / `REDIS_STREAM_KEY`：Redis Stream 事件通道配置

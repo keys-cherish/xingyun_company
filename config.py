@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     webhook_drop_pending_updates: bool = True
     webhook_max_connections: int = 40
     webhook_delete_on_shutdown: bool = False
+    webhook_ip_address: str = ""  # Optional fixed IPv4 for Telegram webhook delivery
     webhook_ssl_certfile: str = ""  # PEM certificate path for direct HTTPS webhook
     webhook_ssl_keyfile: str = ""  # PEM private key path for direct HTTPS webhook
     # Logging (performance-first defaults)
@@ -38,6 +39,8 @@ class Settings(BaseSettings):
     log_httpx_level: str = "WARNING"
     log_httpcore_level: str = "WARNING"
     log_aiogram_level: str = "INFO"
+    log_demon_roulette_enabled: bool = True
+    log_demon_roulette_level: str = "INFO"
     uvicorn_access_log: bool = False
     api_host: str = "0.0.0.0"
     api_port: int = 8090

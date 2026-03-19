@@ -25,6 +25,18 @@ from config import settings
 from utils.concurrency import with_lock
 
 logger = logging.getLogger(__name__)
+_demon_logger = logging.getLogger("demon_roulette")
+
+
+def _demon_log(event: str, **fields: object) -> None:
+    """Write structured demon-roulette trace line into dedicated log file."""
+    if not _demon_logger.isEnabledFor(logging.INFO):
+        return
+    if fields:
+        payload = " ".join(f"{k}={fields[k]}" for k in sorted(fields))
+        _demon_logger.info("event=%s %s", event, payload)
+    else:
+        _demon_logger.info("event=%s", event)
 
 # Core settings
 ROOM_TTL = settings.roulette_room_ttl_seconds
@@ -442,6 +454,16 @@ def _recover_stalled_devil_turn(state: GameState) -> list[str]:
 
     devil = _get_player(state, current)
     devil_name = (devil or {}).get("name", "魔鬼")
+    _demon_log(
+        "stalled_turn_recovered",
+        room_id=state.room_id,
+        current_tg_id=current,
+        shell_index=state.shell_index,
+        shells_total=len(state.shells),
+        live_count=state.live_count,
+        blank_count=state.blank_count,
+        handcuffed_count=len(state.handcuffed_tg_ids),
+    )
     _advance_turn(state)
     return [f"{devil_name} 陷入迟疑，回合被强制推进"]
 
@@ -852,10 +874,29 @@ async def devil_execute_step(
     if not _is_devil(current):
         return False, [], state
 
+    _demon_log(
+        "devil_step_begin",
+        room_id=room_id,
+        current_tg_id=current,
+        round=state.current_round + 1,
+        shell_index=state.shell_index,
+        shells_total=len(state.shells),
+        live_count=state.live_count,
+        blank_count=state.blank_count,
+        pending_display=len(state.pending_display),
+    )
+
     step_msgs = _devil_single_step(state, current)
     if not step_msgs:
         step_msgs = _recover_stalled_devil_turn(state)
         if not step_msgs:
+            _demon_log(
+                "devil_step_noop",
+                room_id=room_id,
+                current_tg_id=current,
+                phase=state.phase,
+                pending_display=len(state.pending_display),
+            )
             await _save_state(state)
             return False, [], state
 
@@ -867,6 +908,17 @@ async def devil_execute_step(
     has_more = (
         state.phase == "playing"
         and (_is_devil(next_current) or bool(state.pending_display))
+    )
+
+    _demon_log(
+        "devil_step_end",
+        room_id=room_id,
+        current_tg_id=current,
+        next_tg_id=next_current,
+        has_more=has_more,
+        phase=state.phase,
+        step_count=len(step_msgs),
+        pending_display=len(state.pending_display),
     )
 
     return has_more, step_msgs, state
@@ -909,6 +961,12 @@ async def create_room(
     await _save_state(state)
     await r.set(f"roulette_player:{creator_tg_id}", room_id, ex=ROOM_TTL)
     await r.set(f"roulette_bet:{creator_tg_id}", str(bet), ex=BET_KEY_TTL)
+    _demon_log(
+        "room_created",
+        room_id=room_id,
+        creator_tg_id=creator_tg_id,
+        bet=bet,
+    )
 
     return True, (
         "😈 轮盘赌房间已创建！\n"
@@ -955,6 +1013,13 @@ async def join_room(
     await _save_state(state)
     await r.set(f"roulette_player:{tg_id}", room_id, ex=ROOM_TTL)
     await r.set(f"roulette_bet:{tg_id}", str(state.bet), ex=BET_KEY_TTL)
+    _demon_log(
+        "room_joined",
+        room_id=room_id,
+        player_tg_id=tg_id,
+        players=len(state.players),
+        bet=state.bet,
+    )
 
     return True, f"✅ {player_name} 加入了轮盘赌！（当前 {len(state.players)} 人）", state
 
@@ -1044,6 +1109,18 @@ async def start_game(
     first_tid = _current_turn_tg_id(state)
     first_player = _get_player(state, first_tid)
     first_name = (first_player or {}).get("name", "?")
+    _demon_log(
+        "game_started",
+        room_id=room_id,
+        mode=state.game_mode,
+        humans=len([p for p in state.players if not p.get("is_devil")]),
+        devils=len([p for p in state.players if p.get("is_devil")]),
+        first_tg_id=first_tid,
+        round=state.current_round + 1,
+        shells_total=len(state.shells),
+        live_count=state.live_count,
+        blank_count=state.blank_count,
+    )
 
     result = "\n".join(init_msgs) + f"\n\n{first_name} 先手"
 
@@ -1135,6 +1212,18 @@ async def create_demon_event_room(
     r = await get_redis()
     await r.set(f"roulette_player:{player_tg_id}", room_id, ex=ROOM_TTL)
     await _save_state(state)
+    _demon_log(
+        "demon_event_room_started",
+        room_id=room_id,
+        leader_tg_id=player_tg_id,
+        devils=actual_count,
+        player_hp=player_hp,
+        devil_hp=devil_hp,
+        items_per_round=items_per_round,
+        shells_total=len(state.shells),
+        live_count=state.live_count,
+        blank_count=state.blank_count,
+    )
 
     first_tid = _current_turn_tg_id(state)
     first_player = _get_player(state, first_tid)
@@ -1159,8 +1248,27 @@ async def player_shoot(
     if _current_turn_tg_id(state) != shooter_tg_id:
         return False, "❌ 还没轮到你", None
 
+    before_turn = _current_turn_tg_id(state)
     shoot_msgs = _do_shoot(state, shooter_tg_id, target_tg_id)
     state.action_log.extend(shoot_msgs)
+    after_turn = _current_turn_tg_id(state)
+    if state.game_mode in ("coop", "hell"):
+        _demon_log(
+            "player_shoot",
+            room_id=room_id,
+            mode=state.game_mode,
+            shooter_tg_id=shooter_tg_id,
+            target_tg_id=target_tg_id,
+            before_turn_tg_id=before_turn,
+            after_turn_tg_id=after_turn,
+            phase=state.phase,
+            shell_index=state.shell_index,
+            shells_total=len(state.shells),
+            live_count=state.live_count,
+            blank_count=state.blank_count,
+            pending_display=len(state.pending_display),
+            msg_count=len(shoot_msgs),
+        )
 
     # Don't auto-execute devil turn — handler will animate it step by step
     await _save_state(state)
@@ -1190,8 +1298,28 @@ async def player_use_item(
     if _current_turn_tg_id(state) != tg_id:
         return False, "❌ 还没轮到你", None
 
+    before_turn = _current_turn_tg_id(state)
     item_msgs = _use_item(state, tg_id, item_key, target_tg_id)
     state.action_log.extend(item_msgs)
+    after_turn = _current_turn_tg_id(state)
+    if state.game_mode in ("coop", "hell"):
+        _demon_log(
+            "player_use_item",
+            room_id=room_id,
+            mode=state.game_mode,
+            tg_id=tg_id,
+            item=item_key,
+            target_tg_id=target_tg_id,
+            before_turn_tg_id=before_turn,
+            after_turn_tg_id=after_turn,
+            phase=state.phase,
+            shell_index=state.shell_index,
+            shells_total=len(state.shells),
+            live_count=state.live_count,
+            blank_count=state.blank_count,
+            pending_display=len(state.pending_display),
+            msg_count=len(item_msgs),
+        )
 
     # Don't auto-execute devil turn — handler will animate it step by step
     await _save_state(state)

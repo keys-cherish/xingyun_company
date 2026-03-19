@@ -40,6 +40,17 @@ from utils.panel_owner import mark_panel
 
 router = Router()
 logger = logging.getLogger(__name__)
+_demon_logger = logging.getLogger("demon_roulette")
+
+
+def _demon_log(event: str, **fields: object) -> None:
+    if not _demon_logger.isEnabledFor(logging.INFO):
+        return
+    if fields:
+        payload = " ".join(f"{k}={fields[k]}" for k in sorted(fields))
+        _demon_logger.info("event=%s %s", event, payload)
+    else:
+        _demon_logger.info("event=%s", event)
 
 DEVIL_STEP_DELAY = 1.5  # seconds between devil actions
 ROUND_MSG_DELAY = 0.8   # seconds between round transition lines

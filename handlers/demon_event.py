@@ -60,6 +60,23 @@ _RALLY_KEY = "demon_rally:{company_id}"
 _RALLY_TTL = 90
 
 
+def _scheduled_target_threads() -> list[int]:
+    """Resolve scheduler thread targets from env restrictions."""
+    from config import settings
+
+    explicit_threads = sorted(settings.allowed_topic_thread_id_set)
+    if explicit_threads:
+        return explicit_threads
+
+    # Fallback: when only topic-command restrictions exist, use topics that allow cp_demon*.
+    target_threads: list[int] = []
+    for thread_id, commands in settings.topic_command_restriction_map.items():
+        normalized = {str(cmd).lstrip("/").lower() for cmd in commands}
+        if any(cmd.startswith("cp_demon") for cmd in normalized):
+            target_threads.append(thread_id)
+    return sorted(set(target_threads))
+
+
 def set_bot(bot):
     global _bot_ref
     _bot_ref = bot
@@ -171,11 +188,37 @@ async def _trigger_demon_event_for_random_target(
         except Exception:
             logger.exception("Failed to send demon event to chat %s", chat_id)
     else:
-        for cid in (settings.allowed_chat_id_set or []):
-            try:
-                sent_msg = await _bot_ref.send_message(cid, text, reply_markup=kb, parse_mode="HTML")
-            except Exception:
-                logger.exception("Failed to send demon event to chat %s", cid)
+        target_chat_ids = sorted(settings.allowed_chat_id_set)
+        if not target_chat_ids:
+            logger.warning(
+                "Demon event skipped: ALLOWED_CHAT_IDS is empty (scheduler trigger has no target)."
+            )
+            return "no_target_chat"
+
+        target_threads = _scheduled_target_threads()
+        for cid in target_chat_ids:
+            if target_threads:
+                for tid in target_threads:
+                    try:
+                        sent_msg = await _bot_ref.send_message(
+                            cid,
+                            text,
+                            reply_markup=kb,
+                            parse_mode="HTML",
+                            message_thread_id=tid,
+                        )
+                    except Exception:
+                        logger.exception("Failed to send demon event to chat %s thread %s", cid, tid)
+            else:
+                try:
+                    sent_msg = await _bot_ref.send_message(
+                        cid,
+                        text,
+                        reply_markup=kb,
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    logger.exception("Failed to send demon event to chat %s", cid)
 
     # Schedule auto-decline after 90 seconds
     if sent_msg:
